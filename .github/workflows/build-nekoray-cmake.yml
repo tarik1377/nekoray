@@ -1,4 +1,4 @@
-name: Nekoray build matrix - cmake
+name: GreenRhythm Build
 
 on:
   workflow_dispatch:
@@ -7,115 +7,106 @@ on:
         description: "Release Tag"
         required: true
       publish:
-        description: "Publish: If want ignore"
+        description: "Publish release (yes/no)"
         required: false
-      artifact-pack:
-        description: "artifact-pack: If want ignore"
-        required: false
+        default: "yes"
+  push:
+    branches: [main]
+
 jobs:
   build-go:
     strategy:
       matrix:
-        cross_os: [windows, linux]
-        cross_arch: [amd64]
         include:
+          - cross_os: windows
+            cross_arch: amd64
           - cross_os: public_res
             cross_arch: public_res
       fail-fast: false
     runs-on: ubuntu-latest
     steps:
-      - name: Checking out sources
+      - name: Checkout
         uses: actions/checkout@v4
-      - name: Go Status
-        run: git ls-files go | xargs cat | sha1sum > go_status
-      - name: Cache Common Download
-        id: cache-common
-        uses: actions/cache@v4
-        with:
-          path: artifacts.tgz
-          key: CommonCache-${{ matrix.cross_os }}-${{ matrix.cross_arch }}-${{ hashFiles('libs/*.sh', 'go_status', '*.txt') }}
-      - name: Install Golang
-        if: steps.cache-common.outputs.cache-hit != 'true'
+
+      - name: Install Go
+        if: matrix.cross_os != 'public_res'
         uses: actions/setup-go@v4
         with:
-          go-version: ^1.23
-      - name: Build golang parts
-        if: steps.cache-common.outputs.cache-hit != 'true'
+          go-version: "^1.24"
+
+      - name: Clone libneko dependency
+        if: matrix.cross_os != 'public_res'
+        run: |
+          git clone --depth 1 https://github.com/MatsuriDayo/libneko.git ../libneko
+
+      - name: Build Go
+        if: matrix.cross_os != 'public_res'
         shell: bash
         run: |
-          [ ${{ matrix.cross_os }} == public_res ] || GOOS=${{ matrix.cross_os }} GOARCH=${{ matrix.cross_arch }} ./libs/build_go.sh
-          [ ${{ matrix.cross_os }} == public_res ] || exit 0
-          ./libs/build_public_res.sh
-      - name: Tar files
-        if: steps.cache-common.outputs.cache-hit != 'true'
+          GOOS=${{ matrix.cross_os }} GOARCH=${{ matrix.cross_arch }} ./libs/build_go.sh
+
+      - name: Build public resources
+        if: matrix.cross_os == 'public_res'
+        run: ./libs/build_public_res.sh
+
+      - name: Download rule-set files
+        if: matrix.cross_os == 'public_res'
+        run: |
+          mkdir -p deployment/public_res
+          curl -sL -o deployment/public_res/geosite-category-ads-all.srs \
+            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs"
+          curl -sL -o deployment/public_res/geoip-ru.srs \
+            "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs"
+
+      - name: Tar artifacts
         run: tar czvf artifacts.tgz ./deployment
-      - name: Uploading Artifact
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NekoRay-${{ github.sha }}-Common-${{ matrix.cross_os }}-${{ matrix.cross_arch }}
+          name: GreenRhythm-${{ github.sha }}-${{ matrix.cross_os }}-${{ matrix.cross_arch }}
           path: artifacts.tgz
-  build-cpp:
-    strategy:
-      matrix:
-        include:
-          - platform: windows-2022
-            arch: x64
-            qt_version: "6.7"
-          - platform: ubuntu-20.04
-            arch: x64
-            qt_version: "5.12"
-      fail-fast: false
 
-    runs-on: ${{ matrix.platform }}
-    env:
-      ACTIONS_ALLOW_UNSECURE_COMMANDS: true
+  build-windows:
+    runs-on: windows-2022
+    needs: []
     steps:
-      - name: Checking out sources
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: "recursive"
-      - name: Install MSVC compiler
-        if: matrix.platform == 'windows-2022'
+
+      - name: Install MSVC
         uses: ilammy/msvc-dev-cmd@v1
         with:
-          # 14.1 is for vs2017, 14.2 is vs2019, following the upstream vcpkg build from Qv2ray-deps repo
           toolset: 14.2
-          arch: ${{ matrix.arch }}
-      # ========================================================================================================= Qt Install
-      - name: Windows - Download Custom Qt ${{ matrix.qt_version }} SDK
+          arch: x64
+
+      - name: Download Qt SDK
         shell: bash
-        if: matrix.platform == 'windows-2022'
         env:
-          DL_QT_VER: ${{ matrix.qt_version }}
+          DL_QT_VER: "6.7"
         run: bash ./libs/download_qtsdk_win.sh
-      # ========================================================================================================= 编译与 Qt 无关的依赖
-      - name: Install ninja-build tool
+
+      - name: Install ninja
         uses: seanmiddleditch/gha-setup-ninja@v3
-      - name: Cache Download
+
+      - name: Cache Dependencies
         id: cache-deps
         uses: actions/cache@v4
         with:
           path: libs/deps
-          key: DepsCache-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('libs/build_deps_*.sh') }}-Qt${{ matrix.qt_version }}
+          key: WinDeps-x64-${{ hashFiles('libs/build_deps_*.sh') }}-Qt6.7
+
       - name: Build Dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
         shell: bash
-        if: steps.cache-deps.outputs.cache-hit != 'true' && matrix.platform != 'ubuntu-20.04'
         run: ./libs/build_deps_all.sh
-      - name: Build Dependencies (Docker)
+
+      - name: Build Qt GUI
         shell: bash
-        if: steps.cache-deps.outputs.cache-hit != 'true' && matrix.platform == 'ubuntu-20.04'
-        run: |
-          docker run --rm \
-            -v $PWD:/nekoray \
-            -w /nekoray \
-            ghcr.io/tarik1377/debian10-qt5:20230131 \
-            bash -c "./libs/build_deps_all.sh"
-      # ========================================================================================================= Generate MakeFile and Build
-      - name: Windows - Generate MakeFile and Build
-        shell: bash
-        if: matrix.platform == 'windows-2022'
         env:
-          DL_QT_VER: ${{ matrix.qt_version }}
+          DL_QT_VER: "6.7"
           CC: cl.exe
           CXX: cl.exe
         run: |
@@ -126,89 +117,56 @@ jobs:
           ninja -j2
           cd ..
           ./libs/deploy_windows64.sh
-      - name: Linux - Generate MakeFile and Build
-        shell: bash
-        if: matrix.platform == 'ubuntu-20.04'
-        run: |
-          docker run --rm \
-            -v $PWD:/nekoray \
-            -w /nekoray \
-            ghcr.io/tarik1377/debian10-qt5:20230131 \
-            bash -c "mkdir build && pushd build && cmake -GNinja -DCMAKE_BUILD_TYPE=Release .. && ninja && popd &&./libs/deploy_linux64.sh"
-      # ========================================================================================================= Deployments
-      - name: Tar files
+
+      - name: Tar artifacts
         shell: bash
         run: tar czvf artifacts.tgz ./deployment
-      - name: Uploading Artifact
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NekoRay-${{ github.sha }}-${{ matrix.platform }}-${{ matrix.arch }}-Qt${{ matrix.qt_version }}
+          name: GreenRhythm-${{ github.sha }}-windows-x64-Qt6.7
           path: artifacts.tgz
+
   publish:
-    name: Pack & Publish Release
-    if: github.event.inputs.artifact-pack != 'y'
+    name: Pack & Publish
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs:
-      - build-cpp
+      - build-windows
       - build-go
     steps:
-      - name: Checking out sources
+      - name: Checkout
         uses: actions/checkout@v4
+
       - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
           path: download-artifact
-      - name: Pack
+
+      - name: Pack Windows Release
         run: |
-          curl -Lo - https://github.com/tcnksm/ghr/releases/download/v0.13.0/ghr_v0.13.0_linux_amd64.tar.gz | tar xzv
-          mv ghr*linux_amd64/ghr .
-          ####
           source libs/env_deploy.sh
           find . -name artifacts.tgz | xargs -n1 tar xvzf
           cd deployment
-          cp -r public_res/* linux64
-          cp -r public_res/* windows64
+          cp -r public_res/* windows64/ 2>/dev/null || true
           rm -rf public_res *.pdb
-          ####
-          mv linux64 nekoray
-          zip -r $version_standalone-linux64.zip nekoray
-          rm -rf nekoray
-          ####
-          mv windows64 nekoray
-          zip -r $version_standalone-windows64.zip nekoray
-          rm -rf nekoray
-      - name: Pack Debian
-        run: |
-          source libs/env_deploy.sh
-          find . -name artifacts.tgz | xargs -n1 tar xvzf
-          cd deployment
-          cp -r public_res/* linux64
-          ####
-          bash ../libs/package_debian.sh ${{ github.event.inputs.tag }}
-          mv nekoray.deb $version_standalone-debian-x64.deb
-          sudo rm -rf nekoray
-      - name: Pack AppImage
-        run: |
-          source libs/env_deploy.sh
-          find . -name artifacts.tgz | xargs -n1 tar xvzf
-          cd deployment
-          cp -r public_res/* linux64
-          ####
-          bash ../libs/package_appimage.sh
-          mv nekobox-x86_64.AppImage $version_standalone-linux-x64.AppImage
-      - name: Clean Up
-        run: |
-          cd deployment
-          rm -rf linux64
-          rm -rf windows64
-          rm -rf public_res
-          rm -rf *.pdb
-      - name: Uploading Artifact
+          mv windows64 GreenRhythm
+          zip -r GreenRhythm-${{ github.event.inputs.tag }}-windows-x64.zip GreenRhythm
+          rm -rf GreenRhythm
+
+      - name: Upload Release Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Deployment-${{ github.sha }}
+          name: GreenRhythm-Release-${{ github.sha }}
           path: deployment
-      - name: Release
-        if: github.event.inputs.publish != 'y'
-        run: |
-          ./ghr -delete -t "${{ github.token }}" -n "${{ github.event.inputs.tag }}" "${{ github.event.inputs.tag }}" deployment
+
+      - name: Create GitHub Release
+        if: github.event.inputs.publish == 'yes'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag }}
+          name: GreenRhythm ${{ github.event.inputs.tag }}
+          files: deployment/*.zip
+          draft: false
+          prerelease: false
