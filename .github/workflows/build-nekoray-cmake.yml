@@ -152,7 +152,12 @@ jobs:
           source libs/env_deploy.sh
           find . -name artifacts.tgz | xargs -n1 tar xvzf
           cd deployment
-          cp -r public_res/* windows64/ 2>/dev/null || true
+          # Copy geodata to root
+          cp -r public_res/*.dat windows64/ 2>/dev/null || true
+          cp -r public_res/*.db windows64/ 2>/dev/null || true
+          # Copy .srs rule-sets to config/ (sing-box CWD)
+          mkdir -p windows64/config
+          cp public_res/*.srs windows64/config/ 2>/dev/null || true
           rm -rf public_res *.pdb
           mv windows64 GreenRhythm
           zip -r GreenRhythm-${{ github.event.inputs.tag }}-windows-x64.zip GreenRhythm

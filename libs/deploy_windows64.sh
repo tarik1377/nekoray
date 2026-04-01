@@ -31,5 +31,9 @@ mkdir -p $DEST/config/groups
 cp $SRC_ROOT/res/config_template/routes_box/Default $DEST/config/routes_box/Default
 cp $SRC_ROOT/res/config_template/groups/nekobox.json $DEST/config/groups/nekobox.json
 
+#### copy .srs rule-set files into config/ (sing-box CWD = config/) ####
+cp $DEST/../public_res/geosite-category-ads-all.srs $DEST/config/ 2>/dev/null || true
+cp $DEST/../public_res/geoip-ru.srs $DEST/config/ 2>/dev/null || true
+
 #### prepare deployment ####
 cp $BUILD/*.pdb $DEPLOYMENT 2>/dev/null || true
