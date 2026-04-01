@@ -22,8 +22,9 @@ fi
 
 popd
 
-#### copy icon ####
+#### copy icon + wintun driver ####
 cp $SRC_ROOT/res/public/greenrhythm.png $DEST/greenrhythm.png
+cp $SRC_ROOT/res/public/wintun.dll $DEST/wintun.dll
 
 #### copy default config templates ####
 mkdir -p $DEST/config/routes_box
