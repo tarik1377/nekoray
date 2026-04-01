@@ -14,10 +14,10 @@ namespace NekoGui {
         QString custom = "{\"rules\": []}";
 
         // DNS
-        QString remote_dns = "https://dns.google/dns-query";
-        QString remote_dns_strategy = "";
-        QString direct_dns = "https://doh.pub/dns-query";
-        QString direct_dns_strategy = "";
+        QString remote_dns = "https://1.1.1.1/dns-query";
+        QString remote_dns_strategy = "ipv4_only";
+        QString direct_dns = "77.88.8.8";
+        QString direct_dns_strategy = "ipv4_only";
         bool dns_routing = true;
         bool use_dns_object = false;
         QString dns_object = "";
@@ -146,7 +146,7 @@ namespace NekoGui {
         bool fake_dns = false;
         bool vpn_internal_tun = true;
         int vpn_implementation = 0;
-        int vpn_mtu = 9000;
+        int vpn_mtu = 1500;
         bool vpn_ipv6 = false;
         bool vpn_hide_console = true;
         bool vpn_strict_route = false;

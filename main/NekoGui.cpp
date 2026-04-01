@@ -311,18 +311,73 @@ namespace NekoGui {
     // preset routing
     Routing::Routing(int preset) : JsonStore() {
         if (preset == 1) {
-            direct_ip =
-                "geoip:cn\n"
-                "geoip:private";
-            direct_domain = "geosite:cn";
-            proxy_ip = "";
-            proxy_domain = "";
-            block_ip = "";
+            def_outbound = "proxy";
+            direct_dns = "77.88.8.8";
+            direct_dns_strategy = "ipv4_only";
+            remote_dns = "https://1.1.1.1/dns-query";
+            remote_dns_strategy = "ipv4_only";
+            dns_routing = true;
+            dns_final_out = "proxy";
+            sniffing_mode = 1;
             block_domain =
                 "geosite:category-ads-all\n"
-                "domain:appcenter.ms\n"
-                "domain:firebase.io\n"
-                "domain:crashlytics.com\n";
+                "domain:appcenter.ms";
+            block_ip = "";
+            direct_domain =
+                "domain:ru\n"
+                "domain:su\n"
+                "domain:рф\n"
+                "domain:xn--p1ai\n"
+                "domain:vk.com\n"
+                "domain:vkontakte.ru\n"
+                "domain:userapi.com\n"
+                "domain:vk-cdn.net\n"
+                "domain:vkuseraudio.net\n"
+                "domain:vkuservideo.net\n"
+                "domain:yandex.com\n"
+                "domain:yandex.net\n"
+                "domain:yastatic.net\n"
+                "domain:yastat.net\n"
+                "domain:yandex-team.ru\n"
+                "domain:mail.ru\n"
+                "domain:mradx.net\n"
+                "domain:mycdn.me\n"
+                "domain:imgsmail.ru\n"
+                "domain:ok.ru\n"
+                "domain:odnoklassniki.ru\n"
+                "domain:okcdn.ru\n"
+                "domain:2gis.com\n"
+                "domain:2gis.ru\n"
+                "domain:kaspersky.com\n"
+                "domain:sberbank.com\n"
+                "domain:tinkoff.ru\n"
+                "domain:gazprom.com\n"
+                "domain:wildberries.ru\n"
+                "domain:ozon.ru\n"
+                "domain:avito.ru\n"
+                "domain:drom.ru\n"
+                "domain:ivi.ru\n"
+                "domain:kinopoisk.ru\n"
+                "domain:ipinfo.io\n"
+                "domain:msftconnecttest.com\n"
+                "domain:msftncsi.com\n"
+                "domain:windowsupdate.com\n"
+                "domain:windows.com\n"
+                "domain:microsoft.com\n"
+                "domain:microsoftonline.com\n"
+                "domain:office.com\n"
+                "domain:office365.com\n"
+                "domain:live.com\n"
+                "domain:outlook.com\n"
+                "domain:msn.com\n"
+                "domain:bing.com\n"
+                "domain:skype.com";
+            direct_ip =
+                "geoip:ru\n"
+                "geoip:private";
+            proxy_domain = "";
+            proxy_ip = "";
+            custom = "{\"rules\":[{\"outbound\":\"proxy\",\"process_name\":[\"Discord.exe\",\"discord.exe\",\"Telegram.exe\",\"telegram.exe\",\"Codex.exe\",\"codex.exe\",\"Claude.exe\",\"claude.exe\",\"claude-code.exe\"]},{\"outbound\":\"direct\",\"process_name\":[\"BsgLauncher.exe\"]}]}";
         }
         if (!Preset::SingBox::DomainStrategy.contains(domain_strategy)) domain_strategy = "";
         if (!Preset::SingBox::DomainStrategy.contains(outbound_domain_strategy)) outbound_domain_strategy = "";
