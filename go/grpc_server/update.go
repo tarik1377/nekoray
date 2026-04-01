@@ -48,13 +48,16 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 			return ret, nil
 		}
 
-		nowVer := strings.TrimLeft(neko_common.Version_neko, "nekoray-")
+		nowVer := neko_common.Version_neko
+		// Strip known prefixes for version comparison
+		nowVer = strings.TrimPrefix(nowVer, "nekoray-")
+		nowVer = strings.TrimPrefix(nowVer, "greenrhythm-")
 
 		var search string
 		if runtime.GOOS == "windows" && runtime.GOARCH == "amd64" {
-			search = "windows64"
+			search = "windows-x64"
 		} else if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
-			search = "linux64"
+			search = "linux-x64"
 		} else if runtime.GOOS == "darwin" {
 			search = "macos-" + runtime.GOARCH
 		} else {
