@@ -35,7 +35,7 @@
     "theme": "0",
     "traffic_loop_interval": 1000,
     "vpn_hide_console": true,
-    "vpn_impl": 0,
+    "vpn_impl": 2,
     "vpn_internal_tun": true,
     "vpn_ipv6": false,
     "vpn_mtu": 1500,

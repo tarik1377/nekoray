@@ -96,9 +96,13 @@ func transformInbounds(config map[string]interface{}) {
 		delete(ibMap, "udp_disable_domain_unmapping")
 		delete(ibMap, "endpoint_independent_nat")
 
-		// Legacy TUN address fields — removed in 1.12
-		// inet4_address/inet6_address → address (combined list)
+		// TUN fixes
 		if ibMap["type"] == "tun" {
+			// Force "mixed" stack on Windows (gvisor causes connection drops)
+			if stack, _ := ibMap["stack"].(string); stack == "gvisor" || stack == "" {
+				ibMap["stack"] = "mixed"
+			}
+			// Legacy TUN address fields — removed in 1.12
 			var addresses []interface{}
 			if v, ok := ibMap["inet4_address"]; ok {
 				switch val := v.(type) {
