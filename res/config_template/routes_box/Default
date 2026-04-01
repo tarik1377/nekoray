@@ -1,0 +1,18 @@
+{
+    "block_domain": "geosite:category-ads-all\ndomain:appcenter.ms",
+    "block_ip": "",
+    "custom": "{\"rules\":[{\"outbound\":\"proxy\",\"process_name\":[\"Discord.exe\",\"discord.exe\",\"Telegram.exe\",\"telegram.exe\",\"Codex.exe\",\"codex.exe\",\"Claude.exe\",\"claude.exe\",\"claude-code.exe\"]},{\"outbound\":\"direct\",\"process_name\":[\"BsgLauncher.exe\"]}]}",
+    "def_outbound": "proxy",
+    "direct_dns": "77.88.8.8",
+    "direct_dns_strategy": "ipv4_only",
+    "direct_domain": "domain:ru\ndomain:su\ndomain:рф\ndomain:xn--p1ai\ndomain:vk.com\ndomain:vkontakte.ru\ndomain:userapi.com\ndomain:vk-cdn.net\ndomain:vkuseraudio.net\ndomain:vkuservideo.net\ndomain:yandex.com\ndomain:yandex.net\ndomain:yastatic.net\ndomain:yastat.net\ndomain:yandex-team.ru\ndomain:mail.ru\ndomain:mradx.net\ndomain:mycdn.me\ndomain:imgsmail.ru\ndomain:ok.ru\ndomain:odnoklassniki.ru\ndomain:okcdn.ru\ndomain:2gis.com\ndomain:2gis.ru\ndomain:kaspersky.com\ndomain:sberbank.com\ndomain:tinkoff.ru\ndomain:gazprom.com\ndomain:wildberries.ru\ndomain:ozon.ru\ndomain:avito.ru\ndomain:drom.ru\ndomain:ivi.ru\ndomain:kinopoisk.ru\ndomain:ipinfo.io\ndomain:msftconnecttest.com\ndomain:msftncsi.com\ndomain:windowsupdate.com\ndomain:windows.com\ndomain:microsoft.com\ndomain:microsoftonline.com\ndomain:office.com\ndomain:office365.com\ndomain:live.com\ndomain:outlook.com\ndomain:msn.com\ndomain:bing.com\ndomain:skype.com",
+    "direct_ip": "geoip:ru\ngeoip:private",
+    "dns_final_out": "proxy",
+    "dns_routing": true,
+    "proxy_domain": "",
+    "proxy_ip": "",
+    "remote_dns": "https://1.1.1.1/dns-query",
+    "remote_dns_strategy": "ipv4_only",
+    "sniffing_mode": 1,
+    "use_dns_object": false
+}
