@@ -22,6 +22,9 @@ fi
 
 popd
 
+#### copy icon ####
+cp $SRC_ROOT/res/public/greenrhythm.png $DEST/greenrhythm.png
+
 #### copy default config templates ####
 mkdir -p $DEST/config/routes_box
 mkdir -p $DEST/config/groups
