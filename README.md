@@ -1,121 +1,126 @@
-# GreenRhythm
+<p align="center">
+  <img src="res/public/greenrhythm.png" width="120" alt="GreenRhythm">
+</p>
 
-Qt based cross-platform GUI proxy configuration manager (backend: sing-box)
+<h1 align="center">GreenRhythm</h1>
 
-Support Windows / Linux out of the box now.
+<p align="center">
+  <b>Fast, modern proxy client powered by sing-box 1.13</b>
+</p>
 
-基于 Qt 的跨平台代理配置管理器 (后端 sing-box)
+<p align="center">
+  <a href="https://github.com/tarik1377/nekoray/releases/latest">
+    <img src="https://img.shields.io/github/v/release/tarik1377/nekoray?style=for-the-badge&color=2ea043&label=Download" alt="Latest Release">
+  </a>
+  <a href="https://github.com/tarik1377/nekoray/releases">
+    <img src="https://img.shields.io/github/downloads/tarik1377/nekoray/total?style=for-the-badge&color=2ea043&label=Downloads" alt="Downloads">
+  </a>
+  <a href="https://github.com/tarik1377/nekoray/actions">
+    <img src="https://img.shields.io/github/actions/workflow/status/tarik1377/nekoray/build-nekoray-cmake.yml?style=for-the-badge&color=2ea043&label=Build" alt="Build">
+  </a>
+</p>
 
-目前支持 Windows / Linux 开箱即用
+---
 
-> This is a fork of [NekoBox/NekoRay](https://github.com/MatsuriDayo/nekoray) by MatsuriDayo.
+## What is GreenRhythm?
 
-## 下载 / Download
+A cross-platform proxy client with Qt GUI, built on **sing-box 1.13.5** core. Designed for speed, privacy, and ease of use.
 
-### GitHub Releases (Portable ZIP)
+### Key Features
 
-便携格式，无安装器。转到 Releases 下载预编译的二进制文件，解压后即可使用。
+- **sing-box 1.13.5** — latest stable core with VLESS+Reality performance
+- **Smart routing** — RU sites direct, everything else through proxy
+- **TUN mode** — system-wide VPN with one click
+- **Auto config** — optimized defaults out of the box
+- **Ad blocking** — built-in geosite ad filter
+- **DNS splitting** — Yandex DNS for RU, Cloudflare for international
 
-[![GitHub All Releases](https://img.shields.io/github/downloads/tarik1377/nekoray/total?label=downloads-total&logo=github&style=flat-square)](https://github.com/tarik1377/nekoray/releases)
+### Supported Protocols
 
-[下载 / Download](https://github.com/tarik1377/nekoray/releases)
+| Protocol | Status |
+|----------|--------|
+| VLESS + Reality + XTLS-Vision | Recommended |
+| VMess | Supported |
+| Trojan | Supported |
+| Shadowsocks | Supported |
+| SOCKS 4/5, HTTP(S) | Supported |
+| Hysteria2, TUIC | Supported |
+| WireGuard | Supported |
+| Custom configs | Supported |
 
-[安装包的说明，如果你不知道要下载哪一个](https://github.com/tarik1377/nekoray/wiki/Installation-package-description)
+---
 
-### Package
+## Quick Start
 
-#### AUR
+### 1. Download
 
-- [nekoray](https://aur.archlinux.org/packages/nekoray)
-- [nekoray-git](https://aur.archlinux.org/packages/nekoray-git)
+Download the latest release from [**Releases**](https://github.com/tarik1377/nekoray/releases/latest).
 
-#### archlinuxcn
+### 2. Unzip & Run
 
-- [nekoray](https://github.com/archlinuxcn/repo/tree/master/archlinuxcn/nekoray)
-- [nekoray-git](https://github.com/archlinuxcn/repo/tree/master/archlinuxcn/nekoray-git)
+Extract the archive. Run `nekobox.exe` **as Administrator** (required for TUN mode).
 
-#### Scoop Extras
+### 3. Add Profile
 
-`scoop install nekoray`
+- Click **Server** → **New profile** → **VLESS**
+- Enter your server details
+- Double-click the profile to connect
 
-## 更改记录 & 发布频道 / Changelog & Telegram Channel
+### 4. Enable TUN
 
-https://github.com/tarik1377/nekoray
+Go to **Settings** → **TUN Mode** → Enable. All system traffic will be routed automatically.
 
-## 项目主页 & 文档 / Homepage & Documents
+---
 
-https://github.com/tarik1377/nekoray
+## Default Configuration
 
-## 代理 / Proxy
+GreenRhythm comes pre-configured for optimal use:
 
-- SOCKS (4/4a/5)
-- HTTP(S)
-- Shadowsocks
-- VMess
-- VLESS
-- Trojan
-- TUIC ( sing-box )
-- NaïveProxy ( Custom Core )
-- Hysteria2 ( Custom Core or sing-box )
-- Custom Outbound
-- Custom Config
-- Custom Core
+```
+Direct (no proxy):     .ru .su .рф + VK, Yandex, Mail.ru, Avito, Ozon, WB, Sber...
+                       + Microsoft, Windows Update, Office, Bing
+Via proxy:             Everything else (YouTube, GitHub, Discord, Claude, etc.)
+DNS:                   Cloudflare (international) + Yandex (RU)
+Process routing:       Discord, Telegram, Claude → always proxy
+Ad blocking:           geosite:category-ads-all
+```
 
-## 订阅 / Subscription
+---
 
-- Raw: some widely used formats (like Shadowsocks, Clash and v2rayN)
-- 原始格式: 一些广泛使用的格式 (如 Shadowsocks、Clash 和 v2rayN)
+## Build from Source
 
-## 运行参数
+### Requirements
 
-[运行参数](docs/RunFlags.md)
+- Qt 6.7+ (MSVC 2022)
+- Go 1.24+
+- CMake + Ninja
+- MSVC 2022
 
-## Windows 运行
+### Build
 
-若提示 DLL 缺失，无法运行，请下载 安装 [微软 C++ 运行库](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+```bash
+# Build Go core
+cd go/cmd/nekobox_core
+go build -tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls"
 
-## Linux 运行
+# Build Qt GUI
+mkdir build && cd build
+cmake -GNinja -DQT_VERSION_MAJOR=6 -DCMAKE_BUILD_TYPE=Release ..
+ninja
+```
 
-[Linux 运行教程](docs/Run_Linux.md)
-
-## 编译教程 / Compile Tutorial
-
-请看 [技术文档 / Technical documentation](https://github.com/tarik1377/nekoray/tree/main/docs)
-
-## 捐助 / Donate
-
-如果这个项目对您有帮助，可以通过捐赠的方式帮助我们维持这个项目。
-
-捐赠满等额 50 USD 可以在「[捐赠榜](https://mtrdnt.pages.dev/donation_list)」显示头像，如果您未被添加到这里，欢迎联系我们补充。
-
-Donations of 50 USD or more can display your avatar on the [Donation List](https://mtrdnt.pages.dev/donation_list). If you are not added here, please contact us to add it.
-
-USDT TRC20
-
-`TRhnA7SXE5Sap5gSG3ijxRmdYFiD4KRhPs`
-
-XMR
-
-`49bwESYQjoRL3xmvTcjZKHEKaiGywjLYVQJMUv79bXonGiyDCs8AzE3KiGW2ytTybBCpWJUvov8SjZZEGg66a4e59GXa6k5`
+---
 
 ## Credits
 
-Core:
+Built on the shoulders of giants:
 
-- [v2fly/v2ray-core](https://github.com/v2fly/v2ray-core) ( < 3.10 )
-- [MatsuriDayo/Matsuri](https://github.com/MatsuriDayo/Matsuri) ( < 3.10 )
-- [MatsuriDayo/v2ray-core](https://github.com/MatsuriDayo/v2ray-core) ( < 3.10 )
-- [XTLS/Xray-core](https://github.com/XTLS/Xray-core) ( 3.10 <= Version <= 3.26 )
-- [MatsuriDayo/Xray-core](https://github.com/MatsuriDayo/Xray-core) ( 3.10 <= Version <= 3.26 )
-- [SagerNet/sing-box](https://github.com/SagerNet/sing-box)
-- [Matsuridayo/sing-box-extra](https://github.com/MatsuriDayo/sing-box-extra)
+- [SagerNet/sing-box](https://github.com/SagerNet/sing-box) — core engine
+- [MatsuriDayo/nekoray](https://github.com/MatsuriDayo/nekoray) — original project (archived)
+- [Qt](https://www.qt.io/) — GUI framework
 
-Gui:
+---
 
-- [Qv2ray](https://github.com/Qv2ray/Qv2ray)
-- [Qt](https://www.qt.io/)
-- [protobuf](https://github.com/protocolbuffers/protobuf)
-- [yaml-cpp](https://github.com/jbeder/yaml-cpp)
-- [zxing-cpp](https://github.com/nu-book/zxing-cpp)
-- [QHotkey](https://github.com/Skycoder42/QHotkey)
-- [AppImageKit](https://github.com/AppImage/AppImageKit)
+<p align="center">
+  <sub>GreenRhythm is licensed under GPL-3.0</sub>
+</p>
