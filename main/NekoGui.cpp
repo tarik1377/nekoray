@@ -303,7 +303,7 @@ namespace NekoGui {
         if (isDefault) {
             QString version = SubStrBefore(NKR_VERSION, "-");
             if (!version.contains(".")) version = "2.0";
-            return "NekoBox/PC/" + version + " (Prefer ClashMeta Format)";
+            return "GreenRhythm/PC/" + version + " (Prefer ClashMeta Format)";
         }
         return user_agent;
     }

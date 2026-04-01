@@ -1,4 +1,4 @@
-# NekoBox For PC
+# GreenRhythm
 
 Qt based cross-platform GUI proxy configuration manager (backend: sing-box)
 
@@ -7,6 +7,8 @@ Support Windows / Linux out of the box now.
 基于 Qt 的跨平台代理配置管理器 (后端 sing-box)
 
 目前支持 Windows / Linux 开箱即用
+
+> This is a fork of [NekoBox/NekoRay](https://github.com/MatsuriDayo/nekoray) by MatsuriDayo.
 
 ## 下载 / Download
 

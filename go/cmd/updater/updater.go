@@ -64,7 +64,7 @@ func Updater() {
 	// update move
 	err := Mv("./nekoray_update/nekoray", "./")
 	if err != nil {
-		MessageBoxPlain("NekoGui Updater", "Update failed. Please close the running instance and run the updater again.\n\n"+err.Error())
+		MessageBoxPlain("GreenRhythm Updater", "Update failed. Please close the running instance and run the updater again.\n\n"+err.Error())
 		log.Fatalln(err.Error())
 	}
 
@@ -72,7 +72,7 @@ func Updater() {
 	os.RemoveAll("./nekoray.zip")
 	os.RemoveAll("./nekoray.tar.gz")
 
-	// nekoray -> nekobox
+	// clean up old binaries
 	os.Remove("./nekoray.exe")
 	os.Remove("./nekoray.png")
 	os.Remove("./nekoray_core.exe")
