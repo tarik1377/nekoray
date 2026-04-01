@@ -34,6 +34,7 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		defer resp.Body.Close()
 
 		v := []struct {
+			TagName string `json:"tag_name"`
 			HtmlUrl string `json:"html_url"`
 			Assets  []struct {
 				Name               string `json:"name"`
@@ -49,9 +50,6 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		}
 
 		nowVer := neko_common.Version_neko
-		// Strip known prefixes for version comparison
-		nowVer = strings.TrimPrefix(nowVer, "nekoray-")
-		nowVer = strings.TrimPrefix(nowVer, "greenrhythm-")
 
 		var search string
 		if runtime.GOOS == "windows" && runtime.GOARCH == "amd64" {
@@ -66,23 +64,22 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		}
 
 		for _, release := range v {
-			if len(release.Assets) > 0 {
-				for _, asset := range release.Assets {
-					if strings.Contains(asset.Name, nowVer) {
-						return ret, nil // No update
-					}
-					if strings.Contains(asset.Name, search) {
-						if release.Prerelease && !in.CheckPreRelease {
-							continue
-						}
-						update_download_url = asset.BrowserDownloadUrl
-						ret.AssetsName = asset.Name
-						ret.DownloadUrl = asset.BrowserDownloadUrl
-						ret.ReleaseUrl = release.HtmlUrl
-						ret.ReleaseNote = release.Body
-						ret.IsPreRelease = release.Prerelease
-						return ret, nil // update
-					}
+			// Compare by tag (e.g. "v1.0.4" == current version → no update)
+			if release.TagName == nowVer {
+				return ret, nil // Already on latest
+			}
+			if release.Prerelease && !in.CheckPreRelease {
+				continue
+			}
+			for _, asset := range release.Assets {
+				if strings.Contains(asset.Name, search) {
+					update_download_url = asset.BrowserDownloadUrl
+					ret.AssetsName = asset.Name
+					ret.DownloadUrl = asset.BrowserDownloadUrl
+					ret.ReleaseUrl = release.HtmlUrl
+					ret.ReleaseNote = release.Body
+					ret.IsPreRelease = release.Prerelease
+					return ret, nil // Update available
 				}
 			}
 		}

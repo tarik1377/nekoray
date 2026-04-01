@@ -45,6 +45,8 @@ jobs:
       - name: Build Go
         if: matrix.cross_os != 'public_res'
         shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || '' }}
         run: |
           GOOS=${{ matrix.cross_os }} GOARCH=${{ matrix.cross_arch }} ./libs/build_go.sh
 
