@@ -64,7 +64,6 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		}
 
 		for _, release := range v {
-			// Compare by tag (e.g. "v1.0.4" == current version → no update)
 			if release.TagName == nowVer {
 				return ret, nil // Already on latest
 			}
@@ -85,7 +84,7 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		}
 	} else { // Download update
 		if update_download_url == "" {
-			ret.Error = "?"
+			ret.Error = "No update URL"
 			return ret, nil
 		}
 
@@ -97,7 +96,8 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		}
 		defer resp.Body.Close()
 
-		f, err := os.OpenFile("../nekoray.zip", os.O_TRUNC|os.O_CREATE|os.O_RDWR, 0644)
+		// Save as greenrhythm.zip (updater looks for this)
+		f, err := os.OpenFile("../greenrhythm.zip", os.O_TRUNC|os.O_CREATE|os.O_RDWR, 0644)
 		if err != nil {
 			ret.Error = err.Error()
 			return ret, nil
