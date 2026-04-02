@@ -9,17 +9,17 @@ import (
 	"os"
 	"time"
 
-	"github.com/matsuridayo/libneko/neko_common"
 	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/include"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing/common/json"
 	M "github.com/sagernet/sing/common/metadata"
+
+	singjson "github.com/sagernet/sing/common/json"
 )
 
 // nekoCreate creates a sing-box instance from JSON config bytes.
 func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
-	// Transform geosite/geoip to rule_set for sing-box 1.12+ compatibility
+	// Transform legacy config fields if needed
 	transformed, err := transformConfigBytes(configJSON)
 	if err != nil {
 		log.Printf("config transform warning: %v", err)
@@ -27,16 +27,13 @@ func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
 		configJSON = transformed
 	}
 
-	// Debug: write transformed config to file
-	if neko_common.Debug {
-		_ = os.WriteFile("./neko_debug_config.json", configJSON, 0644)
-	}
+	// Always write debug config
+	_ = os.WriteFile("./neko_debug_config.json", configJSON, 0644)
 
-	// Context MUST be created BEFORE unmarshaling — DNS transport registry is needed
 	ctx, cancel := context.WithCancel(context.Background())
 	ctx = include.Context(ctx)
 
-	options, err := json.UnmarshalExtendedContext[option.Options](ctx, configJSON)
+	options, err := singjson.UnmarshalExtendedContext[option.Options](ctx, configJSON)
 	if err != nil {
 		cancel()
 		return nil, nil, err
