@@ -57,12 +57,30 @@ func Updater() {
 		f.Close()
 	}
 
-	// remove old file
-	removeAll("./*.dll")
+	// remove old crash dumps (keep DLLs — they're in the update package)
 	removeAll("./*.dmp")
 
-	// update move
-	err := Mv("./nekoray_update/nekoray", "./")
+	// update move — try GreenRhythm folder first, fallback to nekoray
+	updateDir := FindExist([]string{
+		"./nekoray_update/GreenRhythm",
+		"./nekoray_update/nekoray",
+	})
+	if updateDir == "" {
+		// try any single folder inside nekoray_update
+		entries, _ := os.ReadDir("./nekoray_update")
+		for _, e := range entries {
+			if e.IsDir() {
+				updateDir = "./nekoray_update/" + e.Name()
+				break
+			}
+		}
+	}
+	if updateDir == "" {
+		MessageBoxPlain("GreenRhythm Updater", "Update failed: no update folder found.")
+		log.Fatalln("no update folder found")
+	}
+
+	err := Mv(updateDir, "./")
 	if err != nil {
 		MessageBoxPlain("GreenRhythm Updater", "Update failed. Please close the running instance and run the updater again.\n\n"+err.Error())
 		log.Fatalln(err.Error())
