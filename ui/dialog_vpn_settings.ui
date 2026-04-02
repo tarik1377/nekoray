@@ -173,7 +173,7 @@ This needs to be run NekoBox with administrator privileges.</string>
      <item>
       <widget class="QCheckBox" name="whitelist_mode">
        <property name="toolTip">
-        <string>Whether blacklisted or whitelisted, your traffic will be handled by nekobox_core (sing-tun). This is NOT equal to &quot;process mode&quot; of some software.</string>
+        <string>Whether blacklisted or whitelisted, your traffic will be handled by greenrhythm_core (sing-tun). This is NOT equal to &quot;process mode&quot; of some software.</string>
        </property>
        <property name="text">
         <string>Whitelist mode</string>

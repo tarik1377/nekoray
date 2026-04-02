@@ -25,15 +25,15 @@ if [ ! -s /usr/share/applications/nekoray.desktop ]; then
 [Desktop Entry]
 Name=nekoray
 Comment=Qt based cross-platform GUI proxy configuration manager (backend: sing-box)
-Exec=sh -c "PATH=/opt/nekoray:\$PATH /opt/nekoray/nekobox -appdata"
-Icon=/opt/nekoray/nekobox.png
+Exec=sh -c "PATH=/opt/nekoray:\$PATH /opt/nekoray/greenrhythm -appdata"
+Icon=/opt/nekoray/greenrhythm.png
 Terminal=false
 Type=Application
 Categories=Network;Application;
 END
 fi
 
-setcap cap_net_admin=ep /opt/nekoray/nekobox_core
+setcap cap_net_admin=ep /opt/nekoray/greenrhythm_core
 
 update-desktop-database
 EOF

@@ -475,8 +475,8 @@ namespace NekoGui {
         search << "/usr/share/sing-geoip";
         search << "/usr/share/sing-geosite";
         search << "/usr/share/sing-box";
-        search << "/usr/lib/nekobox";
-        search << "/usr/share/nekobox";
+        search << "/usr/lib/greenrhythm";
+        search << "/usr/share/greenrhythm";
         for (const auto &dir: search) {
             if (dir.isEmpty()) continue;
             QFileInfo asset(dir + "/" + name);
@@ -488,7 +488,7 @@ namespace NekoGui {
     }
 
     QString FindNekoBoxCoreRealPath() {
-        auto fn = QApplication::applicationDirPath() + "/nekobox_core";
+        auto fn = QApplication::applicationDirPath() + "/greenrhythm_core";
         auto fi = QFileInfo(fn);
         if (fi.isSymLink()) return fi.symLinkTarget();
         return fn;

@@ -804,7 +804,7 @@ namespace NekoGui {
         auto scriptFn = ":/neko/vpn/vpn-run-root.sh";
         if (QFile::exists("vpn/vpn-run-root.sh")) scriptFn = "vpn/vpn-run-root.sh";
         auto script = ReadFileText(scriptFn)
-                          .replace("./nekobox_core", QApplication::applicationDirPath() + "/nekobox_core")
+                          .replace("./greenrhythm_core", QApplication::applicationDirPath() + "/greenrhythm_core")
                           .replace("$CONFIG_PATH", configPath);
         // write script
         QFile file2;
