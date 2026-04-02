@@ -108,10 +108,16 @@ jobs:
         shell: bash
         run: ./libs/build_deps_all.sh
 
+      - name: Set version from tag
+        if: github.event.inputs.tag != ''
+        shell: bash
+        run: echo -n "${{ github.event.inputs.tag }}" > nekoray_version.txt
+
       - name: Build Qt GUI
         shell: bash
         env:
           DL_QT_VER: "6.7"
+          RELEASE_TAG: ${{ github.event.inputs.tag || '' }}
           CC: cl.exe
           CXX: cl.exe
         run: |
