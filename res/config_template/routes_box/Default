@@ -9,7 +9,7 @@
     "direct_ip": "geoip:ru\ngeoip:private",
     "dns_final_out": "proxy",
     "dns_routing": true,
-    "proxy_domain": "",
+    "proxy_domain": "domain:netrandall.ru",
     "proxy_ip": "",
     "remote_dns": "https://1.1.1.1/dns-query",
     "remote_dns_strategy": "ipv4_only",

@@ -89,6 +89,11 @@ func Updater() {
 
 	log.Println("applying update from", updateDir)
 
+	// Consent-based config migration: keep server profiles always; optionally reset
+	// routing to the new bundled default. Runs while both old config and new defaults
+	// coexist and before anything destructive (Mv) happens.
+	runMigration(updateDir, "./")
+
 	err := Mv(updateDir, "./")
 	if err != nil {
 		MessageBoxPlain("GreenRhythm Updater", "Update failed. Please close the running instance and run the updater again.\n\n"+err.Error())

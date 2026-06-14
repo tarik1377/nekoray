@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,11 +65,13 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		}
 
 		for _, release := range v {
-			if release.TagName == nowVer {
-				return ret, nil // Already on latest
-			}
 			if release.Prerelease && !in.CheckPreRelease {
 				continue
+			}
+			// First acceptable release is the newest (GitHub returns newest-first).
+			// Offer it only if it is strictly newer than what we run now.
+			if !shouldUpdate(release.TagName, nowVer) {
+				return ret, nil // Already up to date
 			}
 			for _, asset := range release.Assets {
 				if strings.Contains(asset.Name, search) {
@@ -81,6 +84,7 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 					return ret, nil // Update available
 				}
 			}
+			return ret, nil // Newest release has no matching asset; nothing to offer
 		}
 	} else { // Download update
 		if update_download_url == "" {
@@ -113,4 +117,53 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 	}
 
 	return ret, nil
+}
+
+// parseVer parses a clean GreenRhythm tag "vX.Y.Z" into numeric parts.
+// Returns ok=false for anything that is NOT a clean dotted-numeric version —
+// notably the legacy upstream string "4.0.1-2024-12-12" (it carries a suffix).
+func parseVer(s string) ([]int, bool) {
+	s = strings.TrimPrefix(s, "v")
+	if s == "" || strings.ContainsAny(s, "-+") {
+		return nil, false
+	}
+	parts := strings.Split(s, ".")
+	nums := make([]int, 0, len(parts))
+	for _, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return nil, false
+		}
+		nums = append(nums, n)
+	}
+	return nums, true
+}
+
+// shouldUpdate reports whether release tag `latest` should be offered to a client
+// running `cur`. If `cur` is not a clean vX.Y.Z (e.g. a stale upstream build that
+// reports "4.0.1-2024-12-12"), always offer the latest clean release so those
+// stragglers get rescued instead of being trapped by a higher legacy major.
+// If `latest` itself is unparseable, never offer (avoid junk prompts).
+func shouldUpdate(latest, cur string) bool {
+	lv, lok := parseVer(latest)
+	if !lok {
+		return false
+	}
+	cv, cok := parseVer(cur)
+	if !cok {
+		return true
+	}
+	for i := 0; i < len(lv) || i < len(cv); i++ {
+		var a, b int
+		if i < len(lv) {
+			a = lv[i]
+		}
+		if i < len(cv) {
+			b = cv[i]
+		}
+		if a != b {
+			return a > b
+		}
+	}
+	return false
 }

@@ -505,7 +505,7 @@ void MainWindow::CheckUpdate() {
         return;
     }
 
-    if (response.release_download_url() == nullptr) {
+    if (response.download_url().empty()) {
         runOnUiThread([=] {
             MessageBoxInfo(QObject::tr("Update"), QObject::tr("No update"));
         });
