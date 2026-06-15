@@ -347,6 +347,10 @@ namespace NekoGui {
             // common
             // apply domain_strategy
             outbound["domain_strategy"] = dataStore->routing->outbound_domain_strategy;
+            // Keep the NAT/CGNAT mapping fresh so long-lived proxy connections don't get
+            // RST'd around the ~2min idle-eviction mark (sing-box default first probe = 5min).
+            outbound["tcp_keep_alive"] = "20s";
+            outbound["tcp_keep_alive_interval"] = "15s";
             // apply mux
             if (!muxApplied && needMux) {
                 auto muxObj = QJsonObject{
@@ -428,6 +432,11 @@ namespace NekoGui {
             inboundObj["strict_route"] = dataStore->vpn_strict_route;
             inboundObj["inet4_address"] = "172.19.0.1/28";
             if (dataStore->vpn_ipv6) inboundObj["inet6_address"] = "fdfe:dcba:9876::1/126";
+            // Keep LAN/private traffic out of the tunnel entirely (route-table level), so
+            // cross-subnet probes (e.g. Windows Delivery Optimization :7680) don't get
+            // captured and time out. TUN's own 172.19.0.1/28 is set via inet4_address above,
+            // so excluding 172.16/12 is safe.
+            inboundObj["route_exclude_address"] = QJsonArray{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"};
             if (dataStore->routing->sniffing_mode != SniffingMode::DISABLE) {
                 inboundObj["sniff"] = true;
                 inboundObj["sniff_override_destination"] = dataStore->routing->sniffing_mode == SniffingMode::FOR_DESTINATION;
