@@ -7,6 +7,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 )
 
 const (
@@ -245,16 +246,30 @@ func convertGeoRule(rule map[string]interface{}, ruleSets *[]interface{}, known 
 // --- Helpers ---
 
 func addRuleSet(ruleSets *[]interface{}, known map[string]bool, tag, url string) {
-	if !known[tag] {
-		known[tag] = true
-		localPath := tag + ".srs"
-		*ruleSets = append(*ruleSets, map[string]interface{}{
-			"tag":    tag,
-			"type":   "local",
-			"format": "binary",
-			"path":   localPath,
-		})
+	if known[tag] {
+		return
 	}
+	known[tag] = true
+
+	ruleSet := map[string]interface{}{
+		"tag":    tag,
+		"format": "binary",
+	}
+	// Prefer a bundled local .srs (shipped in config/, the core's CWD) so the
+	// default RU rule-sets work offline; fall back to remote download for any geo
+	// tag we don't ship, otherwise referencing e.g. geoip:cn / geosite:google
+	// would point at a missing local file and break the whole config.
+	localPath := tag + ".srs"
+	if _, err := os.Stat(localPath); err == nil {
+		ruleSet["type"] = "local"
+		ruleSet["path"] = localPath
+	} else {
+		ruleSet["type"] = "remote"
+		ruleSet["url"] = url
+		ruleSet["download_detour"] = "proxy" // github raw is often blocked on RU direct
+		ruleSet["update_interval"] = "168h"
+	}
+	*ruleSets = append(*ruleSets, ruleSet)
 }
 
 func ensureMap(config map[string]interface{}, key string) map[string]interface{} {
