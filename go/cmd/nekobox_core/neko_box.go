@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/matsuridayo/libneko/neko_common"
 	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/experimental/v2rayapi"
@@ -34,8 +35,12 @@ func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
 		configJSON = transformed
 	}
 
-	// Always write debug config
-	_ = os.WriteFile("./neko_debug_config.json", configJSON, 0644)
+	// Write the debug config only in debug mode — it contains secrets (inbound auth
+	// password, clash secret, outbound credentials) and was previously written to a
+	// persistent world-readable file on every start.
+	if neko_common.Debug {
+		_ = os.WriteFile("./neko_debug_config.json", configJSON, 0600)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ctx = include.Context(ctx)

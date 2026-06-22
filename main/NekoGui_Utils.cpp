@@ -3,7 +3,7 @@
 #include "3rdparty/base64.h"
 #include "3rdparty/QThreadCreateThread.hpp"
 
-#include <random>
+#include <QRandomGenerator>
 
 #include <QApplication>
 #include <QUrlQuery>
@@ -71,26 +71,20 @@ QString GetQueryValue(const QUrlQuery &q, const QString &key, const QString &def
 }
 
 QString GetRandomString(int randomStringLength) {
-    std::random_device rd;
-    std::mt19937 mt(rd());
-
+    // QRandomGenerator::system() is backed by the OS CSPRNG on every platform — the gRPC
+    // auth token is derived from this, so it must not use the predictable mt19937 stream.
     const QString possibleCharacters("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789");
-
-    std::uniform_int_distribution<int> dist(0, possibleCharacters.length() - 1);
+    auto *rng = QRandomGenerator::system();
 
     QString randomString;
     for (int i = 0; i < randomStringLength; ++i) {
-        QChar nextChar = possibleCharacters.at(dist(mt));
-        randomString.append(nextChar);
+        randomString.append(possibleCharacters.at(rng->bounded(possibleCharacters.length())));
     }
     return randomString;
 }
 
 quint64 GetRandomUint64() {
-    std::random_device rd;
-    std::mt19937 mt(rd());
-    std::uniform_int_distribution<quint64> dist;
-    return dist(mt);
+    return QRandomGenerator::system()->generate64();
 }
 
 // QString >> QJson
