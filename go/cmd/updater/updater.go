@@ -1,14 +1,11 @@
 package main
 
 import (
-	"context"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-
-	"github.com/codeclysm/extract"
 )
 
 func Updater() {
@@ -41,26 +38,14 @@ func Updater() {
 	extractDir := "./greenrhythm_update"
 	if strings.HasSuffix(updatePackagePath, ".zip") {
 		pre_cleanup()
-		f, err := os.Open(updatePackagePath)
-		if err != nil {
+		if err := extractZip(updatePackagePath, extractDir); err != nil {
 			log.Fatalln(err.Error())
 		}
-		err = extract.Zip(context.Background(), f, extractDir, nil)
-		if err != nil {
-			log.Fatalln(err.Error())
-		}
-		f.Close()
 	} else if strings.HasSuffix(updatePackagePath, ".tar.gz") {
 		pre_cleanup()
-		f, err := os.Open(updatePackagePath)
-		if err != nil {
+		if err := extractTarGz(updatePackagePath, extractDir); err != nil {
 			log.Fatalln(err.Error())
 		}
-		err = extract.Gz(context.Background(), f, extractDir, nil)
-		if err != nil {
-			log.Fatalln(err.Error())
-		}
-		f.Close()
 	}
 
 	// remove old crash dumps
