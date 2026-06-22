@@ -198,8 +198,22 @@ namespace NekoGui_fmt {
             outbound["down_mbps"] = downloadMbps;
 
             if (!hopPort.trimmed().isEmpty()) {
-                outbound["hop_ports"] = hopPort;
-                outbound["hop_interval"] = hopInterval;
+                // sing-box 1.13 wants "server_ports" as a list of "start:end" ranges
+                // and "hop_interval" as a duration string. The stored hopPort/mport
+                // uses comma-separated single ports or "start-end" ranges, so normalise
+                // (a bare int or hyphen range would otherwise fail to parse / be ignored).
+                QStringList serverPorts;
+                for (const auto &part : hopPort.split(",")) {
+                    QString p = part.trimmed();
+                    if (p.isEmpty()) continue;
+                    if (p.contains("-")) p.replace("-", ":"); // 20000-50000 -> 20000:50000
+                    else if (!p.contains(":")) p = p + ":" + p; // 443 -> 443:443
+                    serverPorts << p;
+                }
+                if (!serverPorts.isEmpty()) {
+                    outbound["server_ports"] = QList2QJsonArray(serverPorts);
+                    outbound["hop_interval"] = QString::number(hopInterval) + "s";
+                }
             }
             if (!obfsPassword.isEmpty()) {
                 outbound["obfs"] = QJsonObject{
