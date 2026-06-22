@@ -120,6 +120,40 @@ namespace NekoGui {
             return resolved;
         };
 
+        // Auto-failover (opt-in): build every eligible internal server in the group as a
+        // sibling outbound and wrap them in a sing-box urltest, which auto-picks the
+        // lowest-latency server and fails over when the active one dies. The wrapper keeps
+        // the public tag "proxy", so DNS detour and route rules need no change. External-core
+        // protocols (hysteria2/naive etc.) are skipped — each would spawn its own helper
+        // process. Falls back to the normal single-profile build if no candidate qualifies.
+        if (dataStore->auto_failover && !status->forTest) {
+            QJsonArray candidateTags;
+            int cid = 1;
+            for (const auto &m: group->ProfilesWithOrder()) {
+                if (m == nullptr || m->type == "chain") continue;
+                if (m->bean->NeedExternal(true) != 0) continue;
+                QList<std::shared_ptr<ProxyEntity>> one;
+                one += m;
+                auto t = BuildChainInternal(cid++, one, status);
+                if (!status->result->error.isEmpty()) return {};
+                if (!t.isEmpty()) candidateTags += t;
+            }
+            if (!candidateTags.isEmpty()) {
+                status->outbounds += QJsonObject{
+                    {"type", "urltest"},
+                    {"tag", "proxy"},
+                    {"outbounds", candidateTags},
+                    {"url", dataStore->test_latency_url},
+                    {"interval", "3m"},
+                    {"tolerance", 50},
+                    {"idle_timeout", "30m"},
+                };
+                status->result->outboundStat = status->ent->traffic_data;
+                return "proxy";
+            }
+            // no eligible candidate → fall through to the normal single-profile build
+        }
+
         // Make list
         auto ents = resolveChain(status->ent);
         if (!status->result->error.isEmpty()) return {};

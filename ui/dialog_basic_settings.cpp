@@ -199,6 +199,7 @@ DialogBasicSettings::DialogBasicSettings(QWidget *parent)
     D_LOAD_COMBO_STRING(mux_protocol)
     D_LOAD_BOOL(mux_padding)
     D_LOAD_BOOL(mux_default_on)
+    D_LOAD_BOOL(auto_failover)
 
     // Security
 
@@ -274,6 +275,7 @@ void DialogBasicSettings::accept() {
     D_SAVE_COMBO_STRING(mux_protocol)
     D_SAVE_BOOL(mux_padding)
     D_SAVE_BOOL(mux_default_on)
+    D_SAVE_BOOL(auto_failover)
 
     // Security
 

@@ -619,6 +619,16 @@
                  </property>
                 </widget>
                </item>
+               <item>
+                <widget class="QCheckBox" name="auto_failover">
+                 <property name="text">
+                  <string>Auto-failover (fastest server)</string>
+                 </property>
+                 <property name="toolTip">
+                  <string>Connect to the fastest server in the current group and automatically switch over if it dies (sing-box urltest). Internal protocols only.</string>
+                 </property>
+                </widget>
+               </item>
               </layout>
              </item>
             </layout>
