@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"grpc_server/gen"
 	"io"
 	"net/http"
@@ -132,18 +133,24 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		}
 		f.Sync()
 
-		// Verify against the release-published SHA-256 when available. Catches
-		// corrupted/truncated downloads; a signature with an offline key is the
-		// stronger follow-up against a fully compromised release.
+		// Verify against the release-published SHA-256. If the release published a
+		// checksum, we MUST fetch and match it — a fetch/parse failure is treated as a
+		// verification failure (abort), not a silent skip. (Signature with an offline
+		// key remains the stronger follow-up against a fully compromised release.)
 		if update_checksum_url != "" {
-			if expected := fetchExpectedSha(ctx, client, update_checksum_url); expected != "" {
-				got := hex.EncodeToString(h.Sum(nil))
-				if !strings.EqualFold(got, expected) {
-					f.Close()
-					os.Remove(zipPath)
-					ret.Error = "update package checksum mismatch — aborting"
-					return ret, nil
-				}
+			expected, err := fetchExpectedSha(ctx, client, update_checksum_url)
+			if err != nil || expected == "" {
+				f.Close()
+				os.Remove(zipPath)
+				ret.Error = "could not verify update checksum — aborting"
+				return ret, nil
+			}
+			got := hex.EncodeToString(h.Sum(nil))
+			if !strings.EqualFold(got, expected) {
+				f.Close()
+				os.Remove(zipPath)
+				ret.Error = "update package checksum mismatch — aborting"
+				return ret, nil
 			}
 		}
 	}
@@ -152,27 +159,27 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 }
 
 // fetchExpectedSha downloads a sha256sum file and returns the hex digest (the first
-// whitespace-separated field). Returns "" on any error so verification is skipped
-// gracefully when no checksum is published (e.g. older releases).
-func fetchExpectedSha(ctx context.Context, client *http.Client, url string) string {
+// whitespace-separated field). Returns an error on any failure so the caller can
+// abort rather than silently skip verification when a checksum was published.
+func fetchExpectedSha(ctx context.Context, client *http.Client, url string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
 	if err != nil {
-		return ""
+		return "", err
 	}
 	fields := strings.Fields(string(b))
 	if len(fields) == 0 {
-		return ""
+		return "", errors.New("empty checksum file")
 	}
-	return fields[0]
+	return fields[0], nil
 }
 
 // parseVer parses a clean GreenRhythm tag "vX.Y.Z" into numeric parts.
