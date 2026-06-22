@@ -11,6 +11,7 @@ import (
 	"github.com/matsuridayo/libneko/neko_common"
 	"github.com/matsuridayo/libneko/speedtest"
 	box "github.com/sagernet/sing-box"
+	"github.com/sagernet/sing-box/experimental/v2rayapi"
 )
 
 type server struct {
@@ -62,6 +63,7 @@ func (s *server) Stop(ctx context.Context, in *gen.EmptyReq) (out *gen.ErrorResp
 	instance.Close()
 
 	instance = nil
+	statsService = nil
 
 	return
 }
@@ -118,11 +120,18 @@ func (s *server) Test(ctx context.Context, in *gen.TestReq) (out *gen.TestResp, 
 func (s *server) QueryStats(ctx context.Context, in *gen.QueryStatsReq) (out *gen.QueryStatsResp, _ error) {
 	out = &gen.QueryStatsResp{}
 
-	// TODO: Re-implement stats querying via the V2Ray API service.
-	// In sing-box 1.13.5, if V2Ray stats is configured in JSON config,
-	// the stats service is created internally. A gRPC or direct query
-	// mechanism needs to be implemented to retrieve traffic counters.
-	// For now, return 0.
+	if statsService == nil {
+		return
+	}
+
+	// Counter name format from sing-box v2rayapi: outbound>>>{tag}>>>traffic>>>{uplink|downlink}.
+	// in.Direct is "uplink"/"downlink" (TrafficLooper). Reset_ on read: the GUI treats each
+	// returned value as the per-interval delta (rate = value*1000/interval), so reset to zero.
+	name := "outbound>>>" + in.Tag + ">>>traffic>>>" + in.Direct
+	resp, err := statsService.GetStats(ctx, &v2rayapi.GetStatsRequest{Name: name, Reset_: true})
+	if err == nil && resp != nil && resp.Stat != nil {
+		out.Traffic = resp.Stat.Value
+	}
 
 	return
 }

@@ -236,3 +236,45 @@ func TestTransformInvalidJSONPassthrough(t *testing.T) {
 		t.Errorf("invalid JSON should pass through unchanged, got %q", out)
 	}
 }
+
+// v2ray_api stats must be injected for all outbound tags so the GUI traffic/speed
+// display works (QueryStats reads these counters).
+func TestTransformInjectsV2RayStats(t *testing.T) {
+	m := mustTransform(t, map[string]interface{}{
+		"outbounds": []interface{}{
+			map[string]interface{}{"type": "vless", "tag": "proxy"},
+			map[string]interface{}{"type": "direct", "tag": "direct"},
+		},
+	})
+	exp, ok := m["experimental"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("experimental section missing: %#v", m["experimental"])
+	}
+	api, ok := exp["v2ray_api"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("v2ray_api missing: %#v", exp)
+	}
+	if s, _ := api["listen"].(string); s == "" {
+		t.Errorf("v2ray_api.listen must be a non-empty address, got %#v", api["listen"])
+	}
+	stats, ok := api["stats"].(map[string]interface{})
+	if !ok || stats["enabled"] != true {
+		t.Fatalf("stats.enabled must be true, got %#v", api["stats"])
+	}
+	tags, _ := stats["outbounds"].([]interface{})
+	if !contains(tags, "proxy") || !contains(tags, "direct") {
+		t.Errorf("stats.outbounds should list all outbound tags, got %#v", tags)
+	}
+}
+
+// An explicit experimental.v2ray_api must be preserved (no override).
+func TestTransformPreservesExistingV2RayApi(t *testing.T) {
+	m := mustTransform(t, map[string]interface{}{
+		"outbounds":    []interface{}{map[string]interface{}{"type": "direct", "tag": "direct"}},
+		"experimental": map[string]interface{}{"v2ray_api": map[string]interface{}{"listen": "keep-me"}},
+	})
+	api := m["experimental"].(map[string]interface{})["v2ray_api"].(map[string]interface{})
+	if api["listen"] != "keep-me" {
+		t.Errorf("existing v2ray_api must be preserved, got %#v", api)
+	}
+}
