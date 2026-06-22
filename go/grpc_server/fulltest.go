@@ -56,7 +56,7 @@ func DoFullTest(ctx context.Context, in *gen.TestReq, instance interface{}) (out
 	var udpLatency string
 	if in.FullUdpLatency {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-		result := make(chan string)
+		result := make(chan string, 1) // buffered so the goroutine never leaks on timeout
 
 		go func() {
 			var startTime = time.Now()
@@ -121,7 +121,7 @@ func DoFullTest(ctx context.Context, in *gen.TestReq, instance interface{}) (out
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(in.FullSpeedTimeout))
-		result := make(chan string)
+		result := make(chan string, 1) // buffered so the goroutine never leaks on timeout
 		var bodyClose io.Closer
 
 		go func() {
