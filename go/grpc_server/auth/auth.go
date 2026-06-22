@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/subtle"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -21,7 +22,8 @@ func (a Authenticator) Authenticate(ctx context.Context) (newCtx context.Context
 		return ctx, err
 	}
 
-	if auth != a.Token {
+	// Constant-time compare to avoid leaking the token via timing.
+	if subtle.ConstantTimeCompare([]byte(auth), []byte(a.Token)) != 1 {
 		return ctx, status.Error(codes.Unauthenticated, "invalid token")
 	}
 
