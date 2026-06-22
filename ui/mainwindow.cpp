@@ -112,7 +112,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
             return;
         }
         auto secret = QString::fromUtf8(QUrl::toPercentEncoding(NekoGui::dataStore->core_box_clash_api_secret));
-        auto url = QStringLiteral("https://metacubex.github.io/metacubexd/#/setup?hostname=127.0.0.1&port=%1&secret=%2").arg(port).arg(secret);
+        // Open the locally-served dashboard (sing-box external_ui) — same loopback origin
+        // as the API, so it avoids the browser's Private Network Access / CORS blocks that
+        // break the hosted dashboard, and works offline.
+        auto url = QStringLiteral("http://127.0.0.1:%1/ui/#/setup?hostname=127.0.0.1&port=%1&secret=%2").arg(port).arg(secret);
         QDesktopServices::openUrl(QUrl(url));
     });
 
