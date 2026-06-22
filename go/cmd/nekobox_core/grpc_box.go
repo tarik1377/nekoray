@@ -63,7 +63,7 @@ func (s *server) Stop(ctx context.Context, in *gen.EmptyReq) (out *gen.ErrorResp
 	instance.Close()
 
 	instance = nil
-	statsService = nil
+	statsService.Store(nil)
 
 	return
 }
@@ -120,7 +120,8 @@ func (s *server) Test(ctx context.Context, in *gen.TestReq) (out *gen.TestResp, 
 func (s *server) QueryStats(ctx context.Context, in *gen.QueryStatsReq) (out *gen.QueryStatsResp, _ error) {
 	out = &gen.QueryStatsResp{}
 
-	if statsService == nil {
+	ss := statsService.Load()
+	if ss == nil {
 		return
 	}
 
@@ -128,7 +129,7 @@ func (s *server) QueryStats(ctx context.Context, in *gen.QueryStatsReq) (out *ge
 	// in.Direct is "uplink"/"downlink" (TrafficLooper). Reset_ on read: the GUI treats each
 	// returned value as the per-interval delta (rate = value*1000/interval), so reset to zero.
 	name := "outbound>>>" + in.Tag + ">>>traffic>>>" + in.Direct
-	resp, err := statsService.GetStats(ctx, &v2rayapi.GetStatsRequest{Name: name, Reset_: true})
+	resp, err := ss.GetStats(ctx, &v2rayapi.GetStatsRequest{Name: name, Reset_: true})
 	if err == nil && resp != nil && resp.Stat != nil {
 		out.Traffic = resp.Stat.Value
 	}
