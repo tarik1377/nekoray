@@ -206,6 +206,19 @@
        </layout>
       </item>
       <item>
+       <widget class="QToolButton" name="toolButton_dashboard">
+        <property name="text">
+         <string>Dashboard</string>
+        </property>
+        <property name="toolTip">
+         <string>Open the Clash dashboard (live connections, traffic, proxy switching). Requires Clash API enabled in Core Options.</string>
+        </property>
+        <property name="toolButtonStyle">
+         <enum>Qt::ToolButtonTextUnderIcon</enum>
+        </property>
+       </widget>
+      </item>
+      <item>
        <spacer name="horizontalSpacer">
         <property name="orientation">
          <enum>Qt::Horizontal</enum>

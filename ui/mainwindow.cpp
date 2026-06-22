@@ -105,6 +105,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->toolButton_update, &QToolButton::clicked, this, [=] { runOnNewThread([=] { CheckUpdate(); }); });
     connect(ui->toolButton_update_sub, &QToolButton::clicked, this, [=] { on_menu_update_subscription_triggered(); });
     connect(ui->toolButton_url_test, &QToolButton::clicked, this, [=] { speedtest_current_group(1, true); });
+    connect(ui->toolButton_dashboard, &QToolButton::clicked, this, [=] {
+        auto port = NekoGui::dataStore->core_box_clash_api;
+        if (port <= 0) {
+            MessageBoxWarning(software_name, tr("Enable the Clash API first in Preferences -> Core Options, then restart the core."));
+            return;
+        }
+        auto secret = QString::fromUtf8(QUrl::toPercentEncoding(NekoGui::dataStore->core_box_clash_api_secret));
+        auto url = QStringLiteral("https://metacubex.github.io/metacubexd/#/setup?hostname=127.0.0.1&port=%1&secret=%2").arg(port).arg(secret);
+        QDesktopServices::openUrl(QUrl(url));
+    });
 
     // Setup log UI
     ui->splitter->restoreState(DecodeB64IfValid(NekoGui::dataStore->splitter_state));
