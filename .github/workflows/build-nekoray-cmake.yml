@@ -12,6 +12,8 @@ on:
         default: "yes"
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
@@ -49,6 +51,13 @@ jobs:
           RELEASE_TAG: ${{ github.event.inputs.tag || '' }}
         run: |
           GOOS=${{ matrix.cross_os }} GOARCH=${{ matrix.cross_arch }} ./libs/build_go.sh
+
+      - name: Test Go (native)
+        if: matrix.cross_os == 'windows'
+        shell: bash
+        run: |
+          (cd go/grpc_server && go test ./...)
+          (cd go/cmd/nekobox_core && go test -tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls" ./...)
 
       - name: Build public resources
         if: matrix.cross_os == 'public_res'
