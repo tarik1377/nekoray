@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/matsuridayo/libneko/neko_common"
@@ -22,8 +23,10 @@ import (
 )
 
 // statsService is the running instance's v2ray_api stats service, used by
-// QueryStats to read per-outbound traffic counters. nil when no instance runs.
-var statsService *v2rayapi.StatsService
+// QueryStats to read per-outbound traffic counters. Accessed concurrently
+// (QueryStats runs on a gRPC goroutine while Start/Stop run on others), so it is
+// an atomic pointer; nil when no instance runs.
+var statsService atomic.Pointer[v2rayapi.StatsService]
 
 // nekoCreate creates a sing-box instance from JSON config bytes.
 func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
@@ -69,10 +72,10 @@ func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
 
 	// Capture the v2ray_api stats service (enabled via injected experimental.v2ray_api)
 	// so QueryStats can read per-outbound traffic counters for the GUI.
-	statsService = nil
+	statsService.Store(nil)
 	if v2 := service.FromContext[adapter.V2RayServer](ctx); v2 != nil {
 		if ss, ok := v2.StatsService().(*v2rayapi.StatsService); ok {
-			statsService = ss
+			statsService.Store(ss)
 		}
 	}
 
