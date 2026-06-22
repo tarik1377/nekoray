@@ -10,12 +10,19 @@ import (
 	"time"
 
 	box "github.com/sagernet/sing-box"
+	"github.com/sagernet/sing-box/adapter"
+	"github.com/sagernet/sing-box/experimental/v2rayapi"
 	"github.com/sagernet/sing-box/include"
 	"github.com/sagernet/sing-box/option"
 	M "github.com/sagernet/sing/common/metadata"
+	"github.com/sagernet/sing/service"
 
 	singjson "github.com/sagernet/sing/common/json"
 )
+
+// statsService is the running instance's v2ray_api stats service, used by
+// QueryStats to read per-outbound traffic counters. nil when no instance runs.
+var statsService *v2rayapi.StatsService
 
 // nekoCreate creates a sing-box instance from JSON config bytes.
 func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
@@ -53,6 +60,15 @@ func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
 		instance.Close()
 		cancel()
 		return nil, nil, err
+	}
+
+	// Capture the v2ray_api stats service (enabled via injected experimental.v2ray_api)
+	// so QueryStats can read per-outbound traffic counters for the GUI.
+	statsService = nil
+	if v2 := service.FromContext[adapter.V2RayServer](ctx); v2 != nil {
+		if ss, ok := v2.StatsService().(*v2rayapi.StatsService); ok {
+			statsService = ss
+		}
 	}
 
 	return instance, cancel, nil

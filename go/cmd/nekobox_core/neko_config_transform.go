@@ -69,7 +69,43 @@ func transformConfigBytes(configJSON []byte) ([]byte, error) {
 	// 7. Clean outbounds: remove empty strings, deprecated fields
 	cleanOutbounds(config)
 
+	// 8. Enable v2ray_api stats so the GUI per-outbound traffic/speed display works
+	injectV2RayStats(config)
+
 	return json.Marshal(config)
+}
+
+// injectV2RayStats enables the sing-box v2ray_api stats service for every outbound so
+// the GUI can read per-outbound traffic counters (QueryStats). A non-empty listen is
+// required for the box to create the service; 127.0.0.1:0 picks a free port and the
+// counters are read in-process. Respects an explicit experimental.v2ray_api if present.
+func injectV2RayStats(config map[string]interface{}) {
+	outbounds, ok := config["outbounds"].([]interface{})
+	if !ok || len(outbounds) == 0 {
+		return
+	}
+	var tags []interface{}
+	for _, ob := range outbounds {
+		if obMap, ok := ob.(map[string]interface{}); ok {
+			if tag, ok := obMap["tag"].(string); ok && tag != "" {
+				tags = append(tags, tag)
+			}
+		}
+	}
+	if len(tags) == 0 {
+		return
+	}
+	exp := ensureMap(config, "experimental")
+	if _, exists := exp["v2ray_api"]; exists {
+		return
+	}
+	exp["v2ray_api"] = map[string]interface{}{
+		"listen": "127.0.0.1:0",
+		"stats": map[string]interface{}{
+			"enabled":   true,
+			"outbounds": tags,
+		},
+	}
 }
 
 // --- Inbounds ---
