@@ -150,6 +150,13 @@ DialogBasicSettings::DialogBasicSettings(QWidget *parent)
     D_LOAD_BOOL(sub_use_proxy)
     D_LOAD_BOOL(sub_clear)
     D_LOAD_BOOL(sub_insecure)
+    // Warn when the user turns off TLS verification for subscription downloads.
+    connect(ui->sub_insecure, &QCheckBox::toggled, this, [this](bool on) {
+        if (on) {
+            MessageBoxWarning(software_name,
+                              tr("Disabling TLS verification exposes subscription downloads to interception on hostile networks. Only enable this if you trust your connection."));
+        }
+    });
     D_LOAD_INT_ENABLE(sub_auto_update, sub_auto_update_enable)
 
     // Core
