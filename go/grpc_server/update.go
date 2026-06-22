@@ -2,6 +2,8 @@ package grpc_server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"grpc_server/gen"
 	"io"
@@ -16,6 +18,7 @@ import (
 )
 
 var update_download_url string
+var update_checksum_url string
 
 func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.UpdateResp, error) {
 	ret := &gen.UpdateResp{}
@@ -73,16 +76,27 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 			if !shouldUpdate(release.TagName, nowVer) {
 				return ret, nil // Already up to date
 			}
+			var mainURL, mainName, checksumURL string
 			for _, asset := range release.Assets {
-				if strings.Contains(asset.Name, search) {
-					update_download_url = asset.BrowserDownloadUrl
-					ret.AssetsName = asset.Name
-					ret.DownloadUrl = asset.BrowserDownloadUrl
-					ret.ReleaseUrl = release.HtmlUrl
-					ret.ReleaseNote = release.Body
-					ret.IsPreRelease = release.Prerelease
-					return ret, nil // Update available
+				if !strings.Contains(asset.Name, search) {
+					continue
 				}
+				if strings.HasSuffix(asset.Name, ".sha256") {
+					checksumURL = asset.BrowserDownloadUrl
+				} else if mainURL == "" {
+					mainURL = asset.BrowserDownloadUrl
+					mainName = asset.Name
+				}
+			}
+			if mainURL != "" {
+				update_download_url = mainURL
+				update_checksum_url = checksumURL
+				ret.AssetsName = mainName
+				ret.DownloadUrl = mainURL
+				ret.ReleaseUrl = release.HtmlUrl
+				ret.ReleaseNote = release.Body
+				ret.IsPreRelease = release.Prerelease
+				return ret, nil // Update available
 			}
 			return ret, nil // Newest release has no matching asset; nothing to offer
 		}
@@ -101,22 +115,64 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		defer resp.Body.Close()
 
 		// Save as greenrhythm.zip (updater looks for this)
-		f, err := os.OpenFile("../greenrhythm.zip", os.O_TRUNC|os.O_CREATE|os.O_RDWR, 0644)
+		const zipPath = "../greenrhythm.zip"
+		f, err := os.OpenFile(zipPath, os.O_TRUNC|os.O_CREATE|os.O_RDWR, 0644)
 		if err != nil {
 			ret.Error = err.Error()
 			return ret, nil
 		}
 		defer f.Close()
 
-		_, err = io.Copy(f, resp.Body)
+		// Hash while downloading so integrity can be checked before the updater runs.
+		h := sha256.New()
+		_, err = io.Copy(io.MultiWriter(f, h), resp.Body)
 		if err != nil {
 			ret.Error = err.Error()
 			return ret, nil
 		}
 		f.Sync()
+
+		// Verify against the release-published SHA-256 when available. Catches
+		// corrupted/truncated downloads; a signature with an offline key is the
+		// stronger follow-up against a fully compromised release.
+		if update_checksum_url != "" {
+			if expected := fetchExpectedSha(ctx, client, update_checksum_url); expected != "" {
+				got := hex.EncodeToString(h.Sum(nil))
+				if !strings.EqualFold(got, expected) {
+					f.Close()
+					os.Remove(zipPath)
+					ret.Error = "update package checksum mismatch — aborting"
+					return ret, nil
+				}
+			}
+		}
 	}
 
 	return ret, nil
+}
+
+// fetchExpectedSha downloads a sha256sum file and returns the hex digest (the first
+// whitespace-separated field). Returns "" on any error so verification is skipped
+// gracefully when no checksum is published (e.g. older releases).
+func fetchExpectedSha(ctx context.Context, client *http.Client, url string) string {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(string(b))
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
 }
 
 // parseVer parses a clean GreenRhythm tag "vX.Y.Z" into numeric parts.
