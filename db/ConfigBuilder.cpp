@@ -148,7 +148,13 @@ namespace NekoGui {
                     {"tolerance", 50},
                     {"idle_timeout", "30m"},
                 };
-                status->result->outboundStat = status->ent->traffic_data;
+                // Status-bar speed: query the urltest aggregate ("proxy"), not the started
+                // member — the member loop overwrote ent->traffic_data->tag to g-<id>, and the
+                // active server is usually a different member. id stays -1 so this virtual entry
+                // feeds only the status-bar speed, not the per-row proxy list.
+                auto proxyStat = std::make_shared<NekoGui_traffic::TrafficData>(std::string("proxy"));
+                status->result->outboundStat = proxyStat;
+                status->result->outboundStats += proxyStat;
                 return "proxy";
             }
             // no eligible candidate → fall through to the normal single-profile build
