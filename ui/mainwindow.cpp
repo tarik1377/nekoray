@@ -103,6 +103,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->toolButton_document, &QToolButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl("https://github.com/tarik1377/nekoray")); });
     connect(ui->toolButton_ads, &QToolButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl("https://github.com/tarik1377/nekoray")); });
     connect(ui->toolButton_update, &QToolButton::clicked, this, [=] { runOnNewThread([=] { CheckUpdate(); }); });
+    connect(ui->toolButton_update_sub, &QToolButton::clicked, this, [=] { on_menu_update_subscription_triggered(); });
     connect(ui->toolButton_url_test, &QToolButton::clicked, this, [=] { speedtest_current_group(1, true); });
 
     // Setup log UI
@@ -399,6 +400,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Start core
     runOnUiThread(
         [=] {
+            // A core from a previous session may still be running and holding the
+            // inbound port, which makes Start fail with "address already in use".
+            // Kill any leftover core before spawning ours (skip in multi-instance mode).
+            if (!NekoGui::dataStore->flag_many) {
+#ifdef Q_OS_WIN
+                QProcess::execute("taskkill", {"/F", "/IM", "greenrhythm_core.exe"});
+#else
+                QProcess::execute("pkill", {"-9", "-f", "greenrhythm_core"});
+#endif
+            }
             core_process = new NekoGui_sys::CoreProcess(core_path, args);
             // Remember last started
             if (NekoGui::dataStore->remember_enable && NekoGui::dataStore->remember_id >= 0) {
