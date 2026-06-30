@@ -8,7 +8,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime"
 )
+
+// normalizeTunStack picks a reliable TUN stack. On Windows only "mixed" works
+// dependably ("gvisor" and "system" both cause connection drops on some setups),
+// so any selection is forced to "mixed". On other platforms the legacy behaviour
+// is kept: gvisor/empty becomes mixed, system is left as-is.
+func normalizeTunStack(stack, goos string) string {
+	if goos == "windows" {
+		return "mixed"
+	}
+	if stack == "gvisor" || stack == "" {
+		return "mixed"
+	}
+	return stack
+}
 
 const (
 	geositeURLBase = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-%s.srs"
@@ -135,10 +150,11 @@ func transformInbounds(config map[string]interface{}) {
 
 		// TUN fixes
 		if ibMap["type"] == "tun" {
-			// Force "mixed" stack on Windows (gvisor causes connection drops)
-			if stack, _ := ibMap["stack"].(string); stack == "gvisor" || stack == "" {
-				ibMap["stack"] = "mixed"
-			}
+			// Normalise the TUN stack: on Windows only "mixed" is reliable — both
+			// "gvisor" and "system" drop connections / kill internet on some setups —
+			// so force it regardless of the user's selection.
+			stack, _ := ibMap["stack"].(string)
+			ibMap["stack"] = normalizeTunStack(stack, runtime.GOOS)
 			// Legacy TUN address fields — removed in 1.12
 			var addresses []interface{}
 			if v, ok := ibMap["inet4_address"]; ok {

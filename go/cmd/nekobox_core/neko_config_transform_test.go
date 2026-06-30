@@ -278,3 +278,23 @@ func TestTransformPreservesExistingV2RayApi(t *testing.T) {
 		t.Errorf("existing v2ray_api must be preserved, got %#v", api)
 	}
 }
+
+// On Windows every TUN stack must be forced to "mixed" (system/gvisor drop
+// connections); on other platforms gvisor/empty -> mixed and system is kept.
+func TestNormalizeTunStack(t *testing.T) {
+	cases := []struct{ stack, goos, want string }{
+		{"system", "windows", "mixed"},
+		{"gvisor", "windows", "mixed"},
+		{"mixed", "windows", "mixed"},
+		{"", "windows", "mixed"},
+		{"system", "linux", "system"},
+		{"gvisor", "linux", "mixed"},
+		{"", "linux", "mixed"},
+		{"mixed", "linux", "mixed"},
+	}
+	for _, c := range cases {
+		if got := normalizeTunStack(c.stack, c.goos); got != c.want {
+			t.Errorf("normalizeTunStack(%q, %q) = %q, want %q", c.stack, c.goos, got, c.want)
+		}
+	}
+}
