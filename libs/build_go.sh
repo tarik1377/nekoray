@@ -25,5 +25,5 @@ popd
 pushd go/cmd/nekobox_core
 GO_EXT=""
 [ "$GOOS" == "windows" ] && GO_EXT=".exe"
-go build -v -o $DEST/greenrhythm_core${GO_EXT} -trimpath -ldflags "-w -s -X github.com/matsuridayo/libneko/neko_common.Version_neko=$version_standalone -X github.com/sagernet/sing-box/constant.Version=1.13.5" -tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls"
+go build -v -o $DEST/greenrhythm_core${GO_EXT} -trimpath -ldflags "-w -s -X github.com/matsuridayo/libneko/neko_common.Version_neko=$version_standalone -X github.com/sagernet/sing-box/constant.Version=1.13.5" -tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api"
 popd
