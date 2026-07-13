@@ -276,7 +276,8 @@ namespace NekoGui_fmt {
         ExternalBuildResult result{NekoGui::dataStore->extraCore->Get("xray")};
 
         auto is_direct = external_stat == 2;
-        auto connect_address = WrapIPV6Host(is_direct ? serverAddress : "127.0.0.1");
+        QString connect_address = is_direct ? serverAddress : QStringLiteral("127.0.0.1");
+        connect_address = WrapIPV6Host(connect_address);
         auto connect_port = is_direct ? serverPort : mapping_port;
         auto serverName = stream->sni.isEmpty() ? serverAddress : stream->sni;
 
@@ -315,7 +316,7 @@ namespace NekoGui_fmt {
 
         // streamSettings
         QJsonObject ss;
-        auto net = stream->network.isEmpty() ? "tcp" : stream->network;
+        QString net = stream->network.isEmpty() ? QStringLiteral("tcp") : stream->network;
         ss["network"] = net;
 
         QString sec = stream->security;
