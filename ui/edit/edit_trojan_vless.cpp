@@ -25,11 +25,13 @@ void EditTrojanVLESS::onStart(std::shared_ptr<NekoGui::ProxyEntity> _ent) {
     ui->password->setText(bean->password);
     ui->flow->addItems(Preset::SingBox::Flows);
     ui->flow->setCurrentText(bean->flow);
+    ui->forceExternal->setChecked(bean->forceExternal);
 }
 
 bool EditTrojanVLESS::onEnd() {
     auto bean = this->ent->TrojanVLESSBean();
     bean->password = ui->password->text();
     bean->flow = ui->flow->currentText();
+    bean->forceExternal = ui->forceExternal->isChecked();
     return true;
 }

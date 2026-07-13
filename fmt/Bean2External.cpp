@@ -262,4 +262,110 @@ namespace NekoGui_fmt {
         return result;
     }
 
+    int TrojanVLESSBean::NeedExternal(bool isFirstProfile) {
+        if (!forceExternal) return 0; // use sing-box
+        // run through the xray core (bridged over SOCKS), like naive/hysteria2
+        if (isFirstProfile) {
+            if (NekoGui::dataStore->spmode_vpn) return 1; // mapping (VPN/TUN)
+            return 2;                                     // direct
+        }
+        return 1;
+    }
+
+    ExternalBuildResult TrojanVLESSBean::BuildExternal(int mapping_port, int socks_port, int external_stat) {
+        ExternalBuildResult result{NekoGui::dataStore->extraCore->Get("xray")};
+
+        auto is_direct = external_stat == 2;
+        auto connect_address = WrapIPV6Host(is_direct ? serverAddress : "127.0.0.1");
+        auto connect_port = is_direct ? serverPort : mapping_port;
+        auto serverName = stream->sni.isEmpty() ? serverAddress : stream->sni;
+
+        // SOCKS inbound that sing-box dials into
+        QJsonObject inbound{
+            {"listen", "127.0.0.1"},
+            {"port", socks_port},
+            {"protocol", "socks"},
+            {"settings", QJsonObject{{"udp", true}}},
+        };
+
+        // Outbound (vless / trojan)
+        QJsonObject outbound;
+        QJsonObject settings;
+        if (proxy_type == proxy_VLESS) {
+            QJsonObject user{
+                {"id", password}, // VLESS uuid is stored in the password field
+                {"encryption", "none"},
+            };
+            if (!flow.trimmed().isEmpty()) user["flow"] = flow;
+            settings["vnext"] = QJsonArray{QJsonObject{
+                {"address", connect_address},
+                {"port", connect_port},
+                {"users", QJsonArray{user}},
+            }};
+            outbound["protocol"] = "vless";
+        } else {
+            settings["servers"] = QJsonArray{QJsonObject{
+                {"address", connect_address},
+                {"port", connect_port},
+                {"password", password},
+            }};
+            outbound["protocol"] = "trojan";
+        }
+        outbound["settings"] = settings;
+
+        // streamSettings
+        QJsonObject ss;
+        auto net = stream->network.isEmpty() ? "tcp" : stream->network;
+        ss["network"] = net;
+
+        QString sec = stream->security;
+        if (sec == "tls" && !stream->reality_pbk.trimmed().isEmpty()) sec = "reality";
+        if (sec == "reality") {
+            ss["security"] = "reality";
+            QJsonObject r{
+                {"serverName", serverName},
+                {"publicKey", stream->reality_pbk},
+                {"shortId", stream->reality_sid.split(",")[0]},
+                {"fingerprint", stream->utlsFingerprint.isEmpty() ? "chrome" : stream->utlsFingerprint},
+            };
+            if (!stream->reality_spx.trimmed().isEmpty()) r["spiderX"] = stream->reality_spx;
+            ss["realitySettings"] = r;
+        } else if (sec == "tls") {
+            ss["security"] = "tls";
+            QJsonObject tls{{"serverName", serverName}};
+            if (stream->allow_insecure) tls["allowInsecure"] = true;
+            if (!stream->alpn.trimmed().isEmpty()) tls["alpn"] = QList2QJsonArray(stream->alpn.split(","));
+            if (!stream->utlsFingerprint.isEmpty()) tls["fingerprint"] = stream->utlsFingerprint;
+            ss["tlsSettings"] = tls;
+        }
+
+        if (net == "ws") {
+            QJsonObject ws{{"path", stream->path}};
+            if (!stream->host.trimmed().isEmpty()) ws["headers"] = QJsonObject{{"Host", stream->host}};
+            ss["wsSettings"] = ws;
+        } else if (net == "grpc") {
+            ss["grpcSettings"] = QJsonObject{{"serviceName", stream->path}};
+        } else if (net == "http" || net == "h2") {
+            ss["network"] = "http";
+            QJsonObject h2;
+            if (!stream->path.trimmed().isEmpty()) h2["path"] = stream->path;
+            if (!stream->host.trimmed().isEmpty()) h2["host"] = QList2QJsonArray(stream->host.split(","));
+            ss["httpSettings"] = h2;
+        }
+
+        outbound["streamSettings"] = ss;
+
+        QJsonObject config{
+            {"log", QJsonObject{{"loglevel", "warning"}}},
+            {"inbounds", QJsonArray{inbound}},
+            {"outbounds", QJsonArray{outbound}},
+        };
+
+        result.config_export = QJsonObject2QString(config, false);
+        WriteTempFile("xray_" + GetRandomString(10) + ".json", result.config_export.toUtf8());
+        result.arguments = QStringList{"run", "-c", TempFile};
+
+        return result;
+    }
+
 } // namespace NekoGui_fmt

@@ -40,6 +40,20 @@
      </item>
     </widget>
    </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="forceExternal_l">
+     <property name="text">
+      <string>Core</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QCheckBox" name="forceExternal">
+     <property name="text">
+      <string>Use Xray core (for Reality servers not compatible with sing-box)</string>
+     </property>
+    </widget>
+   </item>
   </layout>
  </widget>
  <customwidgets>
