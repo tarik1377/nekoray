@@ -380,7 +380,10 @@ namespace NekoGui {
                     needMux = false;
                 }
             }
-            if (ent->type == "vless" && outbound["flow"] != "") {
+            // Use value() (const, non-inserting) — operator[] would insert a null
+            // "flow" key into non-VLESS outbounds (e.g. the socks bridge to the xray
+            // core), which sing-box then rejects as an unknown field.
+            if (ent->type == "vless" && outbound.value("flow").toString() != "") {
                 needMux = false;
             }
 
