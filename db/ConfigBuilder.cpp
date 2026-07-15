@@ -386,6 +386,11 @@ namespace NekoGui {
             if (ent->type == "vless" && outbound.value("flow").toString() != "") {
                 needMux = false;
             }
+            // External cores (xray/naive/…) get a plain SOCKS bridge outbound. Apply this
+            // clamp LAST so a per-profile multiplex_status==1 toggle above cannot re-enable
+            // mux on the bridge: sing-box's SOCKSOutboundOptions has no `multiplex` field
+            // and rejects the entire config on the unknown key.
+            if (thisExternalStat != 0) needMux = false;
 
             // common
             // apply domain_strategy

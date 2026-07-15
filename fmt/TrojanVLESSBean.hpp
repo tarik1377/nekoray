@@ -25,7 +25,10 @@ namespace NekoGui_fmt {
         };
 
         QString DisplayType() override { return proxy_type == proxy_VLESS ? "VLESS" : "Trojan"; };
-        QString DisplayCoreType() override { return forceExternal ? "Xray" : software_core_name; };
+        // xhttp is xray-only, so NeedExternal() routes it through the xray core even when
+        // forceExternal is unset; report "Xray" so a missing-core diagnostic names the core
+        // actually being sought instead of the built-in sing-box.
+        QString DisplayCoreType() override { return (forceExternal || stream->network == "xhttp") ? "Xray" : software_core_name; };
 
         CoreObjOutboundBuildResult BuildCoreObjSingBox() override;
 

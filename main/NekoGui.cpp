@@ -442,8 +442,21 @@ namespace NekoGui {
     QString ExtraCore::Get(const QString &id) const {
         auto obj = QString2QJsonObject(core_map);
         for (const auto &c: obj.keys()) {
-            if (c == id) return obj[id].toString();
+            if (c == id) {
+                auto path = obj[id].toString();
+                if (!path.isEmpty()) return path;
+                break;
+            }
         }
+        // Fall back to a core binary shipped next to the app (e.g. a bundled xray.exe),
+        // so profiles that need an external core work out of the box without the user
+        // having to set the path in Settings → Extra cores. Only used when it exists,
+        // so behaviour is unchanged when nothing is bundled.
+        auto bundled = QApplication::applicationDirPath() + "/" + id;
+#ifdef Q_OS_WIN
+        bundled += ".exe";
+#endif
+        if (QFile::exists(bundled)) return bundled;
         return "";
     }
 

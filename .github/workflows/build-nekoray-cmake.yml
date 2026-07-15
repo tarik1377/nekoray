@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: |
           (cd go/grpc_server && go test ./...)
-          (cd go/cmd/nekobox_core && go test -tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls" ./...)
+          (cd go/cmd/nekobox_core && go test -tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api" ./...)
 
       - name: Build public resources
         if: matrix.cross_os == 'public_res'
@@ -175,6 +175,18 @@ jobs:
           # Copy .srs rule-sets to config/ (sing-box CWD)
           mkdir -p windows64/config
           cp public_res/*.srs windows64/config/ 2>/dev/null || true
+          # Bundle a PINNED xray core so xhttp / post-quantum Reality servers (which
+          # sing-box cannot parse) work out of the box — ExtraCore::Get auto-detects
+          # ./xray.exe. Pin the version and verify the checksum so every build of a tag is
+          # reproducible and a new upstream xray can't silently ride into a release; bump
+          # XRAY_VERSION/XRAY_SHA256 deliberately after testing.
+          XRAY_VERSION="v26.3.27"
+          XRAY_SHA256="d004c39288ce9ada487c6f398c7c545f7d749e44bdfdd59dbc9f865afba4e1ad"
+          curl -fsSL -o /tmp/xray.zip \
+            "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-windows-64.zip"
+          echo "${XRAY_SHA256}  /tmp/xray.zip" | sha256sum -c -
+          unzip -o -j /tmp/xray.zip xray.exe -d windows64/
+          test -f windows64/xray.exe
           rm -rf public_res *.pdb
           mv windows64 GreenRhythm
           zip -r GreenRhythm-${{ github.event.inputs.tag }}-windows-x64.zip GreenRhythm
