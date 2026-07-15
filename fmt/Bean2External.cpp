@@ -303,7 +303,7 @@ namespace NekoGui_fmt {
             };
             // xtls-rprx-vision is only valid on the raw/tcp transport; xray rejects a
             // stray flow on ws/grpc/xhttp/etc. (empty network defaults to tcp).
-            const bool rawTransport = stream->network.isEmpty() || stream->network == "tcp";
+            const bool rawTransport = stream->network.isEmpty() || stream->network == "tcp" || stream->network == "raw";
             if (!flow.trimmed().isEmpty() && rawTransport) user["flow"] = flow;
             settings["vnext"] = QJsonArray{QJsonObject{
                 {"address", connect_address},

@@ -367,10 +367,6 @@ namespace NekoGui {
             // mux common
             auto needMux = ent->type == "vmess" || ent->type == "trojan" || ent->type == "vless";
             needMux &= dataStore->mux_concurrency > 0;
-            // External cores (xray/naive/…) get a plain SOCKS bridge outbound; the
-            // external core owns the real transport, so never wrap that bridge in
-            // sing-box multiplex.
-            needMux &= (thisExternalStat == 0);
 
             if (stream != nullptr) {
                 if (stream->network == "grpc" || stream->network == "quic" || (stream->network == "http" && stream->security == "tls")) {
@@ -390,6 +386,11 @@ namespace NekoGui {
             if (ent->type == "vless" && outbound.value("flow").toString() != "") {
                 needMux = false;
             }
+            // External cores (xray/naive/…) get a plain SOCKS bridge outbound. Apply this
+            // clamp LAST so a per-profile multiplex_status==1 toggle above cannot re-enable
+            // mux on the bridge: sing-box's SOCKSOutboundOptions has no `multiplex` field
+            // and rejects the entire config on the unknown key.
+            if (thisExternalStat != 0) needMux = false;
 
             // common
             // apply domain_strategy

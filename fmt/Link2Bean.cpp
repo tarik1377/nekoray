@@ -62,6 +62,9 @@ namespace NekoGui_fmt {
         if (type == "splithttp") {
             type = "xhttp"; // xray renamed splithttp -> xhttp
         }
+        if (type == "raw") {
+            type = "tcp"; // xray renamed tcp -> raw (aliases); keep the canonical "tcp"
+        }
         stream->network = type;
 
         if (proxy_type == proxy_Trojan) {
