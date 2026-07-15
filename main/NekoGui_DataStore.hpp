@@ -116,6 +116,9 @@ namespace NekoGui {
         bool start_minimal = false;
         int max_log_line = 200;
         QString splitter_state = "";
+        // First profile has ever been added → retire the full first-run welcome panel
+        // forever (the compact empty-state CTAs still show when the list is emptied).
+        bool onboarding_completed = false;
 
         // Subscription
         QString user_agent = ""; // set at main.cpp

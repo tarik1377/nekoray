@@ -171,6 +171,14 @@ private:
 
     void refresh_proxy_list_impl_refresh_data(const int &id = -1);
 
+    // Onboarding / empty-state overlay (branding entry points; opt-in help panel)
+    QWidget *onboarding_panel = nullptr;
+    QWidget *onboarding_title = nullptr;
+    QWidget *onboarding_subtitle = nullptr;
+    bool onboarding_dismissed = false;
+    void build_onboarding_panel();
+    void refresh_onboarding();
+
     void keyPressEvent(QKeyEvent *event) override;
 
     void closeEvent(QCloseEvent *event) override;

@@ -52,6 +52,13 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QIcon>
+#include <QFrame>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QToolButton>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QFont>
 #include <QDir>
 #include <QFileInfo>
 
@@ -215,6 +222,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
     ui->proxyListTable->verticalHeader()->setDefaultSectionSize(24);
+
+    build_onboarding_panel();
+    ui->proxyListTable->viewport()->installEventFilter(this);
 
     // search box
     ui->search->setVisible(false);
@@ -1080,6 +1090,121 @@ void MainWindow::refresh_proxy_list_impl(const int &id, GroupSortAction groupSor
 
     // refresh data
     refresh_proxy_list_impl_refresh_data(id);
+    refresh_onboarding();
+}
+
+// Onboarding / empty-state overlay over the (empty) profile table. One opaque panel,
+// parented to the table viewport so it travels with tab reparenting. Full welcome on
+// first run; compact CTAs once the list has been used and later emptied. Branding help
+// point only — GreenRhythm stays a universal client.
+void MainWindow::build_onboarding_panel() {
+    auto *vp = ui->proxyListTable->viewport();
+    auto *panel = new QFrame(vp);
+    panel->setObjectName("onboardingPanel");
+    panel->setAutoFillBackground(true);
+    panel->setAttribute(Qt::WA_StyledBackground, true);
+    panel->hide();
+    onboarding_panel = panel;
+
+    auto *outer = new QVBoxLayout(panel);
+    outer->setContentsMargins(28, 16, 28, 28);
+    outer->setSpacing(12);
+
+    auto *topRow = new QHBoxLayout();
+    topRow->addStretch();
+    auto *closeBtn = new QToolButton(panel);
+    closeBtn->setText(QString::fromUtf8("\xE2\x9C\x95")); // ✕
+    closeBtn->setAutoRaise(true);
+    connect(closeBtn, &QToolButton::clicked, this, [=] {
+        onboarding_dismissed = true;
+        onboarding_panel->hide();
+    });
+    topRow->addWidget(closeBtn);
+    outer->addLayout(topRow);
+
+    auto *title = new QLabel(tr("Добро пожаловать в GreenRhythm") + QString::fromUtf8(" \xF0\x9F\x8C\xBF"), panel); // 🌿
+    title->setAlignment(Qt::AlignHCenter);
+    { QFont f = title->font(); f.setPointSizeF(f.pointSizeF() * 1.6); f.setBold(true); title->setFont(f); }
+    outer->addWidget(title);
+    onboarding_title = title;
+
+    auto *subtitle = new QLabel(tr("Выберите, как начать"), panel);
+    subtitle->setAlignment(Qt::AlignHCenter);
+    outer->addWidget(subtitle);
+    onboarding_subtitle = subtitle;
+
+    auto *cards = new QHBoxLayout();
+    cards->setSpacing(16);
+
+    // Card A — «У меня есть подписка»
+    auto *cardA = new QFrame(panel);
+    cardA->setFrameShape(QFrame::StyledPanel);
+    auto *la = new QVBoxLayout(cardA);
+    la->setSpacing(8);
+    la->addWidget(new QLabel(tr("У меня есть подписка"), cardA));
+    auto *subEdit = new QLineEdit(cardA);
+    subEdit->setPlaceholderText(tr("Вставьте ссылку подписки"));
+    la->addWidget(subEdit);
+    auto *aBtns = new QHBoxLayout();
+    auto *importBtn = new QPushButton(tr("Импорт"), cardA);
+    connect(importBtn, &QPushButton::clicked, this, [=] {
+        auto link = subEdit->text().trimmed();
+        if (link.isEmpty()) return;
+        NekoGui_sub::groupUpdater->AsyncUpdate(link);
+    });
+    auto *pasteBtn = new QPushButton(tr("Из буфера"), cardA);
+    connect(pasteBtn, &QPushButton::clicked, this, [=] { on_menu_add_from_clipboard_triggered(); });
+    aBtns->addWidget(importBtn);
+    aBtns->addWidget(pasteBtn);
+    la->addLayout(aBtns);
+    la->addStretch();
+    cards->addWidget(cardA, 1);
+
+    // Card B — «Получить доступ»
+    auto *cardB = new QFrame(panel);
+    cardB->setFrameShape(QFrame::StyledPanel);
+    auto *lb = new QVBoxLayout(cardB);
+    lb->setSpacing(8);
+    lb->addWidget(new QLabel(tr("Получить доступ"), cardB));
+    auto *getBtn = new QPushButton(tr("Открыть verdantvibe.ru"), cardB);
+    connect(getBtn, &QPushButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
+    lb->addWidget(getBtn);
+    auto *tg = new QLabel(cardB);
+    tg->setTextFormat(Qt::RichText);
+    tg->setOpenExternalLinks(true);
+    tg->setText(QStringLiteral("<a href=\"%1\">%2</a>").arg(GreenRhythm::kTelegramUrl, tr("или в Telegram — @VerdantVibeBot")));
+    { QFont f = tg->font(); f.setPointSizeF(f.pointSizeF() * 0.92); tg->setFont(f); }
+    lb->addWidget(tg);
+    lb->addStretch();
+    cards->addWidget(cardB, 1);
+
+    outer->addLayout(cards);
+    outer->addStretch();
+}
+
+// Show/hide brain for the onboarding overlay. Full welcome only while no profile has
+// ever been added; compact empty-state after; hidden once any profile exists.
+void MainWindow::refresh_onboarding() {
+    if (onboarding_panel == nullptr) return;
+    const bool empty = NekoGui::profileManager->profiles.empty();
+    if (!empty) {
+        if (!NekoGui::dataStore->onboarding_completed) {
+            NekoGui::dataStore->onboarding_completed = true;
+            NekoGui::dataStore->Save();
+        }
+        onboarding_panel->hide();
+        return;
+    }
+    if (onboarding_dismissed) {
+        onboarding_panel->hide();
+        return;
+    }
+    const bool compact = NekoGui::dataStore->onboarding_completed;
+    onboarding_title->setVisible(!compact);
+    onboarding_subtitle->setVisible(!compact);
+    onboarding_panel->setGeometry(ui->proxyListTable->viewport()->rect());
+    onboarding_panel->raise();
+    onboarding_panel->show();
 }
 
 // Small round status dot for a profile row (green connected / red last-test-failed / grey idle).
@@ -1738,6 +1863,10 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
         if (obj == ui->splitter) {
             auto size = ui->splitter->size();
             ui->splitter->setSizes({size.height() / 2, size.height() / 2});
+        }
+    } else if (event->type() == QEvent::Resize) {
+        if (onboarding_panel != nullptr && onboarding_panel->isVisible() && obj == ui->proxyListTable->viewport()) {
+            onboarding_panel->setGeometry(ui->proxyListTable->viewport()->rect());
         }
     }
     return QMainWindow::eventFilter(obj, event);
