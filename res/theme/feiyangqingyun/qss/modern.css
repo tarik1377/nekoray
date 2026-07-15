@@ -7,7 +7,6 @@
 QWidget {
     background-color: #16181d;
     color: #e4e6eb;
-    font-size: 13px;
     selection-background-color: #3fb950;
     selection-color: #0d1117;
 }
@@ -37,7 +36,6 @@ QToolButton {
     color: #c3c8d0;
     border: none;
     border-radius: 8px;
-    padding: 6px 10px;
 }
 
 QToolButton:hover {
