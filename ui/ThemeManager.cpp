@@ -1,6 +1,8 @@
 #include <QStyle>
 #include <QApplication>
 #include <QStyleFactory>
+#include <QColor>
+#include <QPalette>
 
 #include "ThemeManager.hpp"
 
@@ -40,6 +42,10 @@ void ThemeManager::ApplyTheme(const QString &theme) {
                         path = ":/themes/feiyangqingyun/qss/blacksoft.css";
                         replace[":/qss/"] = ":/themes/feiyangqingyun/qss/";
                         break;
+                    case 4:
+                        // GreenRhythm Modern — flat dark, asset-free (no :/qss/ image refs)
+                        path = ":/themes/feiyangqingyun/qss/modern.css";
+                        break;
                     default:
                         return;
                 }
@@ -61,6 +67,9 @@ void ThemeManager::ApplyTheme(const QString &theme) {
                     // feiyangqingyun theme
                     QString paletteColor = qss.mid(20, 7);
                     qApp->setPalette(QPalette(paletteColor));
+                } else if (themeId == 4) {
+                    // GreenRhythm Modern — seed a dark base palette so unstyled bits stay dark
+                    qApp->setPalette(QPalette(QColor(0x1a, 0x1d, 0x22)));
                 } else {
                     // other theme
                     qApp->setPalette(system_style->standardPalette());
