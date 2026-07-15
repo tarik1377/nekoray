@@ -1133,52 +1133,40 @@ void MainWindow::build_onboarding_panel() {
     outer->addWidget(subtitle);
     onboarding_subtitle = subtitle;
 
-    auto *cards = new QHBoxLayout();
-    cards->setSpacing(16);
-
-    // Card A — «У меня есть подписка»
-    auto *cardA = new QFrame(panel);
-    cardA->setFrameShape(QFrame::StyledPanel);
-    auto *la = new QVBoxLayout(cardA);
-    la->setSpacing(8);
-    la->addWidget(new QLabel(tr("У меня есть подписка"), cardA));
-    auto *subEdit = new QLineEdit(cardA);
-    subEdit->setPlaceholderText(tr("Вставьте ссылку подписки"));
-    la->addWidget(subEdit);
-    auto *aBtns = new QHBoxLayout();
-    auto *importBtn = new QPushButton(tr("Импорт"), cardA);
+    // Row A — «У меня есть подписка»: link field + import buttons on one line (can't cramp).
+    auto *rowA = new QHBoxLayout();
+    rowA->setSpacing(8);
+    rowA->addWidget(new QLabel(tr("У меня есть подписка:"), panel));
+    auto *subEdit = new QLineEdit(panel);
+    subEdit->setPlaceholderText(tr("вставьте ссылку подписки"));
+    rowA->addWidget(subEdit, 1);
+    auto *importBtn = new QPushButton(tr("Импорт"), panel);
     connect(importBtn, &QPushButton::clicked, this, [=] {
         auto link = subEdit->text().trimmed();
         if (link.isEmpty()) return;
         NekoGui_sub::groupUpdater->AsyncUpdate(link);
     });
-    auto *pasteBtn = new QPushButton(tr("Из буфера"), cardA);
+    rowA->addWidget(importBtn);
+    auto *pasteBtn = new QPushButton(tr("Из буфера"), panel);
     connect(pasteBtn, &QPushButton::clicked, this, [=] { on_menu_add_from_clipboard_triggered(); });
-    aBtns->addWidget(importBtn);
-    aBtns->addWidget(pasteBtn);
-    la->addLayout(aBtns);
-    la->addStretch();
-    cards->addWidget(cardA, 1);
+    rowA->addWidget(pasteBtn);
+    outer->addLayout(rowA);
 
-    // Card B — «Получить доступ»
-    auto *cardB = new QFrame(panel);
-    cardB->setFrameShape(QFrame::StyledPanel);
-    auto *lb = new QVBoxLayout(cardB);
-    lb->setSpacing(8);
-    lb->addWidget(new QLabel(tr("Получить доступ"), cardB));
-    auto *getBtn = new QPushButton(tr("Открыть verdantvibe.ru"), cardB);
+    // Row B — «Получить доступ»: open the site + Telegram link on one line.
+    auto *rowB = new QHBoxLayout();
+    rowB->setSpacing(8);
+    rowB->addWidget(new QLabel(tr("Получить доступ:"), panel));
+    auto *getBtn = new QPushButton(tr("Открыть verdantvibe.ru"), panel);
     connect(getBtn, &QPushButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
-    lb->addWidget(getBtn);
-    auto *tg = new QLabel(cardB);
+    rowB->addWidget(getBtn);
+    auto *tg = new QLabel(panel);
     tg->setTextFormat(Qt::RichText);
     tg->setOpenExternalLinks(true);
     tg->setText(QStringLiteral("<a href=\"%1\">%2</a>").arg(GreenRhythm::kTelegramUrl, tr("или в Telegram — @VerdantVibeBot")));
-    { QFont f = tg->font(); f.setPointSizeF(f.pointSizeF() * 0.92); tg->setFont(f); }
-    lb->addWidget(tg);
-    lb->addStretch();
-    cards->addWidget(cardB, 1);
-
-    outer->addLayout(cards, 1); // let the cards fill the available height so content doesn't overlap
+    rowB->addWidget(tg);
+    rowB->addStretch();
+    outer->addLayout(rowB);
+    outer->addStretch();
 }
 
 // Show/hide brain for the onboarding overlay. Full welcome only while no profile has
