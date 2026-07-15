@@ -8,17 +8,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"runtime"
 )
 
-// normalizeTunStack picks a reliable TUN stack. On Windows only "mixed" works
-// dependably ("gvisor" and "system" both cause connection drops on some setups),
-// so any selection is forced to "mixed". On other platforms the legacy behaviour
-// is kept: gvisor/empty becomes mixed, system is left as-is.
-func normalizeTunStack(stack, goos string) string {
-	if goos == "windows" {
-		return "mixed"
-	}
+// normalizeTunStack picks a reliable TUN stack. Empty/unset and "gvisor" map to the
+// robust default "mixed" (pure gvisor drops connections on some Windows setups). An
+// explicit "system" is HONOURED: it uses the native UDP stack, which gives lower
+// latency for voice/gaming than mixed's gVisor-based UDP.
+func normalizeTunStack(stack string) string {
 	if stack == "gvisor" || stack == "" {
 		return "mixed"
 	}
@@ -150,11 +146,10 @@ func transformInbounds(config map[string]interface{}) {
 
 		// TUN fixes
 		if ibMap["type"] == "tun" {
-			// Normalise the TUN stack: on Windows only "mixed" is reliable — both
-			// "gvisor" and "system" drop connections / kill internet on some setups —
-			// so force it regardless of the user's selection.
+			// Normalise the TUN stack: gvisor/empty -> mixed (robust default), but an
+			// explicit "system" is kept (native UDP, better for voice/gaming).
 			stack, _ := ibMap["stack"].(string)
-			ibMap["stack"] = normalizeTunStack(stack, runtime.GOOS)
+			ibMap["stack"] = normalizeTunStack(stack)
 			// Legacy TUN address fields — removed in 1.12
 			var addresses []interface{}
 			if v, ok := ibMap["inet4_address"]; ok {

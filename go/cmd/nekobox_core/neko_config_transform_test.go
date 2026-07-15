@@ -279,22 +279,18 @@ func TestTransformPreservesExistingV2RayApi(t *testing.T) {
 	}
 }
 
-// On Windows every TUN stack must be forced to "mixed" (system/gvisor drop
-// connections); on other platforms gvisor/empty -> mixed and system is kept.
+// gvisor/empty -> mixed (robust default); an explicit "system" is honoured
+// (native UDP for voice/gaming).
 func TestNormalizeTunStack(t *testing.T) {
-	cases := []struct{ stack, goos, want string }{
-		{"system", "windows", "mixed"},
-		{"gvisor", "windows", "mixed"},
-		{"mixed", "windows", "mixed"},
-		{"", "windows", "mixed"},
-		{"system", "linux", "system"},
-		{"gvisor", "linux", "mixed"},
-		{"", "linux", "mixed"},
-		{"mixed", "linux", "mixed"},
+	cases := []struct{ stack, want string }{
+		{"", "mixed"},
+		{"gvisor", "mixed"},
+		{"system", "system"},
+		{"mixed", "mixed"},
 	}
 	for _, c := range cases {
-		if got := normalizeTunStack(c.stack, c.goos); got != c.want {
-			t.Errorf("normalizeTunStack(%q, %q) = %q, want %q", c.stack, c.goos, got, c.want)
+		if got := normalizeTunStack(c.stack); got != c.want {
+			t.Errorf("normalizeTunStack(%q) = %q, want %q", c.stack, got, c.want)
 		}
 	}
 }
