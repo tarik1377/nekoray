@@ -7,6 +7,7 @@
 #include "sub/GroupUpdater.hpp"
 #include "sys/ExternalProcess.hpp"
 #include "sys/AutoRun.hpp"
+#include "main/BrandingConstants.hpp"
 
 #include "ui/ThemeManager.hpp"
 #include "ui/Icon.hpp"
@@ -48,6 +49,9 @@
 #include <QThread>
 #include <QTimer>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPixmap>
+#include <QIcon>
 #include <QDir>
 #include <QFileInfo>
 
@@ -104,7 +108,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->toolButton_server->setMenu(ui->menu_server);
     ui->menubar->setVisible(false);
     connect(ui->toolButton_document, &QToolButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl("https://github.com/tarik1377/nekoray")); });
-    connect(ui->toolButton_ads, &QToolButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl("https://github.com/tarik1377/nekoray")); });
+    connect(ui->toolButton_ads, &QToolButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
     connect(ui->toolButton_update, &QToolButton::clicked, this, [=] { runOnNewThread([=] { CheckUpdate(); }); });
     connect(ui->toolButton_update_sub, &QToolButton::clicked, this, [=] { on_menu_update_subscription_triggered(); });
     connect(ui->toolButton_url_test, &QToolButton::clicked, this, [=] { speedtest_current_group(1, true); });
@@ -121,6 +125,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         auto url = QStringLiteral("http://127.0.0.1:%1/ui/#/setup?hostname=127.0.0.1&port=%1&secret=%2").arg(port).arg(secret);
         QDesktopServices::openUrl(QUrl(url));
     });
+
+    // GreenRhythm service entry points (opt-in default help/purchase points)
+    connect(ui->menu_gr_buy, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
+    connect(ui->menu_gr_telegram, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kTelegramUrl)); });
+    connect(ui->menu_gr_about, &QAction::triggered, this, [=] { show_about_greenrhythm(); });
 
     // Setup log UI
     ui->splitter->restoreState(DecodeB64IfValid(NekoGui::dataStore->splitter_state));
@@ -860,6 +869,18 @@ void MainWindow::refresh_status(const QString &traffic_update) {
 
     refresh_speed_label();
 
+    // Connection-status pill: green «Подключено · <server>» / grey «Не запущен».
+    // Widget-level stylesheet coexists with ThemeManager's app sheet and re-applies
+    // every refresh, so it self-heals across theme switches.
+    {
+        const bool up = (running != nullptr);
+        const QString nm = up ? running->bean->DisplayName().left(26) : QString();
+        ui->label_conn_pill->setText(up ? (tr("Connected") + QStringLiteral(" · ") + nm) : tr("Not Running"));
+        ui->label_conn_pill->setStyleSheet(QStringLiteral(
+            "QLabel#label_conn_pill{border-radius:9px;padding:2px 10px;color:white;background:%1;}")
+            .arg(up ? QStringLiteral("#3FB950") : QStringLiteral("#5A5F66")));
+    }
+
     // From UI
     QString group_name;
     if (running != nullptr) {
@@ -1061,6 +1082,18 @@ void MainWindow::refresh_proxy_list_impl(const int &id, GroupSortAction groupSor
     refresh_proxy_list_impl_refresh_data(id);
 }
 
+// Small round status dot for a profile row (green connected / red last-test-failed / grey idle).
+static QIcon MakeStatusDot(const QColor &color) {
+    QPixmap pm(14, 14);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    p.setPen(Qt::NoPen);
+    p.setBrush(color);
+    p.drawEllipse(3, 3, 8, 8);
+    return QIcon(pm);
+}
+
 void MainWindow::refresh_proxy_list_impl_refresh_data(const int &id) {
     // 绘制或更新item(s)
     for (int row = 0; row < ui->proxyListTable->rowCount(); row++) {
@@ -1078,10 +1111,13 @@ void MainWindow::refresh_proxy_list_impl_refresh_data(const int &id) {
         check->setText(isRunning ? "✓" : Int2String(row + 1));
         ui->proxyListTable->setVerticalHeaderItem(row, check);
 
-        // C0: Type
+        // C0: Type (+ status dot: green connected / red last-test-failed / grey idle)
         auto f = f0->clone();
         f->setText(profile->bean->DisplayType());
         if (isRunning) f->setForeground(palette().link());
+        f->setIcon(MakeStatusDot(isRunning ? QColor(0x3F, 0xB9, 0x50)
+                                           : (profile->latency < 0 ? QColor(0xE5, 0x48, 0x4D)
+                                                                   : QColor(0x5A, 0x5F, 0x66))));
         ui->proxyListTable->setItem(row, 0, f);
 
         // C1: Address+Port
@@ -1104,6 +1140,8 @@ void MainWindow::refresh_proxy_list_impl_refresh_data(const int &id) {
             f->setText(profile->DisplayLatency());
         } else {
             f->setText(profile->full_test_report);
+            auto color = profile->DisplayLatencyColor();
+            if (color.isValid()) f->setForeground(color);
         }
         ui->proxyListTable->setItem(row, 3, f);
 
@@ -1531,6 +1569,21 @@ inline void FastAppendTextDocument(const QString &message, QTextDocument *doc) {
     cursor.insertBlock();
     cursor.insertText(message);
     cursor.endEditBlock();
+}
+
+void MainWindow::show_about_greenrhythm() {
+    auto title = tr("<b>Клиент сервиса «%1»</b>").arg(GreenRhythm::kServiceName);
+    auto body = tr("Версия: %1<br><br>"
+                   "Сайт: <a href=\"%2\">%2</a><br>"
+                   "Поддержка: <a href=\"%3\">%4</a>")
+                    .arg(QString(NKR_VERSION))
+                    .arg(GreenRhythm::kSiteUrl)
+                    .arg(GreenRhythm::kTelegramUrl, GreenRhythm::kTelegramHandle);
+    QMessageBox box(QMessageBox::Information, tr("О программе"), title, QMessageBox::Ok, this);
+    box.setTextFormat(Qt::RichText);
+    box.setInformativeText(body);
+    box.setTextInteractionFlags(Qt::TextBrowserInteraction);
+    box.exec();
 }
 
 void MainWindow::show_log_impl(const QString &log) {
