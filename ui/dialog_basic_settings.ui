@@ -274,6 +274,11 @@
                 <string notr="true">blacksoft</string>
                </property>
               </item>
+              <item>
+               <property name="text">
+                <string notr="true">GreenRhythm Modern</string>
+               </property>
+              </item>
              </widget>
             </item>
             <item>

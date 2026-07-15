@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="/themes/feiyangqingyun">
+        <file>qss/modern.css</file>
         <file>qss/flatgray.css</file>
         <file>qss/lightblue.css</file>
         <file>qss/flatgray/add_bottom.png</file>
