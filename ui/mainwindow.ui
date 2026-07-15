@@ -617,13 +617,38 @@
     <addaction name="menu_profile_debug_info"/>
     <addaction name="separator"/>
    </widget>
+   <widget class="QMenu" name="menu_greenrhythm">
+    <property name="title">
+     <string>Зелёный Ритм</string>
+    </property>
+    <addaction name="menu_gr_buy"/>
+    <addaction name="menu_gr_telegram"/>
+    <addaction name="separator"/>
+    <addaction name="menu_gr_about"/>
+   </widget>
    <addaction name="menu_program"/>
    <addaction name="menu_preferences"/>
    <addaction name="menu_server"/>
+   <addaction name="menu_greenrhythm"/>
   </widget>
   <action name="menu_exit">
    <property name="text">
     <string>Exit</string>
+   </property>
+  </action>
+  <action name="menu_gr_buy">
+   <property name="text">
+    <string>Купить/продлить подписку</string>
+   </property>
+  </action>
+  <action name="menu_gr_telegram">
+   <property name="text">
+    <string>Поддержка в Telegram</string>
+   </property>
+  </action>
+  <action name="menu_gr_about">
+   <property name="text">
+    <string>О программе</string>
    </property>
   </action>
   <action name="actionShow_window">

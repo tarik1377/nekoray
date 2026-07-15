@@ -193,6 +193,8 @@ private:
 
     void CheckUpdate();
 
+    void show_about_greenrhythm();
+
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
 

@@ -7,6 +7,7 @@
 #include "sub/GroupUpdater.hpp"
 #include "sys/ExternalProcess.hpp"
 #include "sys/AutoRun.hpp"
+#include "main/BrandingConstants.hpp"
 
 #include "ui/ThemeManager.hpp"
 #include "ui/Icon.hpp"
@@ -104,7 +105,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->toolButton_server->setMenu(ui->menu_server);
     ui->menubar->setVisible(false);
     connect(ui->toolButton_document, &QToolButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl("https://github.com/tarik1377/nekoray")); });
-    connect(ui->toolButton_ads, &QToolButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl("https://github.com/tarik1377/nekoray")); });
+    connect(ui->toolButton_ads, &QToolButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
     connect(ui->toolButton_update, &QToolButton::clicked, this, [=] { runOnNewThread([=] { CheckUpdate(); }); });
     connect(ui->toolButton_update_sub, &QToolButton::clicked, this, [=] { on_menu_update_subscription_triggered(); });
     connect(ui->toolButton_url_test, &QToolButton::clicked, this, [=] { speedtest_current_group(1, true); });
@@ -121,6 +122,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         auto url = QStringLiteral("http://127.0.0.1:%1/ui/#/setup?hostname=127.0.0.1&port=%1&secret=%2").arg(port).arg(secret);
         QDesktopServices::openUrl(QUrl(url));
     });
+
+    // GreenRhythm service entry points (opt-in default help/purchase points)
+    connect(ui->menu_gr_buy, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
+    connect(ui->menu_gr_telegram, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kTelegramUrl)); });
+    connect(ui->menu_gr_about, &QAction::triggered, this, [=] { show_about_greenrhythm(); });
 
     // Setup log UI
     ui->splitter->restoreState(DecodeB64IfValid(NekoGui::dataStore->splitter_state));
@@ -1531,6 +1537,21 @@ inline void FastAppendTextDocument(const QString &message, QTextDocument *doc) {
     cursor.insertBlock();
     cursor.insertText(message);
     cursor.endEditBlock();
+}
+
+void MainWindow::show_about_greenrhythm() {
+    auto title = tr("<b>Клиент сервиса «%1»</b>").arg(GreenRhythm::kServiceName);
+    auto body = tr("Версия: %1<br><br>"
+                   "Сайт: <a href=\"%2\">%2</a><br>"
+                   "Поддержка: <a href=\"%3\">%4</a>")
+                    .arg(QString(NKR_VERSION))
+                    .arg(GreenRhythm::kSiteUrl)
+                    .arg(GreenRhythm::kTelegramUrl, GreenRhythm::kTelegramHandle);
+    QMessageBox box(QMessageBox::Information, tr("О программе"), title, QMessageBox::Ok, this);
+    box.setTextFormat(Qt::RichText);
+    box.setInformativeText(body);
+    box.setTextInteractionFlags(Qt::TextBrowserInteraction);
+    box.exec();
 }
 
 void MainWindow::show_log_impl(const QString &log) {

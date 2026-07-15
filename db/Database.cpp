@@ -234,18 +234,12 @@ namespace NekoGui {
     }
 
     QColor ProxyEntity::DisplayLatencyColor() const {
-        if (latency < 0) {
-            return Qt::red;
-        } else if (latency > 0) {
-            auto greenMs = dataStore->test_latency_url.startsWith("https://") ? 200 : 100;
-            if (latency < greenMs) {
-                return Qt::darkGreen;
-            } else {
-                return Qt::darkYellow;
-            }
-        } else {
-            return {};
-        }
+        // 3-tier, bright enough to read on the dark GreenRhythm Modern theme.
+        if (latency < 0) return QColor(0xE5, 0x48, 0x4D);   // timeout/unavailable — red
+        if (latency == 0) return {};                        // untested — default text colour
+        if (latency < 100) return QColor(0x3F, 0xB9, 0x50); // fast — green
+        if (latency < 300) return QColor(0xE3, 0xA0, 0x08); // ok — amber
+        return QColor(0xE5, 0x48, 0x4D);                    // slow — red
     }
 
     // Profile
