@@ -49,6 +49,9 @@
 #include <QThread>
 #include <QTimer>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPixmap>
+#include <QIcon>
 #include <QDir>
 #include <QFileInfo>
 
@@ -866,6 +869,18 @@ void MainWindow::refresh_status(const QString &traffic_update) {
 
     refresh_speed_label();
 
+    // Connection-status pill: green «Подключено · <server>» / grey «Не запущен».
+    // Widget-level stylesheet coexists with ThemeManager's app sheet and re-applies
+    // every refresh, so it self-heals across theme switches.
+    {
+        const bool up = (running != nullptr);
+        const QString nm = up ? running->bean->DisplayName().left(26) : QString();
+        ui->label_conn_pill->setText(up ? (tr("Connected") + QStringLiteral(" · ") + nm) : tr("Not Running"));
+        ui->label_conn_pill->setStyleSheet(QStringLiteral(
+            "QLabel#label_conn_pill{border-radius:9px;padding:2px 10px;color:white;background:%1;}")
+            .arg(up ? QStringLiteral("#3FB950") : QStringLiteral("#5A5F66")));
+    }
+
     // From UI
     QString group_name;
     if (running != nullptr) {
@@ -1067,6 +1082,18 @@ void MainWindow::refresh_proxy_list_impl(const int &id, GroupSortAction groupSor
     refresh_proxy_list_impl_refresh_data(id);
 }
 
+// Small round status dot for a profile row (green connected / red last-test-failed / grey idle).
+static QIcon MakeStatusDot(const QColor &color) {
+    QPixmap pm(14, 14);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    p.setPen(Qt::NoPen);
+    p.setBrush(color);
+    p.drawEllipse(3, 3, 8, 8);
+    return QIcon(pm);
+}
+
 void MainWindow::refresh_proxy_list_impl_refresh_data(const int &id) {
     // 绘制或更新item(s)
     for (int row = 0; row < ui->proxyListTable->rowCount(); row++) {
@@ -1084,10 +1111,13 @@ void MainWindow::refresh_proxy_list_impl_refresh_data(const int &id) {
         check->setText(isRunning ? "✓" : Int2String(row + 1));
         ui->proxyListTable->setVerticalHeaderItem(row, check);
 
-        // C0: Type
+        // C0: Type (+ status dot: green connected / red last-test-failed / grey idle)
         auto f = f0->clone();
         f->setText(profile->bean->DisplayType());
         if (isRunning) f->setForeground(palette().link());
+        f->setIcon(MakeStatusDot(isRunning ? QColor(0x3F, 0xB9, 0x50)
+                                           : (profile->latency < 0 ? QColor(0xE5, 0x48, 0x4D)
+                                                                   : QColor(0x5A, 0x5F, 0x66))));
         ui->proxyListTable->setItem(row, 0, f);
 
         // C1: Address+Port
@@ -1110,6 +1140,8 @@ void MainWindow::refresh_proxy_list_impl_refresh_data(const int &id) {
             f->setText(profile->DisplayLatency());
         } else {
             f->setText(profile->full_test_report);
+            auto color = profile->DisplayLatencyColor();
+            if (color.isValid()) f->setForeground(color);
         }
         ui->proxyListTable->setItem(row, 3, f);
 
