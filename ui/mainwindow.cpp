@@ -1124,7 +1124,7 @@ void MainWindow::build_onboarding_panel() {
 
     auto *title = new QLabel(tr("Добро пожаловать в GreenRhythm") + QString::fromUtf8(" \xF0\x9F\x8C\xBF"), panel); // 🌿
     title->setAlignment(Qt::AlignHCenter);
-    { QFont f = title->font(); f.setPointSizeF(f.pointSizeF() * 1.6); f.setBold(true); title->setFont(f); }
+    { QFont f = title->font(); f.setPointSizeF(f.pointSizeF() * 1.35); f.setBold(true); title->setFont(f); }
     outer->addWidget(title);
     onboarding_title = title;
 
@@ -1178,8 +1178,7 @@ void MainWindow::build_onboarding_panel() {
     lb->addStretch();
     cards->addWidget(cardB, 1);
 
-    outer->addLayout(cards);
-    outer->addStretch();
+    outer->addLayout(cards, 1); // let the cards fill the available height so content doesn't overlap
 }
 
 // Show/hide brain for the onboarding overlay. Full welcome only while no profile has
