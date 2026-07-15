@@ -252,6 +252,11 @@
              </item>
              <item>
               <property name="text">
+               <string notr="true">xhttp</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
                <string notr="true">http</string>
               </property>
              </item>

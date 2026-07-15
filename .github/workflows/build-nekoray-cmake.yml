@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: |
           (cd go/grpc_server && go test ./...)
-          (cd go/cmd/nekobox_core && go test -tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls" ./...)
+          (cd go/cmd/nekobox_core && go test -tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api" ./...)
 
       - name: Build public resources
         if: matrix.cross_os == 'public_res'
@@ -175,6 +175,11 @@ jobs:
           # Copy .srs rule-sets to config/ (sing-box CWD)
           mkdir -p windows64/config
           cp public_res/*.srs windows64/config/ 2>/dev/null || true
+          # Bundle the xray core so xhttp / post-quantum Reality servers (which sing-box
+          # cannot handle) work out of the box — ExtraCore::Get auto-detects ./xray.exe.
+          curl -fsSL -o /tmp/xray.zip "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-windows-64.zip"
+          unzip -o -j /tmp/xray.zip xray.exe -d windows64/
+          test -f windows64/xray.exe
           rm -rf public_res *.pdb
           mv windows64 GreenRhythm
           zip -r GreenRhythm-${{ github.event.inputs.tag }}-windows-x64.zip GreenRhythm

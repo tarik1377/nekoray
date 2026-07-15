@@ -263,7 +263,11 @@ namespace NekoGui_fmt {
     }
 
     int TrojanVLESSBean::NeedExternal(bool isFirstProfile) {
-        if (!forceExternal) return 0; // use sing-box
+        // xhttp is an xray-only transport that sing-box cannot parse ("unknown
+        // transport type: xhttp"), so such a profile must always be dialled through
+        // the xray core regardless of the "Use Xray core" toggle.
+        const bool xrayOnlyTransport = stream->network == "xhttp";
+        if (!forceExternal && !xrayOnlyTransport) return 0; // use sing-box
         // run through the xray core (bridged over SOCKS), like naive/hysteria2
         if (isFirstProfile) {
             if (NekoGui::dataStore->spmode_vpn) return 1; // mapping (VPN/TUN)
@@ -297,7 +301,10 @@ namespace NekoGui_fmt {
                 {"id", password}, // VLESS uuid is stored in the password field
                 {"encryption", "none"},
             };
-            if (!flow.trimmed().isEmpty()) user["flow"] = flow;
+            // xtls-rprx-vision is only valid on the raw/tcp transport; xray rejects a
+            // stray flow on ws/grpc/xhttp/etc. (empty network defaults to tcp).
+            const bool rawTransport = stream->network.isEmpty() || stream->network == "tcp";
+            if (!flow.trimmed().isEmpty() && rawTransport) user["flow"] = flow;
             settings["vnext"] = QJsonArray{QJsonObject{
                 {"address", connect_address},
                 {"port", connect_port},
@@ -352,6 +359,14 @@ namespace NekoGui_fmt {
             if (!stream->path.trimmed().isEmpty()) h2["path"] = stream->path;
             if (!stream->host.trimmed().isEmpty()) h2["host"] = QList2QJsonArray(stream->host.split(","));
             ss["httpSettings"] = h2;
+        } else if (net == "xhttp") {
+            // xray XHTTP (formerly splithttp) — host/path are plain strings, mode is
+            // carried in header_type (auto/packet-up/stream-up/stream-one).
+            QJsonObject xh;
+            if (!stream->path.trimmed().isEmpty()) xh["path"] = stream->path;
+            if (!stream->host.trimmed().isEmpty()) xh["host"] = stream->host;
+            if (!stream->header_type.trimmed().isEmpty()) xh["mode"] = stream->header_type;
+            ss["xhttpSettings"] = xh;
         }
 
         outbound["streamSettings"] = ss;

@@ -51,9 +51,10 @@ namespace NekoGui_fmt {
         // type
         query.addQueryItem("type", stream->network);
 
-        if (stream->network == "ws" || stream->network == "http" || stream->network == "httpupgrade") {
+        if (stream->network == "ws" || stream->network == "http" || stream->network == "httpupgrade" || stream->network == "xhttp") {
             if (!stream->path.isEmpty()) query.addQueryItem("path", stream->path);
             if (!stream->host.isEmpty()) query.addQueryItem("host", stream->host);
+            if (stream->network == "xhttp" && !stream->header_type.isEmpty()) query.addQueryItem("mode", stream->header_type);
         } else if (stream->network == "grpc") {
             if (!stream->path.isEmpty()) query.addQueryItem("serviceName", stream->path);
         } else if (stream->network == "tcp") {

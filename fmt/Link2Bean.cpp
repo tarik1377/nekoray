@@ -59,6 +59,9 @@ namespace NekoGui_fmt {
         if (type == "h2") {
             type = "http";
         }
+        if (type == "splithttp") {
+            type = "xhttp"; // xray renamed splithttp -> xhttp
+        }
         stream->network = type;
 
         if (proxy_type == proxy_Trojan) {
@@ -90,6 +93,11 @@ namespace NekoGui_fmt {
         } else if (stream->network == "httpupgrade") {
             stream->path = GetQueryValue(query, "path", "");
             stream->host = GetQueryValue(query, "host", "");
+        } else if (stream->network == "xhttp") {
+            stream->path = GetQueryValue(query, "path", "");
+            stream->host = GetQueryValue(query, "host", "");
+            // xray xhttp "mode" (auto/packet-up/stream-up/stream-one); reuse header_type to carry it
+            stream->header_type = GetQueryValue(query, "mode", "");
         } else if (stream->network == "grpc") {
             stream->path = GetQueryValue(query, "serviceName", "");
         } else if (stream->network == "tcp") {
