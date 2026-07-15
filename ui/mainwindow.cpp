@@ -38,6 +38,9 @@
 #include <QClipboard>
 #include <QLabel>
 #include <QTextBlock>
+#include <QTextCharFormat>
+#include <QColor>
+#include <QBrush>
 #include <QScrollBar>
 #include <QScreen>
 #include <QDesktopServices>
@@ -1548,8 +1551,26 @@ void MainWindow::show_log_impl(const QString &log) {
     }
     if (newLines.isEmpty()) return;
 
-    FastAppendTextDocument(newLines.join("\n"), qvLogDocument);
-    // qvLogDocument->setPlainText(qvLogDocument->toPlainText() + log);
+    // Colour-code so routing reads at a glance: [proxy] (foreign) blue,
+    // [bypass] (domestic/direct) green, errors red, everything else default.
+    {
+        QTextCursor cursor(qvLogDocument);
+        cursor.movePosition(QTextCursor::End);
+        cursor.beginEditBlock();
+        for (const auto &line: newLines) {
+            cursor.insertBlock();
+            QTextCharFormat fmt;
+            if (line.contains("ERROR")) {
+                fmt.setForeground(QColor(0xE5, 0x48, 0x4D));
+            } else if (line.contains("[proxy]")) {
+                fmt.setForeground(QColor(0x4C, 0x9A, 0xFF));
+            } else if (line.contains("[bypass]")) {
+                fmt.setForeground(QColor(0x3F, 0xB9, 0x50));
+            }
+            cursor.insertText(line, fmt);
+        }
+        cursor.endEditBlock();
+    }
     // From https://gist.github.com/jemyzhang/7130092
     auto block = qvLogDocument->begin();
 
@@ -1721,10 +1742,24 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
         c0->setToolTip(tr("Start: %1\nEnd: %2").arg(DisplayTime(start_t), end_t > 0 ? DisplayTime(end_t) : ""));
         ui->tableWidget_conn->setCellWidget(row, 0, c0);
 
-        // C1: Outbound
+        // C1: Outbound — humanised + colour-coded so RU/direct vs foreign/proxy is
+        // obvious at a glance (helps curate routing rules). Raw tag kept in the tooltip.
         auto f = f0->clone();
-        f->setToolTip("");
-        f->setText(outboundTag);
+        f->setToolTip(outboundTag);
+        QString obLabel = outboundTag;
+        QColor obColor;
+        if (outboundTag == "proxy") {
+            obLabel = QString::fromUtf8("\xF0\x9F\x8C\x8D ") + tr("Proxy"); // 🌍 foreign
+            obColor = QColor(0x4C, 0x9A, 0xFF);
+        } else if (outboundTag == "direct" || outboundTag == "bypass") {
+            obLabel = QString::fromUtf8("\xF0\x9F\x87\xB7\xF0\x9F\x87\xBA ") + tr("Direct"); // 🇷🇺 domestic
+            obColor = QColor(0x3F, 0xB9, 0x50);
+        } else if (outboundTag == "block") {
+            obLabel = QString::fromUtf8("\xE2\x9B\x94 ") + tr("Block"); // ⛔
+            obColor = QColor(0xE5, 0x48, 0x4D);
+        }
+        f->setText(obLabel);
+        if (obColor.isValid()) f->setForeground(QBrush(obColor));
         ui->tableWidget_conn->setItem(row, 1, f);
 
         // C2: Destination
