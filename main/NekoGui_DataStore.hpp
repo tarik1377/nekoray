@@ -122,7 +122,12 @@ namespace NekoGui {
         bool sub_use_proxy = false;
         bool sub_clear = false;
         bool sub_insecure = false;
-        int sub_auto_update = -30;
+        // Auto-refresh subscriptions by default (positive = enabled, minutes; min 30) so
+        // server-side Reality key rotations are picked up without a manual re-import.
+        int sub_auto_update = 120;
+        // One-shot flag: flip legacy configs still on the old disabled default (-30) to the
+        // new enabled default exactly once, without ever re-overriding a user's own choice.
+        bool sub_auto_update_migrated = false;
 
         // Security
         bool skip_cert = false;

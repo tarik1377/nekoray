@@ -454,6 +454,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(t, &QTimer::timeout, this, [&] { NekoGui_sys::logCounter.fetchAndStoreRelaxed(0); });
     t->start(1000);
 
+    // One-shot: legacy configs persisted the old disabled default (-30). Flip only that
+    // exact value to the new enabled default so existing users start auto-refreshing
+    // subscriptions (picking up server Reality key rotations) without overriding anyone
+    // who chose their own interval/toggle. Runs once, then never touches it again.
+    if (!NekoGui::dataStore->sub_auto_update_migrated) {
+        if (NekoGui::dataStore->sub_auto_update == -30) NekoGui::dataStore->sub_auto_update = 120;
+        NekoGui::dataStore->sub_auto_update_migrated = true;
+        NekoGui::dataStore->Save();
+    }
+
     TM_auto_update_subsctiption = new QTimer;
     TM_auto_update_subsctiption_Reset_Minute = [&](int m) {
         TM_auto_update_subsctiption->stop();
