@@ -1204,6 +1204,12 @@ void MainWindow::refresh_onboarding() {
     onboarding_panel->setGeometry(ui->proxyListTable->viewport()->rect());
     onboarding_panel->raise();
     onboarding_panel->show();
+    // The viewport may still settle to its final size after this first show; re-apply
+    // geometry once the event loop drains so the cards get the full height (no overlap).
+    QTimer::singleShot(0, this, [this] {
+        if (onboarding_panel != nullptr && onboarding_panel->isVisible())
+            onboarding_panel->setGeometry(ui->proxyListTable->viewport()->rect());
+    });
 }
 
 // Small round status dot for a profile row (green connected / red last-test-failed / grey idle).
@@ -1864,7 +1870,9 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
             ui->splitter->setSizes({size.height() / 2, size.height() / 2});
         }
     } else if (event->type() == QEvent::Resize) {
-        if (onboarding_panel != nullptr && onboarding_panel->isVisible() && obj == ui->proxyListTable->viewport()) {
+        // Keep the onboarding overlay sized to the table viewport on every resize
+        // (no isVisible guard — the critical first-show resize can fire while hidden).
+        if (onboarding_panel != nullptr && obj == ui->proxyListTable->viewport()) {
             onboarding_panel->setGeometry(ui->proxyListTable->viewport()->rect());
         }
     }
