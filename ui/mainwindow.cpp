@@ -69,6 +69,10 @@
 #include <QHostInfo>
 #include <QProgressDialog>
 #include <QSysInfo>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkProxy>
+#include <QEventLoop>
 
 #ifdef Q_OS_WIN
 static void RegisterGreenRhythmScheme();
@@ -152,6 +156,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->menu_gr_connect, &QAction::triggered, this, [=] { smart_connect_greenrhythm(); });
     connect(ui->menu_gr_qr, &QAction::triggered, this, [=] { show_subscription_qr(); });
     connect(ui->menu_gr_diag, &QAction::triggered, this, [=] { run_diagnostics(); });
+    ui->menu_gr_autopilot->setChecked(NekoGui::dataStore->connection_autopilot);
+    connect(ui->menu_gr_autopilot, &QAction::toggled, this, [=](bool checked) {
+        NekoGui::dataStore->connection_autopilot = checked;
+        NekoGui::dataStore->Save();
+    });
+    // Autopilot watchdog: first probe soon after startup, then self-scheduled.
+    autopilot_timer = new QTimer(this);
+    autopilot_timer->setSingleShot(true);
+    connect(autopilot_timer, &QTimer::timeout, this, [=] { autopilot_tick(); });
+    autopilot_timer->start(20 * 1000);
     connect(ui->menu_gr_buy, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
     connect(ui->menu_gr_telegram, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kTelegramUrl)); });
     connect(ui->menu_gr_about, &QAction::triggered, this, [=] { show_about_greenrhythm(); });
@@ -1658,6 +1672,123 @@ void MainWindow::run_diagnostics() {
             }
         });
     });
+}
+
+// «Автопилот» watchdog. Probes the RUNNING tunnel end-to-end (HTTP 204 through the
+// local mixed inbound — not a bare server ping) and self-heals on repeated failure,
+// encoding the real-world failure modes: panel key rotation → refresh the subscription
+// and reconnect; DPI/server death → switch to the best other server; then back off
+// with a tray hint at Диагностика. No telemetry; everything stays local.
+void MainWindow::autopilot_tick() {
+    const auto now = QDateTime::currentMSecsSinceEpoch();
+    if (!NekoGui::dataStore->connection_autopilot || NekoGui::dataStore->prepare_exit ||
+        running == nullptr || autopilot_probing || now < autopilot_cooldown_until) {
+        autopilot_fails = 0;
+        if (now >= autopilot_cooldown_until) autopilot_stage = 0;
+        autopilot_timer->start(60 * 1000);
+        return;
+    }
+    autopilot_probing = true;
+    const auto proxyAddr = NekoGui::dataStore->inbound_address;
+    const auto proxyPort = quint16(NekoGui::dataStore->inbound_socks_port);
+    runOnNewThread([=] {
+        QNetworkProxy proxy(QNetworkProxy::Socks5Proxy, proxyAddr, proxyPort);
+        QNetworkAccessManager nam;
+        nam.setProxy(proxy);
+        auto *reply = nam.get(QNetworkRequest(QUrl(QStringLiteral("http://cp.cloudflare.com/generate_204"))));
+        QEventLoop loop;
+        QTimer::singleShot(6000, reply, &QNetworkReply::abort);
+        QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+        loop.exec();
+        const bool ok = reply->error() == QNetworkReply::NoError;
+        reply->deleteLater();
+        runOnUiThread([=] {
+            autopilot_probing = false;
+            if (running == nullptr) { // stopped while probing
+                autopilot_fails = 0;
+                autopilot_timer->start(60 * 1000);
+                return;
+            }
+            if (ok) {
+                autopilot_fails = 0;
+                autopilot_stage = 0;
+                autopilot_timer->start(60 * 1000);
+                return;
+            }
+            autopilot_fails++;
+            MW_show_log(tr("Автопилот: проверка соединения не прошла (%1/2).").arg(autopilot_fails));
+            if (autopilot_fails >= 2) {
+                autopilot_fails = 0;
+                autopilot_recover();
+                autopilot_timer->start(30 * 1000); // re-check the fix soon
+            } else {
+                autopilot_timer->start(15 * 1000); // quick confirm before acting
+            }
+        });
+    });
+}
+
+void MainWindow::autopilot_recover() {
+    auto ent = running;
+    if (ent == nullptr) return;
+    const int gid = ent->gid;
+    const int curId = ent->id;
+    auto group = NekoGui::profileManager->GetGroup(gid);
+    autopilot_stage++;
+
+    const auto giveUp = [this] {
+        MW_show_log(tr("Автопилот: восстановить не удалось — запустите «Диагностику соединения» в меню «Зелёный Ритм»."));
+        if (tray != nullptr)
+            tray->showMessage(GreenRhythm::kServiceName,
+                              tr("Не удалось восстановить соединение — откройте «Диагностику соединения»."),
+                              QSystemTrayIcon::Warning);
+        autopilot_cooldown_until = QDateTime::currentMSecsSinceEpoch() + 5 * 60 * 1000;
+        autopilot_stage = 0;
+    };
+
+    if (autopilot_stage >= 3) {
+        giveUp();
+        return;
+    }
+
+    if (autopilot_stage == 1 && group != nullptr && !group->url.isEmpty()) {
+        // Stage 1 — keys may have rotated on the panel: refresh the subscription,
+        // then reconnect to the best profile in the group (ids may change on update).
+        MW_show_log(tr("Автопилот: обновляю подписку и переподключаюсь…"));
+        if (tray != nullptr)
+            tray->showMessage(GreenRhythm::kServiceName, tr("Соединение потеряно — восстанавливаю…"));
+        NekoGui_sub::groupUpdater->AsyncUpdate(group->url, gid, [this, gid] {
+            runOnUiThread([this, gid] {
+                auto g = NekoGui::profileManager->GetGroup(gid);
+                if (g == nullptr) return;
+                auto ps = g->Profiles();
+                if (ps.isEmpty()) return;
+                std::shared_ptr<NekoGui::ProxyEntity> best;
+                for (const auto &p: ps)
+                    if (p->latency > 0 && (best == nullptr || p->latency < best->latency)) best = p;
+                if (best == nullptr) best = ps.first();
+                neko_start(best->id);
+            });
+        });
+        return;
+    }
+
+    // Stage 2 (or stage 1 without a subscription) — switch to the best OTHER server.
+    auto ps = group != nullptr ? group->Profiles() : QList<std::shared_ptr<NekoGui::ProxyEntity>>{};
+    std::shared_ptr<NekoGui::ProxyEntity> next;
+    for (const auto &p: ps) {
+        if (p->id == curId) continue;
+        if (next == nullptr) next = p;
+        else if (p->latency > 0 && (next->latency <= 0 || p->latency < next->latency)) next = p;
+    }
+    if (next != nullptr) {
+        MW_show_log(tr("Автопилот: сервер недоступен, переключаюсь на «%1»…").arg(next->bean->DisplayName()));
+        if (tray != nullptr)
+            tray->showMessage(GreenRhythm::kServiceName, tr("Переключаюсь на %1").arg(next->bean->DisplayName()));
+        neko_start(next->id);
+        return;
+    }
+    giveUp();
 }
 
 // «Зелёный Ритм» subscription badge in the bottom status row: days + traffic left,

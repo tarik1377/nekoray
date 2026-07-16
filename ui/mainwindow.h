@@ -7,6 +7,7 @@
 #ifndef MW_INTERFACE
 
 #include <QTime>
+#include <QTimer>
 #include <QTableWidgetItem>
 #include <QKeyEvent>
 #include <QSystemTrayIcon>
@@ -211,6 +212,16 @@ private:
     void show_subscription_qr();        // QR bridge: scan the subscription into a mobile client
     void import_link_offer_connect(const QString &link); // onboarding import → «Подключиться?»
     void run_diagnostics();             // internet/DNS/server/TLS checks + support report
+
+    // «Автопилот»: watchdog that probes the live tunnel end-to-end and self-heals —
+    // refresh subscription (rotated keys), reconnect, switch server, then back off.
+    QTimer *autopilot_timer = nullptr;
+    int autopilot_fails = 0;
+    int autopilot_stage = 0;
+    qint64 autopilot_cooldown_until = 0;
+    bool autopilot_probing = false;
+    void autopilot_tick();
+    void autopilot_recover();
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;

@@ -642,6 +642,7 @@
      <string>Зелёный Ритм</string>
     </property>
     <addaction name="menu_gr_connect"/>
+    <addaction name="menu_gr_autopilot"/>
     <addaction name="menu_gr_qr"/>
     <addaction name="separator"/>
     <addaction name="menu_gr_buy"/>
@@ -673,6 +674,17 @@
   <action name="menu_gr_diag">
    <property name="text">
     <string>Диагностика соединения</string>
+   </property>
+  </action>
+  <action name="menu_gr_autopilot">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Автопилот соединения</string>
+   </property>
+   <property name="toolTip">
+    <string>Следить за туннелем и автоматически восстанавливать: обновить подписку, переподключиться, сменить сервер</string>
    </property>
   </action>
   <action name="menu_gr_buy">
