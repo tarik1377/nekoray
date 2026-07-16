@@ -85,3 +85,10 @@ CMakeLists.txt.user*
 
 .vs
 out
+# crash dumps / build junk
+*.stackdump
+
+# local dev tooling (not for the public tree)
+.claude/
+libs/local_*.bat
+libs/preview_server.ps1
