@@ -62,6 +62,8 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QSettings>
+#include <QRegularExpression>
+#include <QDateTime>
 
 #ifdef Q_OS_WIN
 static void RegisterGreenRhythmScheme();
@@ -915,6 +917,7 @@ void MainWindow::refresh_status(const QString &traffic_update) {
         // info (running profile detail / select mode) — it is also the speedtest click target.
         ui->label_running->setVisible(up || select_mode);
     }
+    refresh_subscription_status();
 
     // From UI
     QString group_name;
@@ -1386,6 +1389,69 @@ void MainWindow::import_scheme_url(const QString &raw) {
             });
         });
     }
+}
+
+// «Зелёный Ритм» subscription badge in the bottom status row: days + traffic left,
+// parsed from the Subscription-UserInfo the server already sends (no extra request,
+// no telemetry). Green normally; amber + a «Продлить» link when nearly out. Only
+// shows for the brand's own subscription group — other services are untouched.
+void MainWindow::refresh_subscription_status() {
+    if (ui->label_sub_status == nullptr) return;
+
+    std::shared_ptr<NekoGui::Group> gr;
+    {
+        QMutexLocker locker(&NekoGui::profileManager->mutex);
+        for (const auto &[gid, g]: NekoGui::profileManager->groups) {
+            if (g == nullptr || g->url.isEmpty()) continue;
+            if (g->name == GreenRhythm::kServiceName || g->url.contains(QStringLiteral("verdantvibe"), Qt::CaseInsensitive)) {
+                gr = g;
+                break;
+            }
+        }
+    }
+    if (gr == nullptr || gr->info.trimmed().isEmpty()) {
+        ui->label_sub_status->clear();
+        ui->label_sub_status->setVisible(false);
+        return;
+    }
+
+    auto grab = [&](const QString &key) -> long long {
+        auto m = QRegularExpression(key + "=([0-9]+)").match(gr->info);
+        return m.hasMatch() ? m.captured(1).toLongLong() : -1;
+    };
+    const long long total = grab("total"), up = grab("upload"), down = grab("download"), expire = grab("expire");
+    const long long used = (up < 0 ? 0 : up) + (down < 0 ? 0 : down);
+
+    QStringList parts;
+    bool low = false;
+    if (expire > 0) {
+        long long days = (expire - QDateTime::currentSecsSinceEpoch()) / 86400;
+        if (days < 0) days = 0;
+        parts << tr("%1 дн.").arg(days);
+        if (days <= 3) low = true;
+    }
+    if (total > 0) {
+        long long left = total - used;
+        if (left < 0) left = 0;
+        parts << ReadableSize(left);
+        if (static_cast<double>(left) / total <= 0.10) low = true;
+    }
+    if (parts.isEmpty()) {
+        ui->label_sub_status->clear();
+        ui->label_sub_status->setVisible(false);
+        return;
+    }
+
+    const QString color = low ? QStringLiteral("#E3A008") : QStringLiteral("#3FB950");
+    QString text = QStringLiteral("<span style='color:%1;'>%2 %3</span>")
+                       .arg(color, QString::fromUtf8("\xF0\x9F\x8C\xBF"), parts.join(QStringLiteral(" \xC2\xB7 "))); // 🌿 ·
+    if (low) {
+        text += QStringLiteral(" <a href='%1' style='color:#E3A008;text-decoration:none;'>%2</a>")
+                    .arg(GreenRhythm::kRenewUrl, tr("Продлить"));
+    }
+    ui->label_sub_status->setText(text);
+    ui->label_sub_status->setToolTip(tr("Подписка «Зелёный Ритм»"));
+    ui->label_sub_status->setVisible(true);
 }
 
 // Small round status dot for a profile row (green connected / red last-test-failed / grey idle).

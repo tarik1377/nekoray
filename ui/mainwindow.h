@@ -206,6 +206,7 @@ private:
     void CheckUpdate();
 
     void show_about_greenrhythm();
+    void refresh_subscription_status(); // «Зелёный Ритм» days/traffic-left badge + renew nudge
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
