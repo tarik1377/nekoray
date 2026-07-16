@@ -61,6 +61,11 @@
 #include <QFont>
 #include <QDir>
 #include <QFileInfo>
+#include <QSettings>
+
+#ifdef Q_OS_WIN
+static void RegisterGreenRhythmScheme();
+#endif
 
 void UI_InitMainWindow() {
     mainwindow = new MainWindow;
@@ -224,6 +229,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->proxyListTable->verticalHeader()->setDefaultSectionSize(24);
 
     build_onboarding_panel();
+#ifdef Q_OS_WIN
+    RegisterGreenRhythmScheme(); // greenrhythm:// one-click import (HKCU, no admin)
+#endif
 
     // search box
     ui->search->setVisible(false);
@@ -571,6 +579,13 @@ void MainWindow::show_group(int gid) {
 // callback
 
 void MainWindow::dialog_message_impl(const QString &sender, const QString &info) {
+    // greenrhythm:// deep link (startup args or forwarded by a second instance).
+    // Handled first and returned: the raw link is untrusted and must not fall
+    // through to the substring matching below.
+    if (info.startsWith("SchemeImport#")) {
+        import_scheme_url(info.mid(QStringLiteral("SchemeImport#").size()));
+        return;
+    }
     // info
     if (info.contains("UpdateIcon")) {
         icon_status = -1;
@@ -1218,6 +1233,140 @@ void MainWindow::refresh_onboarding() {
     }
     onboarding_panel->setVisible(show);
     ui->proxyListTable->setVisible(!show);
+}
+
+// ---------- greenrhythm:// one-click import ----------
+
+#ifdef Q_OS_WIN
+// HKCU\Software\Classes registration — per-user, no admin. Re-checked on every
+// start so the handler self-heals when the exe is moved.
+static void RegisterGreenRhythmScheme() {
+    const auto exe = QDir::toNativeSeparators(QApplication::applicationFilePath());
+    const auto cmd = QStringLiteral("\"%1\" \"%2\"").arg(exe, QStringLiteral("%1"));
+    QSettings reg(QStringLiteral("HKEY_CURRENT_USER\\Software\\Classes\\greenrhythm"), QSettings::NativeFormat);
+    if (reg.value(QStringLiteral("shell/open/command/.")).toString() == cmd) return;
+    reg.setValue(QStringLiteral("."), QStringLiteral("URL:greenrhythm"));
+    reg.setValue(QStringLiteral("URL Protocol"), QString());
+    reg.setValue(QStringLiteral("shell/open/command/."), cmd);
+}
+#endif
+
+// Contract: greenrhythm://import/<percent-encoded payload>, payload = https
+// subscription link OR a single vless:// profile. The payload is UNTRUSTED:
+// decode exactly once, cap at 8 KB, reject control characters and any other
+// scheme (file://, javascript:, http://, ...). Never passed to a shell.
+static QString ParseGreenRhythmImport(const QString &raw, QString *errOut) {
+    const auto prefix = QStringLiteral("greenrhythm://import/");
+    if (!raw.startsWith(prefix, Qt::CaseInsensitive)) {
+        *errOut = QObject::tr("неизвестный формат ссылки");
+        return {};
+    }
+    const auto payload = QUrl::fromPercentEncoding(raw.mid(prefix.size()).toUtf8()).trimmed();
+    if (payload.toUtf8().size() > 8 * 1024) {
+        *errOut = QObject::tr("слишком длинная ссылка");
+        return {};
+    }
+    // Reject control chars (C0/C1) and Unicode bidi/zero-width format characters:
+    // the whole safety model is "show the user the real source host", so RTLO and
+    // homograph-hiding code points must not survive into the confirmation dialog.
+    for (const auto &ch: payload) {
+        const auto u = ch.unicode();
+        const bool control = u < 0x20 || (u >= 0x7F && u <= 0x9F);
+        const bool bidiOrZeroWidth = u == 0x200B || u == 0x200C || u == 0x200D || u == 0xFEFF ||
+                                     (u >= 0x202A && u <= 0x202E) || (u >= 0x2066 && u <= 0x2069);
+        if (control || bidiOrZeroWidth) {
+            *errOut = QObject::tr("недопустимые символы");
+            return {};
+        }
+    }
+    const bool schemeOk = payload.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive) ||
+                          payload.startsWith(QStringLiteral("vless://"), Qt::CaseInsensitive);
+    if (!schemeOk || !QUrl(payload).isValid()) {
+        *errOut = QObject::tr("поддерживаются только https-ссылки подписок и vless-профили");
+        return {};
+    }
+    return payload;
+}
+
+void MainWindow::import_scheme_url(const QString &raw) {
+    ActivateWindow(this);
+    QString err;
+    const auto payload = ParseGreenRhythmImport(raw, &err);
+    if (payload.isEmpty()) {
+        MessageBoxWarning(tr("Импорт по ссылке"), tr("Ссылка не добавлена: %1.").arg(err));
+        return;
+    }
+    // Reentrancy guard: QMessageBox::question below pumps a nested event loop, so a
+    // rapid second deep link for the same payload could re-enter before the first
+    // group is created and duplicate it. Ignore identical in-flight imports.
+    if (scheme_import_inflight.contains(payload)) return;
+    scheme_import_inflight.insert(payload);
+    struct InflightGuard {
+        QSet<QString> &set;
+        QString key;
+        ~InflightGuard() { set.remove(key); }
+    } inflightGuard{scheme_import_inflight, payload};
+    const QUrl url(payload);
+    if (payload.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive)) {
+        // Subscription. Idempotent: the same link updates its existing group.
+        std::shared_ptr<NekoGui::Group> group;
+        for (const auto &[gid, g]: NekoGui::profileManager->groups) {
+            if (g != nullptr && g->url == payload) {
+                group = g;
+                break;
+            }
+        }
+        if (QMessageBox::question(GetMessageBoxParent(), tr("Зелёный Ритм — импорт"),
+                                  tr("Добавить подписку с %1 и загрузить список серверов?").arg(url.host())) != QMessageBox::Yes) return;
+        if (group == nullptr) {
+            group = NekoGui::ProfileManager::NewGroup();
+            group->name = GreenRhythm::kServiceName;
+            group->url = payload;
+            NekoGui::profileManager->AddGroup(group);
+            refresh_groups();
+        }
+        const int gid = group->id;
+        NekoGui_sub::groupUpdater->AsyncUpdate(payload, gid, [this, gid] {
+            runOnUiThread([this, gid] {
+                auto g = NekoGui::profileManager->GetGroup(gid);
+                if (g == nullptr) return;
+                const auto profiles = g->Profiles();
+                refresh_groups();
+                refresh_proxy_list();
+                if (profiles.isEmpty()) {
+                    MessageBoxWarning(tr("Зелёный Ритм"),
+                                      tr("Подписка недоступна — возможно, срок истёк.\nПродлить: %1").arg(GreenRhythm::kRenewUrl));
+                    return;
+                }
+                if (QMessageBox::question(GetMessageBoxParent(), tr("Зелёный Ритм"),
+                                          tr("Подписка добавлена (профилей: %1). Подключиться сейчас?").arg(profiles.size())) == QMessageBox::Yes) {
+                    neko_start(profiles.first()->id);
+                }
+            });
+        });
+    } else {
+        // Single vless:// profile into the current group.
+        if (QMessageBox::question(GetMessageBoxParent(), tr("Зелёный Ритм — импорт"),
+                                  tr("Добавить профиль сервера %1?").arg(url.host())) != QMessageBox::Yes) return;
+        // Snapshot existing profile ids so we start exactly the one this link added,
+        // not whatever a concurrent update happened to give the highest id.
+        auto before = std::make_shared<QSet<int>>();
+        for (const auto &[pid, p]: NekoGui::profileManager->profiles) before->insert(pid);
+        NekoGui_sub::groupUpdater->AsyncUpdate(payload, -1, [this, before] {
+            runOnUiThread([this, before] {
+                refresh_proxy_list();
+                int added = -1;
+                for (const auto &[pid, p]: NekoGui::profileManager->profiles) {
+                    if (!before->contains(pid)) { added = pid; break; }
+                }
+                if (added < 0) return;
+                if (QMessageBox::question(GetMessageBoxParent(), tr("Зелёный Ритм"),
+                                          tr("Профиль добавлен. Подключиться сейчас?")) == QMessageBox::Yes) {
+                    neko_start(added);
+                }
+            });
+        });
+    }
 }
 
 // Small round status dot for a profile row (green connected / red last-test-failed / grey idle).

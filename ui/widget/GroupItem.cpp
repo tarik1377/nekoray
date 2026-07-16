@@ -3,6 +3,7 @@
 
 #include "ui/edit/dialog_edit_group.h"
 #include "main/GuiUtils.hpp"
+#include "main/BrandingConstants.hpp"
 #include "sub/GroupUpdater.hpp"
 
 #include <QMessageBox>
@@ -82,11 +83,23 @@ void GroupItem::refresh_data() {
         if (!ent->info.isEmpty()) {
             info << subinfo;
         }
-        if (info.isEmpty()) {
+        // Soft renew hint while the last update returned nothing (expired/unreachable).
+        // State-driven and non-modal; clears itself on the next successful update.
+        QString hint;
+        if (ent->last_update_outcome == 2) {
+            hint = QStringLiteral("<span style=\"color:#E3A008;\">%1</span> <a href=\"%2\">%3</a>")
+                       .arg(tr("Подписка недоступна — возможно, срок истёк."),
+                            GreenRhythm::kRenewUrl, tr("Продлить"));
+        }
+        if (info.isEmpty() && hint.isEmpty()) {
             ui->subinfo->hide();
         } else {
             ui->subinfo->show();
-            ui->subinfo->setText(info.join(" | "));
+            auto text = info.join(" | ").toHtmlEscaped();
+            if (!hint.isEmpty()) text = text.isEmpty() ? hint : text + "<br>" + hint;
+            ui->subinfo->setTextFormat(Qt::RichText);
+            ui->subinfo->setOpenExternalLinks(true);
+            ui->subinfo->setText(text);
         }
     }
     runOnUiThread(

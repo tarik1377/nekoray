@@ -15,6 +15,7 @@
 #include <QShortcut>
 #include <QSemaphore>
 #include <QMutex>
+#include <QSet>
 
 #include "GroupSort.hpp"
 
@@ -177,6 +178,10 @@ private:
     bool onboarding_dismissed = false;
     void build_onboarding_panel();
     void refresh_onboarding();
+
+    // greenrhythm://import/<payload> deep link (untrusted; validated inside)
+    void import_scheme_url(const QString &raw);
+    QSet<QString> scheme_import_inflight; // dedupe reentrant identical deep links
 
     void keyPressEvent(QKeyEvent *event) override;
 

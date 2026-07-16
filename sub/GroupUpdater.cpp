@@ -520,6 +520,7 @@ namespace NekoGui_sub {
             auto resp = NetworkRequestHelper::HttpGet(content);
             if (!resp.error.isEmpty()) {
                 MW_show_log("<<<<<<<< " + QObject::tr("Requesting subscription %1 error: %2").arg(groupName, resp.error + "\n" + resp.data));
+                if (group != nullptr) group->last_update_outcome = 2; // renew hint in the group row
                 return;
             }
 
@@ -557,6 +558,7 @@ namespace NekoGui_sub {
         rawUpdater->update(content);
 
         if (group != nullptr) {
+            group->last_update_outcome = group->Profiles().isEmpty() ? 2 : 1;
             out_all = group->Profiles();
 
             QString change_text;
