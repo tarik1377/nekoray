@@ -119,8 +119,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->toolButton_preferences->setMenu(ui->menu_preferences);
     ui->toolButton_server->setMenu(ui->menu_server);
     ui->menubar->setVisible(false);
-    connect(ui->toolButton_document, &QToolButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl("https://github.com/tarik1377/nekoray")); });
-    connect(ui->toolButton_ads, &QToolButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
+    connect(ui->toolButton_document, &QToolButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kSiteUrl)); });
+    // «Подписка» is the brand hub: dropdown with Buy / Telegram / About. This also
+    // makes the «Зелёный Ритм» menu (and the About dialog) reachable — otherwise it
+    // lived only on the hidden menubar.
+    ui->toolButton_ads->setMenu(ui->menu_greenrhythm);
     connect(ui->toolButton_update, &QToolButton::clicked, this, [=] { runOnNewThread([=] { CheckUpdate(); }); });
     connect(ui->toolButton_update_sub, &QToolButton::clicked, this, [=] { on_menu_update_subscription_triggered(); });
     connect(ui->toolButton_url_test, &QToolButton::clicked, this, [=] { speedtest_current_group(1, true); });
@@ -902,7 +905,7 @@ void MainWindow::refresh_status(const QString &traffic_update) {
     {
         const bool up = (running != nullptr);
         const QString nm = up ? running->bean->DisplayName().left(26) : QString();
-        ui->label_conn_pill->setText(up ? (tr("Connected") + QStringLiteral(" · ") + nm) : tr("Not Running"));
+        ui->label_conn_pill->setText(up ? (tr("Подключено") + QStringLiteral(" · ") + nm) : tr("Не запущено"));
         ui->label_conn_pill->setStyleSheet(QStringLiteral(
             "QLabel#label_conn_pill{border-radius:9px;padding:2px 10px;color:white;background:%1;}")
             .arg(up ? QStringLiteral("#3FB950") : QStringLiteral("#5A5F66")));
@@ -2101,13 +2104,13 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
         QString obLabel = outboundTag;
         QColor obColor;
         if (outboundTag == "proxy") {
-            obLabel = QString::fromUtf8("\xF0\x9F\x8C\x8D ") + tr("Proxy"); // 🌍 foreign
+            obLabel = QString::fromUtf8("\xF0\x9F\x8C\x8D ") + tr("Прокси"); // 🌍 foreign
             obColor = QColor(0x4C, 0x9A, 0xFF);
         } else if (outboundTag == "direct" || outboundTag == "bypass") {
-            obLabel = QString::fromUtf8("\xF0\x9F\x87\xB7\xF0\x9F\x87\xBA ") + tr("Direct"); // 🇷🇺 domestic
+            obLabel = QString::fromUtf8("\xF0\x9F\x87\xB7\xF0\x9F\x87\xBA ") + tr("Напрямую"); // 🇷🇺 domestic
             obColor = QColor(0x3F, 0xB9, 0x50);
         } else if (outboundTag == "block") {
-            obLabel = QString::fromUtf8("\xE2\x9B\x94 ") + tr("Block"); // ⛔
+            obLabel = QString::fromUtf8("\xE2\x9B\x94 ") + tr("Блокировка"); // ⛔
             obColor = QColor(0xE5, 0x48, 0x4D);
         }
         f->setText(obLabel);

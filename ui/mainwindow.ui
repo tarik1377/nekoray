@@ -164,7 +164,7 @@
       <item>
        <widget class="QToolButton" name="toolButton_update_sub">
         <property name="text">
-         <string>Update Sub</string>
+         <string>Обновить подписку</string>
         </property>
         <property name="icon">
          <iconset theme="b-view-refresh">
@@ -208,7 +208,7 @@
       <item>
        <widget class="QToolButton" name="toolButton_dashboard">
         <property name="text">
-         <string>Dashboard</string>
+         <string>Панель</string>
         </property>
         <property name="toolTip">
          <string>Open the Clash dashboard (live connections, traffic, proxy switching). Requires Clash API enabled in Core Options.</string>
@@ -241,7 +241,7 @@
       <item>
        <widget class="QToolButton" name="toolButton_url_test">
         <property name="text">
-         <string>URL Test</string>
+         <string>Тест</string>
         </property>
         <property name="popupMode">
          <enum>QToolButton::InstantPopup</enum>
