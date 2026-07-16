@@ -207,6 +207,7 @@ private:
 
     void show_about_greenrhythm();
     void refresh_subscription_status(); // «Зелёный Ритм» days/traffic-left badge + renew nudge
+    void smart_connect_greenrhythm();   // connect to the fastest server in the brand group
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;

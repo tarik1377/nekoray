@@ -144,6 +144,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     });
 
     // GreenRhythm service entry points (opt-in default help/purchase points)
+    connect(ui->menu_gr_connect, &QAction::triggered, this, [=] { smart_connect_greenrhythm(); });
     connect(ui->menu_gr_buy, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
     connect(ui->menu_gr_telegram, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kTelegramUrl)); });
     connect(ui->menu_gr_about, &QAction::triggered, this, [=] { show_about_greenrhythm(); });
@@ -1389,6 +1390,38 @@ void MainWindow::import_scheme_url(const QString &raw) {
             });
         });
     }
+}
+
+// Smart connect: pick the fastest already-tested server in the «Зелёный Ритм» group
+// (lowest positive latency; first server if none tested yet) and connect. Falls back
+// to the current group so it also works as a generic "connect to best" action.
+void MainWindow::smart_connect_greenrhythm() {
+    std::shared_ptr<NekoGui::Group> gr;
+    {
+        QMutexLocker locker(&NekoGui::profileManager->mutex);
+        for (const auto &[gid, g]: NekoGui::profileManager->groups) {
+            if (g == nullptr) continue;
+            if (g->name == GreenRhythm::kServiceName || g->url.contains(QStringLiteral("verdantvibe"), Qt::CaseInsensitive)) {
+                gr = g;
+                break;
+            }
+        }
+    }
+    if (gr == nullptr) gr = NekoGui::profileManager->CurrentGroup();
+    if (gr == nullptr) return;
+
+    auto profiles = gr->Profiles();
+    if (profiles.isEmpty()) {
+        MessageBoxWarning(tr("Быстрое подключение"),
+                          tr("Нет серверов. Импортируйте подписку «Зелёный Ритм»."));
+        return;
+    }
+    std::shared_ptr<NekoGui::ProxyEntity> best;
+    for (const auto &p: profiles) {
+        if (p->latency > 0 && (best == nullptr || p->latency < best->latency)) best = p;
+    }
+    if (best == nullptr) best = profiles.first(); // nothing tested yet — take the first
+    neko_start(best->id);
 }
 
 // «Зелёный Ритм» subscription badge in the bottom status row: days + traffic left,
