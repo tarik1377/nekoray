@@ -4,6 +4,8 @@
 #include "ProxyEntity.hpp"
 #include "Group.hpp"
 
+#include <QRecursiveMutex>
+
 namespace NekoGui {
     class ProfileManager : private JsonStore {
     public:
@@ -16,6 +18,13 @@ namespace NekoGui {
 
         std::map<int, std::shared_ptr<ProxyEntity>> profiles;
         std::map<int, std::shared_ptr<Group>> groups;
+
+        // Guards structural mutation/lookup of the maps above. Imports run on
+        // per-call worker threads (GroupUpdater::AsyncUpdate) while the UI thread
+        // reads, so two concurrent updates could otherwise corrupt the std::map.
+        // Recursive: DeleteGroup -> DeleteProfile, MoveProfile -> GetGroup, etc.
+        // Public so hot paths that iterate the maps directly can lock too.
+        mutable QRecursiveMutex mutex;
 
         ProfileManager();
 

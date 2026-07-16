@@ -1310,10 +1310,13 @@ void MainWindow::import_scheme_url(const QString &raw) {
     if (payload.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive)) {
         // Subscription. Idempotent: the same link updates its existing group.
         std::shared_ptr<NekoGui::Group> group;
-        for (const auto &[gid, g]: NekoGui::profileManager->groups) {
-            if (g != nullptr && g->url == payload) {
-                group = g;
-                break;
+        {
+            QMutexLocker locker(&NekoGui::profileManager->mutex);
+            for (const auto &[gid, g]: NekoGui::profileManager->groups) {
+                if (g != nullptr && g->url == payload) {
+                    group = g;
+                    break;
+                }
             }
         }
         if (QMessageBox::question(GetMessageBoxParent(), tr("Зелёный Ритм — импорт"),
@@ -1351,13 +1354,19 @@ void MainWindow::import_scheme_url(const QString &raw) {
         // Snapshot existing profile ids so we start exactly the one this link added,
         // not whatever a concurrent update happened to give the highest id.
         auto before = std::make_shared<QSet<int>>();
-        for (const auto &[pid, p]: NekoGui::profileManager->profiles) before->insert(pid);
+        {
+            QMutexLocker locker(&NekoGui::profileManager->mutex);
+            for (const auto &[pid, p]: NekoGui::profileManager->profiles) before->insert(pid);
+        }
         NekoGui_sub::groupUpdater->AsyncUpdate(payload, -1, [this, before] {
             runOnUiThread([this, before] {
                 refresh_proxy_list();
                 int added = -1;
-                for (const auto &[pid, p]: NekoGui::profileManager->profiles) {
-                    if (!before->contains(pid)) { added = pid; break; }
+                {
+                    QMutexLocker locker(&NekoGui::profileManager->mutex);
+                    for (const auto &[pid, p]: NekoGui::profileManager->profiles) {
+                        if (!before->contains(pid)) { added = pid; break; }
+                    }
                 }
                 if (added < 0) return;
                 if (QMessageBox::question(GetMessageBoxParent(), tr("Зелёный Ритм"),

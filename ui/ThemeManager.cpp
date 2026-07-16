@@ -3,12 +3,46 @@
 #include <QStyleFactory>
 #include <QColor>
 #include <QPalette>
+#include <QFile>
+#include <QFileInfo>
+#include <QDir>
+#include <QFileSystemWatcher>
 
 #include "ThemeManager.hpp"
 
 ThemeManager *themeManager = new ThemeManager;
 
 extern QString ReadFileText(const QString &path);
+
+// Dev override: if GREENRHYTHM_QSS_DIR is set and holds a same-named css file,
+// read the theme from disk instead of the compiled-in :/qrc copy. Returns the
+// resolved disk path in *diskPath when the override was used.
+static QString ReadThemeCss(const QString &qrcPath, QString *diskPath) {
+    const auto devDir = qEnvironmentVariable("GREENRHYTHM_QSS_DIR");
+    if (!devDir.isEmpty()) {
+        // QDir normalizes mixed separators (env var typically holds backslashes).
+        const QString disk = QDir(devDir).absoluteFilePath(QFileInfo(qrcPath).fileName());
+        if (QFileInfo::exists(disk)) {
+            if (diskPath) *diskPath = disk;
+            return ReadFileText(disk);
+        }
+    }
+    return ReadFileText(qrcPath);
+}
+
+void ThemeManager::watchDevQss(const QString &diskPath) {
+    if (dev_qss_watcher == nullptr) {
+        dev_qss_watcher = new QFileSystemWatcher();
+        QObject::connect(dev_qss_watcher, &QFileSystemWatcher::fileChanged, dev_qss_watcher, [this](const QString &p) {
+            // Editors often replace the file (watch drops) — re-add and re-apply.
+            if (!dev_qss_watcher->files().contains(p) && QFile::exists(p)) dev_qss_watcher->addPath(p);
+            const auto t = current_theme;
+            current_theme = "__reload__"; // bypass the no-op guard in ApplyTheme
+            ApplyTheme(t);
+        });
+    }
+    if (!dev_qss_watcher->files().contains(diskPath)) dev_qss_watcher->addPath(diskPath);
+}
 
 void ThemeManager::ApplyTheme(const QString &theme) {
     auto internal = [=] {
@@ -49,10 +83,12 @@ void ThemeManager::ApplyTheme(const QString &theme) {
                     default:
                         return;
                 }
-                qss = ReadFileText(path);
+                QString devDiskPath;
+                qss = ReadThemeCss(path, &devDiskPath);
                 for (auto const &[a, b]: replace) {
                     qss = qss.replace(a, b);
                 }
+                if (!devDiskPath.isEmpty()) watchDevQss(devDiskPath);
             }
 
             auto system_style = QStyleFactory::create(this->system_style_name);

@@ -269,6 +269,9 @@ set_target_properties(greenrhythm PROPERTIES
         WIN32_EXECUTABLE TRUE
 )
 
+# Precompiled header — speeds up incremental rebuilds (heavy Qt includes compiled once).
+target_precompile_headers(greenrhythm PRIVATE main/pch.hpp)
+
 # Target Source Translations
 
 set(TS_FILES
