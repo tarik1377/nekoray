@@ -226,7 +226,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
-    ui->proxyListTable->verticalHeader()->setDefaultSectionSize(24);
+    // Card-like rows: taller for breathing room, no gridlines (surface comes from
+    // the theme's alternating rows + rounded selection). Columns/sort/drag intact.
+    ui->proxyListTable->verticalHeader()->setDefaultSectionSize(40);
+    ui->proxyListTable->setShowGrid(false);
 
     build_onboarding_panel();
 #ifdef Q_OS_WIN
@@ -1380,13 +1383,13 @@ void MainWindow::import_scheme_url(const QString &raw) {
 
 // Small round status dot for a profile row (green connected / red last-test-failed / grey idle).
 static QIcon MakeStatusDot(const QColor &color) {
-    QPixmap pm(14, 14);
+    QPixmap pm(18, 18);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing, true);
     p.setPen(Qt::NoPen);
     p.setBrush(color);
-    p.drawEllipse(3, 3, 8, 8);
+    p.drawEllipse(4, 4, 10, 10);
     return QIcon(pm);
 }
 
