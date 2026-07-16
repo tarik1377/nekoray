@@ -1035,13 +1035,17 @@ void MainWindow::refresh_proxy_list_impl(const int &id, GroupSortAction groupSor
         // 清空数据
         ui->proxyListTable->row2Id.clear();
         ui->proxyListTable->setRowCount(0);
-        // 添加行
+        // 添加行 — lock while iterating the shared map (a background subscription
+        // worker may be mutating it concurrently).
         int row = -1;
-        for (const auto &[id, profile]: NekoGui::profileManager->profiles) {
-            if (NekoGui::dataStore->current_group != profile->gid) continue;
-            row++;
-            ui->proxyListTable->insertRow(row);
-            ui->proxyListTable->row2Id += id;
+        {
+            QMutexLocker locker(&NekoGui::profileManager->mutex);
+            for (const auto &[id, profile]: NekoGui::profileManager->profiles) {
+                if (NekoGui::dataStore->current_group != profile->gid) continue;
+                row++;
+                ui->proxyListTable->insertRow(row);
+                ui->proxyListTable->row2Id += id;
+            }
         }
     }
 

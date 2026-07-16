@@ -374,6 +374,11 @@ namespace NekoGui {
     }
 
     QList<std::shared_ptr<ProxyEntity>> Group::Profiles() const {
+        // Central reader — most profile-list access funnels through here (UI refresh,
+        // config build, subscription workers). Lock so it can't iterate the shared map
+        // while a worker-thread import mutates it. Recursive mutex → safe if a locked
+        // writer calls this indirectly.
+        QMutexLocker locker(&profileManager->mutex);
         QList<std::shared_ptr<ProxyEntity>> ret;
         for (const auto &[_, profile]: profileManager->profiles) {
             if (id == profile->gid) ret += profile;

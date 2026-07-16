@@ -1,3 +1,12 @@
+> **GreenRhythm currently ships Windows x64 only.** The distro package names below
+> (`nekoray` via apt/AUR/pacman) are legacy upstream instructions and do **NOT**
+> install GreenRhythm — `pacman -S nekoray` pulls an unrelated upstream package.
+> On Linux, build from source or run the portable bundle; the binary is `greenrhythm`.
+>
+> **GreenRhythm сейчас выпускается только под Windows x64.** Команды установки пакетов
+> ниже (`nekoray` через apt/AUR/pacman) — это устаревшие инструкции апстрима и
+> GreenRhythm НЕ ставят. На Linux собирайте из исходников; бинарник — `greenrhythm`.
+
 ## Linux 安装
 
 ### Debian 系发行版
