@@ -145,6 +145,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     // GreenRhythm service entry points (opt-in default help/purchase points)
     connect(ui->menu_gr_connect, &QAction::triggered, this, [=] { smart_connect_greenrhythm(); });
+    connect(ui->menu_gr_qr, &QAction::triggered, this, [=] { show_subscription_qr(); });
     connect(ui->menu_gr_buy, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
     connect(ui->menu_gr_telegram, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kTelegramUrl)); });
     connect(ui->menu_gr_about, &QAction::triggered, this, [=] { show_about_greenrhythm(); });
@@ -1422,6 +1423,80 @@ void MainWindow::smart_connect_greenrhythm() {
     }
     if (best == nullptr) best = profiles.first(); // nothing tested yet — take the first
     neko_start(best->id);
+}
+
+// QR bridge: show the subscription link as a QR code to scan in a mobile client —
+// one subscription across devices. The image is decoded back with the bundled ZXing
+// reader before it is shown: a QR we cannot read ourselves never reaches the screen.
+void MainWindow::show_subscription_qr() {
+    std::shared_ptr<NekoGui::Group> gr;
+    {
+        QMutexLocker locker(&NekoGui::profileManager->mutex);
+        for (const auto &[gid, g]: NekoGui::profileManager->groups) {
+            if (g == nullptr || g->url.isEmpty()) continue;
+            if (g->name == GreenRhythm::kServiceName || g->url.contains(QStringLiteral("verdantvibe"), Qt::CaseInsensitive)) {
+                gr = g;
+                break;
+            }
+        }
+    }
+    if (gr == nullptr) {
+        auto cg = NekoGui::profileManager->CurrentGroup();
+        if (cg != nullptr && !cg->url.isEmpty()) gr = cg;
+    }
+    if (gr == nullptr) {
+        MessageBoxWarning(tr("QR подписки"), tr("Нет группы-подписки. Импортируйте подписку «Зелёный Ритм»."));
+        return;
+    }
+
+    QImage im;
+    try {
+        const auto qr = qrcodegen::QrCode::encodeText(gr->url.toUtf8().data(), qrcodegen::QrCode::Ecc::MEDIUM);
+        constexpr qint32 pad = 2;
+        const qint32 sz = qr.getSize();
+        im = QImage(sz + pad * 2, sz + pad * 2, QImage::Format_RGB32);
+        im.fill(qRgb(255, 255, 255));
+        for (int y = 0; y < sz; y++)
+            for (int x = 0; x < sz; x++)
+                if (qr.getModule(x, y)) im.setPixel(x + pad, y + pad, qRgb(0, 0, 0));
+    } catch (const std::exception &ex) {
+        MessageBoxWarning(tr("QR подписки"), ex.what());
+        return;
+    }
+
+#ifndef NKR_NO_ZXING
+    {
+        using namespace ZXingQt;
+        auto hints = DecodeHints()
+                         .setFormats(BarcodeFormat::QRCode)
+                         .setTryRotate(false)
+                         .setBinarizer(Binarizer::FixedThreshold);
+        const auto scaled = im.scaled(im.width() * 4, im.height() * 4, Qt::KeepAspectRatio, Qt::FastTransformation);
+        if (ReadBarcode(scaled, hints).text() != gr->url) {
+            MessageBoxWarning(tr("QR подписки"), tr("Самопроверка QR-кода не прошла — код не показан."));
+            return;
+        }
+        MW_show_log(tr("QR подписки: самопроверка декодирования пройдена."));
+    }
+#endif
+
+    auto w = new QDialog(this);
+    w->setWindowTitle(tr("QR подписки"));
+    auto lay = new QVBoxLayout(w);
+    auto pic = new QLabel(w);
+    pic->setPixmap(QPixmap::fromImage(im.scaled(340, 340, Qt::KeepAspectRatio, Qt::FastTransformation), Qt::MonoOnly));
+    pic->setAlignment(Qt::AlignCenter);
+    pic->setMargin(8);
+    lay->addWidget(pic);
+    auto hint = new QLabel(tr("Отсканируйте в мобильном клиенте — одна подписка на всех устройствах."), w);
+    hint->setAlignment(Qt::AlignCenter);
+    hint->setWordWrap(true);
+    lay->addWidget(hint);
+    auto copyBtn = new QPushButton(tr("Копировать ссылку"), w);
+    connect(copyBtn, &QPushButton::clicked, w, [url = gr->url] { QApplication::clipboard()->setText(url); });
+    lay->addWidget(copyBtn);
+    w->exec();
+    w->deleteLater();
 }
 
 // «Зелёный Ритм» subscription badge in the bottom status row: days + traffic left,

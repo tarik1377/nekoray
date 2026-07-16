@@ -642,6 +642,7 @@
      <string>Зелёный Ритм</string>
     </property>
     <addaction name="menu_gr_connect"/>
+    <addaction name="menu_gr_qr"/>
     <addaction name="separator"/>
     <addaction name="menu_gr_buy"/>
     <addaction name="menu_gr_telegram"/>
@@ -661,6 +662,11 @@
   <action name="menu_gr_connect">
    <property name="text">
     <string>Быстрое подключение</string>
+   </property>
+  </action>
+  <action name="menu_gr_qr">
+   <property name="text">
+    <string>Показать QR подписки</string>
    </property>
   </action>
   <action name="menu_gr_buy">

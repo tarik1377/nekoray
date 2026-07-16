@@ -208,6 +208,7 @@ private:
     void show_about_greenrhythm();
     void refresh_subscription_status(); // «Зелёный Ритм» days/traffic-left badge + renew nudge
     void smart_connect_greenrhythm();   // connect to the fastest server in the brand group
+    void show_subscription_qr();        // QR bridge: scan the subscription into a mobile client
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
