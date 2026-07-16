@@ -61,6 +61,22 @@
 #include <QFont>
 #include <QDir>
 #include <QFileInfo>
+#include <QSettings>
+#include <QRegularExpression>
+#include <QDateTime>
+#include <QTcpSocket>
+#include <QSslSocket>
+#include <QHostInfo>
+#include <QProgressDialog>
+#include <QSysInfo>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkProxy>
+#include <QEventLoop>
+
+#ifdef Q_OS_WIN
+static void RegisterGreenRhythmScheme();
+#endif
 
 void UI_InitMainWindow() {
     mainwindow = new MainWindow;
@@ -114,8 +130,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->toolButton_preferences->setMenu(ui->menu_preferences);
     ui->toolButton_server->setMenu(ui->menu_server);
     ui->menubar->setVisible(false);
-    connect(ui->toolButton_document, &QToolButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl("https://github.com/tarik1377/nekoray")); });
-    connect(ui->toolButton_ads, &QToolButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
+    connect(ui->toolButton_document, &QToolButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kSiteUrl)); });
+    // «Подписка» is the brand hub: dropdown with Buy / Telegram / About. This also
+    // makes the «Зелёный Ритм» menu (and the About dialog) reachable — otherwise it
+    // lived only on the hidden menubar.
+    ui->toolButton_ads->setMenu(ui->menu_greenrhythm);
     connect(ui->toolButton_update, &QToolButton::clicked, this, [=] { runOnNewThread([=] { CheckUpdate(); }); });
     connect(ui->toolButton_update_sub, &QToolButton::clicked, this, [=] { on_menu_update_subscription_triggered(); });
     connect(ui->toolButton_url_test, &QToolButton::clicked, this, [=] { speedtest_current_group(1, true); });
@@ -134,6 +153,19 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     });
 
     // GreenRhythm service entry points (opt-in default help/purchase points)
+    connect(ui->menu_gr_connect, &QAction::triggered, this, [=] { smart_connect_greenrhythm(); });
+    connect(ui->menu_gr_qr, &QAction::triggered, this, [=] { show_subscription_qr(); });
+    connect(ui->menu_gr_diag, &QAction::triggered, this, [=] { run_diagnostics(); });
+    ui->menu_gr_autopilot->setChecked(NekoGui::dataStore->connection_autopilot);
+    connect(ui->menu_gr_autopilot, &QAction::toggled, this, [=](bool checked) {
+        NekoGui::dataStore->connection_autopilot = checked;
+        NekoGui::dataStore->Save();
+    });
+    // Autopilot watchdog: first probe soon after startup, then self-scheduled.
+    autopilot_timer = new QTimer(this);
+    autopilot_timer->setSingleShot(true);
+    connect(autopilot_timer, &QTimer::timeout, this, [=] { autopilot_tick(); });
+    autopilot_timer->start(20 * 1000);
     connect(ui->menu_gr_buy, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
     connect(ui->menu_gr_telegram, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kTelegramUrl)); });
     connect(ui->menu_gr_about, &QAction::triggered, this, [=] { show_about_greenrhythm(); });
@@ -221,10 +253,15 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
-    ui->proxyListTable->verticalHeader()->setDefaultSectionSize(24);
+    // Card-like rows: taller for breathing room, no gridlines (surface comes from
+    // the theme's alternating rows + rounded selection). Columns/sort/drag intact.
+    ui->proxyListTable->verticalHeader()->setDefaultSectionSize(40);
+    ui->proxyListTable->setShowGrid(false);
 
     build_onboarding_panel();
-    ui->proxyListTable->viewport()->installEventFilter(this);
+#ifdef Q_OS_WIN
+    RegisterGreenRhythmScheme(); // greenrhythm:// one-click import (HKCU, no admin)
+#endif
 
     // search box
     ui->search->setVisible(false);
@@ -267,6 +304,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     tray = new QSystemTrayIcon(this); // 初始化托盘对象tray
     tray->setIcon(Icon::GetTrayIcon(Icon::NONE));
     tray->setContextMenu(ui->menu_program); // 创建托盘菜单
+    // Surface one-click «Быстрое подключение» + the «Зелёный Ритм» hub at the top of
+    // the tray menu (tray context menu == menu_program). Same QActions as the toolbar.
+    if (!ui->menu_program->actions().isEmpty()) {
+        auto *anchor = ui->menu_program->actions().first();
+        ui->menu_program->insertAction(anchor, ui->menu_gr_connect);
+        ui->menu_program->insertAction(anchor, ui->menu_greenrhythm->menuAction());
+        ui->menu_program->insertSeparator(anchor);
+    }
     tray->show();                           // 让托盘图标显示在系统托盘上
     connect(tray, &QSystemTrayIcon::activated, this, [=](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::Trigger) {
@@ -572,6 +617,13 @@ void MainWindow::show_group(int gid) {
 // callback
 
 void MainWindow::dialog_message_impl(const QString &sender, const QString &info) {
+    // greenrhythm:// deep link (startup args or forwarded by a second instance).
+    // Handled first and returned: the raw link is untrusted and must not fall
+    // through to the substring matching below.
+    if (info.startsWith("SchemeImport#")) {
+        import_scheme_url(info.mid(QStringLiteral("SchemeImport#").size()));
+        return;
+    }
     // info
     if (info.contains("UpdateIcon")) {
         icon_status = -1;
@@ -885,11 +937,17 @@ void MainWindow::refresh_status(const QString &traffic_update) {
     {
         const bool up = (running != nullptr);
         const QString nm = up ? running->bean->DisplayName().left(26) : QString();
-        ui->label_conn_pill->setText(up ? (tr("Connected") + QStringLiteral(" · ") + nm) : tr("Not Running"));
+        ui->label_conn_pill->setText(up ? (tr("Подключено") + QStringLiteral(" · ") + nm) : tr("Не запущено"));
         ui->label_conn_pill->setStyleSheet(QStringLiteral(
             "QLabel#label_conn_pill{border-radius:9px;padding:2px 10px;color:white;background:%1;}")
             .arg(up ? QStringLiteral("#3FB950") : QStringLiteral("#5A5F66")));
+        // Hug the text — otherwise the pill absorbs the row's slack and stretches.
+        ui->label_conn_pill->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
+        // label_running duplicates the pill's "Not Running"; keep it only when it adds
+        // info (running profile detail / select mode) — it is also the speedtest click target.
+        ui->label_running->setVisible(up || select_mode);
     }
+    refresh_subscription_status();
 
     // From UI
     QString group_name;
@@ -1010,13 +1068,17 @@ void MainWindow::refresh_proxy_list_impl(const int &id, GroupSortAction groupSor
         // 清空数据
         ui->proxyListTable->row2Id.clear();
         ui->proxyListTable->setRowCount(0);
-        // 添加行
+        // 添加行 — lock while iterating the shared map (a background subscription
+        // worker may be mutating it concurrently).
         int row = -1;
-        for (const auto &[id, profile]: NekoGui::profileManager->profiles) {
-            if (NekoGui::dataStore->current_group != profile->gid) continue;
-            row++;
-            ui->proxyListTable->insertRow(row);
-            ui->proxyListTable->row2Id += id;
+        {
+            QMutexLocker locker(&NekoGui::profileManager->mutex);
+            for (const auto &[id, profile]: NekoGui::profileManager->profiles) {
+                if (NekoGui::dataStore->current_group != profile->gid) continue;
+                row++;
+                ui->proxyListTable->insertRow(row);
+                ui->proxyListTable->row2Id += id;
+            }
         }
     }
 
@@ -1093,134 +1155,714 @@ void MainWindow::refresh_proxy_list_impl(const int &id, GroupSortAction groupSor
     refresh_onboarding();
 }
 
-// Onboarding / empty-state overlay over the (empty) profile table. One opaque panel,
-// parented to the table viewport so it travels with tab reparenting. Full welcome on
-// first run; compact CTAs once the list has been used and later emptied. Branding help
-// point only — GreenRhythm stays a universal client.
+// Onboarding / empty-state page. Lives in the same layout cell as the profile table:
+// while there are no profiles the table is hidden and this page takes its slot, so it
+// can never overlap or clip anything at any window size. Branding help point only —
+// GreenRhythm stays a universal client (✕ hides it for the session).
 void MainWindow::build_onboarding_panel() {
-    auto *vp = ui->proxyListTable->viewport();
-    auto *panel = new QFrame(vp);
+    auto *panel = new QFrame(this);
     panel->setObjectName("onboardingPanel");
-    panel->setAutoFillBackground(true);
-    panel->setAttribute(Qt::WA_StyledBackground, true);
     panel->hide();
     onboarding_panel = panel;
 
+    // Translucent neutral card so the page follows any theme (dark or light);
+    // the only hardcoded color is the brand-green primary button.
+    panel->setStyleSheet(QStringLiteral(
+        "#onboardingPanel{background:transparent;}"
+        "#onboardCard{background-color:rgba(127,134,147,0.10);border:1px solid rgba(127,134,147,0.28);border-radius:12px;}"
+        "QPushButton#onboardPrimary{background-color:#2ea043;color:#ffffff;border:none;border-radius:8px;padding:6px 22px;font-weight:600;}"
+        "QPushButton#onboardPrimary:hover{background-color:#3fb950;}"
+        "QPushButton#onboardPrimary:pressed{background-color:#2c974b;}"));
+
     auto *outer = new QVBoxLayout(panel);
-    outer->setContentsMargins(28, 16, 28, 28);
-    outer->setSpacing(12);
+    outer->setContentsMargins(24, 6, 24, 12);
+    outer->setSpacing(0);
 
     auto *topRow = new QHBoxLayout();
     topRow->addStretch();
     auto *closeBtn = new QToolButton(panel);
     closeBtn->setText(QString::fromUtf8("\xE2\x9C\x95")); // ✕
     closeBtn->setAutoRaise(true);
+    closeBtn->setToolTip(tr("Скрыть"));
     connect(closeBtn, &QToolButton::clicked, this, [=] {
         onboarding_dismissed = true;
-        onboarding_panel->hide();
+        refresh_onboarding();
     });
     topRow->addWidget(closeBtn);
     outer->addLayout(topRow);
 
+    outer->addStretch(2);
+
     auto *title = new QLabel(tr("Добро пожаловать в GreenRhythm") + QString::fromUtf8(" \xF0\x9F\x8C\xBF"), panel); // 🌿
     title->setAlignment(Qt::AlignHCenter);
-    { QFont f = title->font(); f.setPointSizeF(f.pointSizeF() * 1.35); f.setBold(true); title->setFont(f); }
+    { QFont f = title->font(); f.setPointSizeF(f.pointSizeF() * 1.5); f.setBold(true); title->setFont(f); }
     outer->addWidget(title);
-    onboarding_title = title;
+    outer->addSpacing(6);
 
-    auto *subtitle = new QLabel(tr("Выберите, как начать"), panel);
+    auto *subtitle = new QLabel(tr("Вставьте ссылку подписки — или получите доступ за пару минут"), panel);
     subtitle->setAlignment(Qt::AlignHCenter);
+    subtitle->setEnabled(false); // dimmed via the theme's disabled palette
     outer->addWidget(subtitle);
-    onboarding_subtitle = subtitle;
+    outer->addSpacing(16);
 
-    auto *cards = new QHBoxLayout();
-    cards->setSpacing(16);
+    // One centered card, width-capped so it reads like a dialog, not a stretched bar.
+    auto *card = new QFrame(panel);
+    card->setObjectName("onboardCard");
+    card->setMaximumWidth(620);
+    auto *cardL = new QVBoxLayout(card);
+    cardL->setContentsMargins(18, 16, 18, 16);
+    cardL->setSpacing(10);
 
-    // Card A — «У меня есть подписка»
-    auto *cardA = new QFrame(panel);
-    cardA->setFrameShape(QFrame::StyledPanel);
-    auto *la = new QVBoxLayout(cardA);
-    la->setSpacing(8);
-    la->addWidget(new QLabel(tr("У меня есть подписка"), cardA));
-    auto *subEdit = new QLineEdit(cardA);
-    subEdit->setPlaceholderText(tr("Вставьте ссылку подписки"));
-    la->addWidget(subEdit);
-    auto *aBtns = new QHBoxLayout();
-    auto *importBtn = new QPushButton(tr("Импорт"), cardA);
-    connect(importBtn, &QPushButton::clicked, this, [=] {
-        auto link = subEdit->text().trimmed();
-        if (link.isEmpty()) return;
-        NekoGui_sub::groupUpdater->AsyncUpdate(link);
+    auto *rowA = new QHBoxLayout();
+    rowA->setSpacing(8);
+    auto *subEdit = new QLineEdit(card);
+    subEdit->setPlaceholderText(tr("Ссылка подписки или профиля…"));
+    subEdit->setMinimumHeight(32);
+    rowA->addWidget(subEdit, 1);
+    auto *importBtn = new QPushButton(tr("Импорт"), card);
+    importBtn->setObjectName("onboardPrimary");
+    importBtn->setMinimumHeight(32);
+    importBtn->setCursor(Qt::PointingHandCursor);
+    connect(importBtn, &QPushButton::clicked, this, [=] { import_link_offer_connect(subEdit->text()); });
+    connect(subEdit, &QLineEdit::returnPressed, importBtn, &QPushButton::click);
+    rowA->addWidget(importBtn);
+    cardL->addLayout(rowA);
+
+    auto *rowB = new QHBoxLayout();
+    rowB->setSpacing(8);
+    auto *pasteBtn = new QPushButton(tr("Вставить из буфера"), card);
+    connect(pasteBtn, &QPushButton::clicked, this, [=] {
+        const auto clip = QApplication::clipboard()->text().trimmed();
+        if (clip.isEmpty()) return;
+        import_link_offer_connect(clip);
     });
-    auto *pasteBtn = new QPushButton(tr("Из буфера"), cardA);
-    connect(pasteBtn, &QPushButton::clicked, this, [=] { on_menu_add_from_clipboard_triggered(); });
-    aBtns->addWidget(importBtn);
-    aBtns->addWidget(pasteBtn);
-    la->addLayout(aBtns);
-    la->addStretch();
-    cards->addWidget(cardA, 1);
+    rowB->addWidget(pasteBtn);
+    rowB->addStretch();
+    auto *links = new QLabel(card);
+    links->setTextFormat(Qt::RichText);
+    links->setOpenExternalLinks(true);
+    links->setText(QStringLiteral("<a href=\"%1\" style=\"color:#3fb950;text-decoration:none;\">%2</a>"
+                                  "&nbsp;&nbsp;·&nbsp;&nbsp;"
+                                  "<a href=\"%3\" style=\"color:#3fb950;text-decoration:none;\">Telegram</a>")
+                       .arg(GreenRhythm::kBuyUrl, tr("Нет подписки? Получить"), GreenRhythm::kTelegramUrl));
+    rowB->addWidget(links);
+    cardL->addLayout(rowB);
 
-    // Card B — «Получить доступ»
-    auto *cardB = new QFrame(panel);
-    cardB->setFrameShape(QFrame::StyledPanel);
-    auto *lb = new QVBoxLayout(cardB);
-    lb->setSpacing(8);
-    lb->addWidget(new QLabel(tr("Получить доступ"), cardB));
-    auto *getBtn = new QPushButton(tr("Открыть verdantvibe.ru"), cardB);
-    connect(getBtn, &QPushButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
-    lb->addWidget(getBtn);
-    auto *tg = new QLabel(cardB);
-    tg->setTextFormat(Qt::RichText);
-    tg->setOpenExternalLinks(true);
-    tg->setText(QStringLiteral("<a href=\"%1\">%2</a>").arg(GreenRhythm::kTelegramUrl, tr("или в Telegram — @VerdantVibeBot")));
-    { QFont f = tg->font(); f.setPointSizeF(f.pointSizeF() * 0.92); tg->setFont(f); }
-    lb->addWidget(tg);
-    lb->addStretch();
-    cards->addWidget(cardB, 1);
+    auto *cardRow = new QHBoxLayout();
+    cardRow->addStretch();
+    cardRow->addWidget(card, 1);
+    cardRow->addStretch();
+    outer->addLayout(cardRow);
 
-    outer->addLayout(cards, 1); // let the cards fill the available height so content doesn't overlap
+    outer->addStretch(3);
 }
 
-// Show/hide brain for the onboarding overlay. Full welcome only while no profile has
-// ever been added; compact empty-state after; hidden once any profile exists.
+// Empty-state switcher: with zero profiles the table hides and the welcome page takes
+// its layout slot; with any profile (or after ✕) the table is restored. The page follows
+// the table across group tabs — both live in the current tab's layout.
 void MainWindow::refresh_onboarding() {
     if (onboarding_panel == nullptr) return;
     const bool empty = NekoGui::profileManager->profiles.empty();
-    if (!empty) {
-        if (!NekoGui::dataStore->onboarding_completed) {
-            NekoGui::dataStore->onboarding_completed = true;
-            NekoGui::dataStore->Save();
+    if (!empty && !NekoGui::dataStore->onboarding_completed) {
+        NekoGui::dataStore->onboarding_completed = true;
+        NekoGui::dataStore->Save();
+    }
+    const bool show = empty && !onboarding_dismissed;
+    if (show) {
+        auto *host = ui->proxyListTable->parentWidget();
+        if (host != nullptr && host->layout() != nullptr && onboarding_panel->parentWidget() != host) {
+            host->layout()->addWidget(onboarding_panel);
         }
-        onboarding_panel->hide();
+    }
+    onboarding_panel->setVisible(show);
+    ui->proxyListTable->setVisible(!show);
+}
+
+// ---------- greenrhythm:// one-click import ----------
+
+#ifdef Q_OS_WIN
+// HKCU\Software\Classes registration — per-user, no admin. Re-checked on every
+// start so the handler self-heals when the exe is moved.
+static void RegisterGreenRhythmScheme() {
+    const auto exe = QDir::toNativeSeparators(QApplication::applicationFilePath());
+    const auto cmd = QStringLiteral("\"%1\" \"%2\"").arg(exe, QStringLiteral("%1"));
+    QSettings reg(QStringLiteral("HKEY_CURRENT_USER\\Software\\Classes\\greenrhythm"), QSettings::NativeFormat);
+    if (reg.value(QStringLiteral("shell/open/command/.")).toString() == cmd) return;
+    reg.setValue(QStringLiteral("."), QStringLiteral("URL:greenrhythm"));
+    reg.setValue(QStringLiteral("URL Protocol"), QString());
+    reg.setValue(QStringLiteral("shell/open/command/."), cmd);
+}
+#endif
+
+// Contract: greenrhythm://import/<percent-encoded payload>, payload = https
+// subscription link OR a single vless:// profile. The payload is UNTRUSTED:
+// decode exactly once, cap at 8 KB, reject control characters and any other
+// scheme (file://, javascript:, http://, ...). Never passed to a shell.
+static QString ParseGreenRhythmImport(const QString &raw, QString *errOut) {
+    const auto prefix = QStringLiteral("greenrhythm://import/");
+    if (!raw.startsWith(prefix, Qt::CaseInsensitive)) {
+        *errOut = QObject::tr("неизвестный формат ссылки");
+        return {};
+    }
+    const auto payload = QUrl::fromPercentEncoding(raw.mid(prefix.size()).toUtf8()).trimmed();
+    if (payload.toUtf8().size() > 8 * 1024) {
+        *errOut = QObject::tr("слишком длинная ссылка");
+        return {};
+    }
+    // Reject control chars (C0/C1) and Unicode bidi/zero-width format characters:
+    // the whole safety model is "show the user the real source host", so RTLO and
+    // homograph-hiding code points must not survive into the confirmation dialog.
+    for (const auto &ch: payload) {
+        const auto u = ch.unicode();
+        const bool control = u < 0x20 || (u >= 0x7F && u <= 0x9F);
+        const bool bidiOrZeroWidth = u == 0x200B || u == 0x200C || u == 0x200D || u == 0xFEFF ||
+                                     (u >= 0x202A && u <= 0x202E) || (u >= 0x2066 && u <= 0x2069);
+        if (control || bidiOrZeroWidth) {
+            *errOut = QObject::tr("недопустимые символы");
+            return {};
+        }
+    }
+    const bool schemeOk = payload.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive) ||
+                          payload.startsWith(QStringLiteral("vless://"), Qt::CaseInsensitive);
+    if (!schemeOk || !QUrl(payload).isValid()) {
+        *errOut = QObject::tr("поддерживаются только https-ссылки подписок и vless-профили");
+        return {};
+    }
+    return payload;
+}
+
+void MainWindow::import_scheme_url(const QString &raw) {
+    ActivateWindow(this);
+    QString err;
+    const auto payload = ParseGreenRhythmImport(raw, &err);
+    if (payload.isEmpty()) {
+        MessageBoxWarning(tr("Импорт по ссылке"), tr("Ссылка не добавлена: %1.").arg(err));
         return;
     }
-    if (onboarding_dismissed) {
-        onboarding_panel->hide();
+    // Reentrancy guard: QMessageBox::question below pumps a nested event loop, so a
+    // rapid second deep link for the same payload could re-enter before the first
+    // group is created and duplicate it. Ignore identical in-flight imports.
+    if (scheme_import_inflight.contains(payload)) return;
+    scheme_import_inflight.insert(payload);
+    struct InflightGuard {
+        QSet<QString> &set;
+        QString key;
+        ~InflightGuard() { set.remove(key); }
+    } inflightGuard{scheme_import_inflight, payload};
+    const QUrl url(payload);
+    if (payload.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive)) {
+        // Subscription. Idempotent: the same link updates its existing group.
+        std::shared_ptr<NekoGui::Group> group;
+        {
+            QMutexLocker locker(&NekoGui::profileManager->mutex);
+            for (const auto &[gid, g]: NekoGui::profileManager->groups) {
+                if (g != nullptr && g->url == payload) {
+                    group = g;
+                    break;
+                }
+            }
+        }
+        if (QMessageBox::question(GetMessageBoxParent(), tr("Зелёный Ритм — импорт"),
+                                  tr("Добавить подписку с %1 и загрузить список серверов?").arg(url.host())) != QMessageBox::Yes) return;
+        if (group == nullptr) {
+            group = NekoGui::ProfileManager::NewGroup();
+            group->name = GreenRhythm::kServiceName;
+            group->url = payload;
+            NekoGui::profileManager->AddGroup(group);
+            refresh_groups();
+        }
+        const int gid = group->id;
+        NekoGui_sub::groupUpdater->AsyncUpdate(payload, gid, [this, gid] {
+            runOnUiThread([this, gid] {
+                auto g = NekoGui::profileManager->GetGroup(gid);
+                if (g == nullptr) return;
+                const auto profiles = g->Profiles();
+                refresh_groups();
+                refresh_proxy_list();
+                if (profiles.isEmpty()) {
+                    MessageBoxWarning(tr("Зелёный Ритм"),
+                                      tr("Подписка недоступна — возможно, срок истёк.\nПродлить: %1").arg(GreenRhythm::kRenewUrl));
+                    return;
+                }
+                if (QMessageBox::question(GetMessageBoxParent(), tr("Зелёный Ритм"),
+                                          tr("Подписка добавлена (профилей: %1). Подключиться сейчас?").arg(profiles.size())) == QMessageBox::Yes) {
+                    neko_start(profiles.first()->id);
+                }
+            });
+        });
+    } else {
+        // Single vless:// profile into the current group.
+        if (QMessageBox::question(GetMessageBoxParent(), tr("Зелёный Ритм — импорт"),
+                                  tr("Добавить профиль сервера %1?").arg(url.host())) != QMessageBox::Yes) return;
+        // Snapshot existing profile ids so we start exactly the one this link added,
+        // not whatever a concurrent update happened to give the highest id.
+        auto before = std::make_shared<QSet<int>>();
+        {
+            QMutexLocker locker(&NekoGui::profileManager->mutex);
+            for (const auto &[pid, p]: NekoGui::profileManager->profiles) before->insert(pid);
+        }
+        NekoGui_sub::groupUpdater->AsyncUpdate(payload, -1, [this, before] {
+            runOnUiThread([this, before] {
+                refresh_proxy_list();
+                int added = -1;
+                {
+                    QMutexLocker locker(&NekoGui::profileManager->mutex);
+                    for (const auto &[pid, p]: NekoGui::profileManager->profiles) {
+                        if (!before->contains(pid)) { added = pid; break; }
+                    }
+                }
+                if (added < 0) return;
+                if (QMessageBox::question(GetMessageBoxParent(), tr("Зелёный Ритм"),
+                                          tr("Профиль добавлен. Подключиться сейчас?")) == QMessageBox::Yes) {
+                    neko_start(added);
+                }
+            });
+        });
+    }
+}
+
+// Smart connect: pick the fastest already-tested server in the «Зелёный Ритм» group
+// (lowest positive latency; first server if none tested yet) and connect. Falls back
+// to the current group so it also works as a generic "connect to best" action.
+void MainWindow::smart_connect_greenrhythm() {
+    std::shared_ptr<NekoGui::Group> gr;
+    {
+        QMutexLocker locker(&NekoGui::profileManager->mutex);
+        for (const auto &[gid, g]: NekoGui::profileManager->groups) {
+            if (g == nullptr) continue;
+            if (g->name == GreenRhythm::kServiceName || g->url.contains(QStringLiteral("verdantvibe"), Qt::CaseInsensitive)) {
+                gr = g;
+                break;
+            }
+        }
+    }
+    if (gr == nullptr) gr = NekoGui::profileManager->CurrentGroup();
+    if (gr == nullptr) return;
+
+    auto profiles = gr->Profiles();
+    if (profiles.isEmpty()) {
+        MessageBoxWarning(tr("Быстрое подключение"),
+                          tr("Нет серверов. Импортируйте подписку «Зелёный Ритм»."));
         return;
     }
-    const bool compact = NekoGui::dataStore->onboarding_completed;
-    onboarding_title->setVisible(!compact);
-    onboarding_subtitle->setVisible(!compact);
-    onboarding_panel->setGeometry(ui->proxyListTable->viewport()->rect());
-    onboarding_panel->raise();
-    onboarding_panel->show();
-    // The viewport may still settle to its final size after this first show; re-apply
-    // geometry once the event loop drains so the cards get the full height (no overlap).
-    QTimer::singleShot(0, this, [this] {
-        if (onboarding_panel != nullptr && onboarding_panel->isVisible())
-            onboarding_panel->setGeometry(ui->proxyListTable->viewport()->rect());
+    std::shared_ptr<NekoGui::ProxyEntity> best;
+    for (const auto &p: profiles) {
+        if (p->latency > 0 && (best == nullptr || p->latency < best->latency)) best = p;
+    }
+    if (best == nullptr) best = profiles.first(); // nothing tested yet — take the first
+    neko_start(best->id);
+}
+
+// QR bridge: show the subscription link as a QR code to scan in a mobile client —
+// one subscription across devices. The image is decoded back with the bundled ZXing
+// reader before it is shown: a QR we cannot read ourselves never reaches the screen.
+void MainWindow::show_subscription_qr() {
+    std::shared_ptr<NekoGui::Group> gr;
+    {
+        QMutexLocker locker(&NekoGui::profileManager->mutex);
+        for (const auto &[gid, g]: NekoGui::profileManager->groups) {
+            if (g == nullptr || g->url.isEmpty()) continue;
+            if (g->name == GreenRhythm::kServiceName || g->url.contains(QStringLiteral("verdantvibe"), Qt::CaseInsensitive)) {
+                gr = g;
+                break;
+            }
+        }
+    }
+    if (gr == nullptr) {
+        auto cg = NekoGui::profileManager->CurrentGroup();
+        if (cg != nullptr && !cg->url.isEmpty()) gr = cg;
+    }
+    if (gr == nullptr) {
+        MessageBoxWarning(tr("QR подписки"), tr("Нет группы-подписки. Импортируйте подписку «Зелёный Ритм»."));
+        return;
+    }
+
+    QImage im;
+    try {
+        const auto qr = qrcodegen::QrCode::encodeText(gr->url.toUtf8().data(), qrcodegen::QrCode::Ecc::MEDIUM);
+        constexpr qint32 pad = 2;
+        const qint32 sz = qr.getSize();
+        im = QImage(sz + pad * 2, sz + pad * 2, QImage::Format_RGB32);
+        im.fill(qRgb(255, 255, 255));
+        for (int y = 0; y < sz; y++)
+            for (int x = 0; x < sz; x++)
+                if (qr.getModule(x, y)) im.setPixel(x + pad, y + pad, qRgb(0, 0, 0));
+    } catch (const std::exception &ex) {
+        MessageBoxWarning(tr("QR подписки"), ex.what());
+        return;
+    }
+
+#ifndef NKR_NO_ZXING
+    {
+        using namespace ZXingQt;
+        auto hints = DecodeHints()
+                         .setFormats(BarcodeFormat::QRCode)
+                         .setTryRotate(false)
+                         .setBinarizer(Binarizer::FixedThreshold);
+        const auto scaled = im.scaled(im.width() * 4, im.height() * 4, Qt::KeepAspectRatio, Qt::FastTransformation);
+        if (ReadBarcode(scaled, hints).text() != gr->url) {
+            MessageBoxWarning(tr("QR подписки"), tr("Самопроверка QR-кода не прошла — код не показан."));
+            return;
+        }
+        MW_show_log(tr("QR подписки: самопроверка декодирования пройдена."));
+    }
+#endif
+
+    auto w = new QDialog(this);
+    w->setWindowTitle(tr("QR подписки"));
+    auto lay = new QVBoxLayout(w);
+    auto pic = new QLabel(w);
+    pic->setPixmap(QPixmap::fromImage(im.scaled(340, 340, Qt::KeepAspectRatio, Qt::FastTransformation), Qt::MonoOnly));
+    pic->setAlignment(Qt::AlignCenter);
+    pic->setMargin(8);
+    lay->addWidget(pic);
+    auto hint = new QLabel(tr("Отсканируйте в мобильном клиенте — одна подписка на всех устройствах."), w);
+    hint->setAlignment(Qt::AlignCenter);
+    hint->setWordWrap(true);
+    lay->addWidget(hint);
+    auto copyBtn = new QPushButton(tr("Копировать ссылку"), w);
+    connect(copyBtn, &QPushButton::clicked, w, [url = gr->url] { QApplication::clipboard()->setText(url); });
+    lay->addWidget(copyBtn);
+    w->exec();
+    w->deleteLater();
+}
+
+// Onboarding / paste import that offers to connect on success — mirrors the deep-link
+// flow so the first-run funnel doesn't dead-end at an empty table. Diffs the profile
+// set around the async import to find what was added; offers the first new server.
+void MainWindow::import_link_offer_connect(const QString &link) {
+    const auto trimmed = link.trimmed();
+    if (trimmed.isEmpty()) return;
+    auto before = std::make_shared<QSet<int>>();
+    {
+        QMutexLocker locker(&NekoGui::profileManager->mutex);
+        for (const auto &[pid, p]: NekoGui::profileManager->profiles) before->insert(pid);
+    }
+    NekoGui_sub::groupUpdater->AsyncUpdate(trimmed, -1, [this, before] {
+        runOnUiThread([this, before] {
+            refresh_proxy_list();
+            int first = -1, added = 0;
+            {
+                QMutexLocker locker(&NekoGui::profileManager->mutex);
+                for (const auto &[pid, p]: NekoGui::profileManager->profiles) {
+                    if (before->contains(pid)) continue;
+                    added++;
+                    if (first < 0) first = pid; // std::map iterates ascending → lowest new id
+                }
+            }
+            if (first < 0) return; // nothing added (import cancelled or failed)
+            if (QMessageBox::question(GetMessageBoxParent(), GreenRhythm::kServiceName,
+                                      tr("Добавлено серверов: %1. Подключиться сейчас?").arg(added)) == QMessageBox::Yes) {
+                neko_start(first);
+            }
+        });
     });
+}
+
+// One-click connection diagnostics — the manual check we kept doing by hand (is the
+// internet up? does DNS resolve? does the server's port accept TCP? does its TLS
+// handshake complete, or is it DPI-filtered?). Runs off the UI thread; produces a
+// plain-language verdict plus a secrets-free report the user can hand to support.
+void MainWindow::run_diagnostics() {
+    QString host;
+    int port = 0;
+    {
+        std::shared_ptr<NekoGui::ProxyEntity> ent;
+        auto sel = get_now_selected_list();
+        if (!sel.isEmpty()) {
+            ent = sel.first();
+        } else if (NekoGui::dataStore->started_id >= 0) {
+            ent = NekoGui::profileManager->GetProfile(NekoGui::dataStore->started_id);
+        } else {
+            auto cg = NekoGui::profileManager->CurrentGroup();
+            if (cg != nullptr) {
+                auto ps = cg->ProfilesWithOrder();
+                if (!ps.isEmpty()) ent = ps.first();
+            }
+        }
+        if (ent != nullptr && ent->bean != nullptr) {
+            host = ent->bean->serverAddress;
+            port = ent->bean->serverPort;
+        }
+    }
+
+    auto *dlg = new QProgressDialog(tr("Проверка соединения…"), QString(), 0, 0, this);
+    dlg->setWindowTitle(tr("Диагностика соединения"));
+    dlg->setWindowModality(Qt::WindowModal);
+    dlg->setCancelButton(nullptr);
+    dlg->setMinimumDuration(0);
+    dlg->show();
+
+    runOnNewThread([this, host, port, dlg] {
+        bool net, dns, tcp = false, tls = false;
+        {
+            QTcpSocket s;
+            s.connectToHost(QStringLiteral("1.1.1.1"), 443);
+            net = s.waitForConnected(4000);
+            s.abort();
+        }
+        {
+            auto hi = QHostInfo::fromName(QStringLiteral("www.google.com"));
+            dns = hi.error() == QHostInfo::NoError && !hi.addresses().isEmpty();
+        }
+        if (!host.isEmpty() && port > 0) {
+            {
+                QTcpSocket s;
+                s.connectToHost(host, port);
+                tcp = s.waitForConnected(5000);
+                s.abort();
+            }
+            if (tcp) {
+                QSslSocket ss;
+                ss.setPeerVerifyMode(QSslSocket::VerifyNone); // Reality/self-signed nodes
+                ss.connectToHostEncrypted(host, port);
+                tls = ss.waitForEncrypted(6000);
+                ss.abort();
+            }
+        }
+
+        runOnUiThread([=] {
+            dlg->close();
+            dlg->deleteLater();
+
+            QString verdict;
+            if (!net)
+                verdict = tr("Нет интернета — проверьте подключение к сети.");
+            else if (!dns)
+                verdict = tr("Интернет есть, но DNS не отвечает — попробуйте сменить DNS-сервер.");
+            else if (host.isEmpty())
+                verdict = tr("Сеть в порядке. Сервер не выбран — импортируйте подписку и выберите сервер.");
+            else if (!tcp)
+                verdict = tr("Сервер недоступен из вашей сети — возможно, блокировка провайдера или сервер выключен. Попробуйте другой сервер.");
+            else if (!tls)
+                verdict = tr("Сервер отвечает, но TLS не проходит — вероятна фильтрация (DPI). Попробуйте другой сервер или порт 443.");
+            else
+                verdict = tr("Всё в порядке — сеть и сервер доступны.");
+
+            auto mark = [](bool b) { return b ? QString::fromUtf8("\xE2\x9C\x94") : QString::fromUtf8("\xE2\x9C\x95"); }; // ✔ / ✕
+            QStringList rows;
+            rows << tr("Интернет: %1").arg(mark(net));
+            rows << tr("DNS: %1").arg(mark(dns));
+            if (!host.isEmpty()) {
+                rows << tr("Сервер (TCP): %1").arg(mark(tcp));
+                rows << tr("TLS-соединение: %1").arg(mark(tls));
+            }
+
+            // Support report — no secrets: server host:port is public and helps support,
+            // but the subscription token / keys are never included.
+            QString report = QStringLiteral("GreenRhythm diagnostics\nVersion: %1\nOS: %2\n")
+                                 .arg(QString(NKR_VERSION), QSysInfo::prettyProductName());
+            report += QStringLiteral("Internet: %1\nDNS: %2\n").arg(net ? "OK" : "FAIL", dns ? "OK" : "FAIL");
+            if (!host.isEmpty()) {
+                report += QStringLiteral("Server %1:%2 TCP: %3\nTLS: %4\n")
+                              .arg(host).arg(port).arg(tcp ? "OK" : "FAIL", tls ? "OK" : "FAIL");
+            }
+            report += QStringLiteral("Verdict: %1\n").arg(verdict);
+
+            QMessageBox box(QMessageBox::Information, tr("Диагностика соединения"),
+                            rows.join("\n") + "\n\n" + verdict, QMessageBox::Ok, GetMessageBoxParent());
+            auto *copyBtn = box.addButton(tr("Скопировать отчёт"), QMessageBox::ActionRole);
+            auto *tgBtn = box.addButton(tr("Написать в поддержку"), QMessageBox::ActionRole);
+            box.exec();
+            if (box.clickedButton() == copyBtn) {
+                QApplication::clipboard()->setText(report);
+            } else if (box.clickedButton() == tgBtn) {
+                QApplication::clipboard()->setText(report); // report is on the clipboard to paste
+                QDesktopServices::openUrl(QUrl(GreenRhythm::kTelegramUrl));
+            }
+        });
+    });
+}
+
+// «Автопилот» watchdog. Probes the RUNNING tunnel end-to-end (HTTP 204 through the
+// local mixed inbound — not a bare server ping) and self-heals on repeated failure,
+// encoding the real-world failure modes: panel key rotation → refresh the subscription
+// and reconnect; DPI/server death → switch to the best other server; then back off
+// with a tray hint at Диагностика. No telemetry; everything stays local.
+void MainWindow::autopilot_tick() {
+    const auto now = QDateTime::currentMSecsSinceEpoch();
+    if (!NekoGui::dataStore->connection_autopilot || NekoGui::dataStore->prepare_exit ||
+        running == nullptr || autopilot_probing || now < autopilot_cooldown_until) {
+        autopilot_fails = 0;
+        if (now >= autopilot_cooldown_until) autopilot_stage = 0;
+        autopilot_timer->start(60 * 1000);
+        return;
+    }
+    autopilot_probing = true;
+    const auto proxyAddr = NekoGui::dataStore->inbound_address;
+    const auto proxyPort = quint16(NekoGui::dataStore->inbound_socks_port);
+    runOnNewThread([=] {
+        QNetworkProxy proxy(QNetworkProxy::Socks5Proxy, proxyAddr, proxyPort);
+        QNetworkAccessManager nam;
+        nam.setProxy(proxy);
+        auto *reply = nam.get(QNetworkRequest(QUrl(QStringLiteral("http://cp.cloudflare.com/generate_204"))));
+        QEventLoop loop;
+        QTimer::singleShot(6000, reply, &QNetworkReply::abort);
+        QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+        loop.exec();
+        const bool ok = reply->error() == QNetworkReply::NoError;
+        reply->deleteLater();
+        runOnUiThread([=] {
+            autopilot_probing = false;
+            if (running == nullptr) { // stopped while probing
+                autopilot_fails = 0;
+                autopilot_timer->start(60 * 1000);
+                return;
+            }
+            if (ok) {
+                autopilot_fails = 0;
+                autopilot_stage = 0;
+                autopilot_timer->start(60 * 1000);
+                return;
+            }
+            autopilot_fails++;
+            MW_show_log(tr("Автопилот: проверка соединения не прошла (%1/2).").arg(autopilot_fails));
+            if (autopilot_fails >= 2) {
+                autopilot_fails = 0;
+                autopilot_recover();
+                autopilot_timer->start(30 * 1000); // re-check the fix soon
+            } else {
+                autopilot_timer->start(15 * 1000); // quick confirm before acting
+            }
+        });
+    });
+}
+
+void MainWindow::autopilot_recover() {
+    auto ent = running;
+    if (ent == nullptr) return;
+    const int gid = ent->gid;
+    const int curId = ent->id;
+    auto group = NekoGui::profileManager->GetGroup(gid);
+    autopilot_stage++;
+
+    const auto giveUp = [this] {
+        MW_show_log(tr("Автопилот: восстановить не удалось — запустите «Диагностику соединения» в меню «Зелёный Ритм»."));
+        if (tray != nullptr)
+            tray->showMessage(GreenRhythm::kServiceName,
+                              tr("Не удалось восстановить соединение — откройте «Диагностику соединения»."),
+                              QSystemTrayIcon::Warning);
+        autopilot_cooldown_until = QDateTime::currentMSecsSinceEpoch() + 5 * 60 * 1000;
+        autopilot_stage = 0;
+    };
+
+    if (autopilot_stage >= 3) {
+        giveUp();
+        return;
+    }
+
+    if (autopilot_stage == 1 && group != nullptr && !group->url.isEmpty()) {
+        // Stage 1 — keys may have rotated on the panel: refresh the subscription,
+        // then reconnect to the best profile in the group (ids may change on update).
+        MW_show_log(tr("Автопилот: обновляю подписку и переподключаюсь…"));
+        if (tray != nullptr)
+            tray->showMessage(GreenRhythm::kServiceName, tr("Соединение потеряно — восстанавливаю…"));
+        NekoGui_sub::groupUpdater->AsyncUpdate(group->url, gid, [this, gid] {
+            runOnUiThread([this, gid] {
+                auto g = NekoGui::profileManager->GetGroup(gid);
+                if (g == nullptr) return;
+                auto ps = g->Profiles();
+                if (ps.isEmpty()) return;
+                std::shared_ptr<NekoGui::ProxyEntity> best;
+                for (const auto &p: ps)
+                    if (p->latency > 0 && (best == nullptr || p->latency < best->latency)) best = p;
+                if (best == nullptr) best = ps.first();
+                neko_start(best->id);
+            });
+        });
+        return;
+    }
+
+    // Stage 2 (or stage 1 without a subscription) — switch to the best OTHER server.
+    auto ps = group != nullptr ? group->Profiles() : QList<std::shared_ptr<NekoGui::ProxyEntity>>{};
+    std::shared_ptr<NekoGui::ProxyEntity> next;
+    for (const auto &p: ps) {
+        if (p->id == curId) continue;
+        if (next == nullptr) next = p;
+        else if (p->latency > 0 && (next->latency <= 0 || p->latency < next->latency)) next = p;
+    }
+    if (next != nullptr) {
+        MW_show_log(tr("Автопилот: сервер недоступен, переключаюсь на «%1»…").arg(next->bean->DisplayName()));
+        if (tray != nullptr)
+            tray->showMessage(GreenRhythm::kServiceName, tr("Переключаюсь на %1").arg(next->bean->DisplayName()));
+        neko_start(next->id);
+        return;
+    }
+    giveUp();
+}
+
+// «Зелёный Ритм» subscription badge in the bottom status row: days + traffic left,
+// parsed from the Subscription-UserInfo the server already sends (no extra request,
+// no telemetry). Green normally; amber + a «Продлить» link when nearly out. Only
+// shows for the brand's own subscription group — other services are untouched.
+void MainWindow::refresh_subscription_status() {
+    if (ui->label_sub_status == nullptr) return;
+
+    std::shared_ptr<NekoGui::Group> gr;
+    {
+        QMutexLocker locker(&NekoGui::profileManager->mutex);
+        for (const auto &[gid, g]: NekoGui::profileManager->groups) {
+            if (g == nullptr || g->url.isEmpty()) continue;
+            if (g->name == GreenRhythm::kServiceName || g->url.contains(QStringLiteral("verdantvibe"), Qt::CaseInsensitive)) {
+                gr = g;
+                break;
+            }
+        }
+    }
+    if (gr == nullptr || gr->info.trimmed().isEmpty()) {
+        ui->label_sub_status->clear();
+        ui->label_sub_status->setVisible(false);
+        return;
+    }
+
+    auto grab = [&](const QString &key) -> long long {
+        auto m = QRegularExpression(key + "=([0-9]+)").match(gr->info);
+        return m.hasMatch() ? m.captured(1).toLongLong() : -1;
+    };
+    const long long total = grab("total"), up = grab("upload"), down = grab("download"), expire = grab("expire");
+    const long long used = (up < 0 ? 0 : up) + (down < 0 ? 0 : down);
+
+    QStringList parts;
+    bool low = false;
+    if (expire > 0) {
+        long long days = (expire - QDateTime::currentSecsSinceEpoch()) / 86400;
+        if (days < 0) days = 0;
+        parts << tr("%1 дн.").arg(days);
+        if (days <= 3) low = true;
+    }
+    if (total > 0) {
+        long long left = total - used;
+        if (left < 0) left = 0;
+        parts << ReadableSize(left);
+        if (static_cast<double>(left) / total <= 0.10) low = true;
+    }
+    if (parts.isEmpty()) {
+        ui->label_sub_status->clear();
+        ui->label_sub_status->setVisible(false);
+        return;
+    }
+
+    const QString color = low ? QStringLiteral("#E3A008") : QStringLiteral("#3FB950");
+    QString text = QStringLiteral("<span style='color:%1;'>%2 %3</span>")
+                       .arg(color, QString::fromUtf8("\xF0\x9F\x8C\xBF"), parts.join(QStringLiteral(" \xC2\xB7 "))); // 🌿 ·
+    if (low) {
+        text += QStringLiteral(" <a href='%1' style='color:#E3A008;text-decoration:none;'>%2</a>")
+                    .arg(GreenRhythm::kRenewUrl, tr("Продлить"));
+    }
+    ui->label_sub_status->setText(text);
+    ui->label_sub_status->setToolTip(tr("Подписка «Зелёный Ритм»"));
+    ui->label_sub_status->setVisible(true);
 }
 
 // Small round status dot for a profile row (green connected / red last-test-failed / grey idle).
 static QIcon MakeStatusDot(const QColor &color) {
-    QPixmap pm(14, 14);
+    QPixmap pm(18, 18);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing, true);
     p.setPen(Qt::NoPen);
     p.setBrush(color);
-    p.drawEllipse(3, 3, 8, 8);
+    p.drawEllipse(4, 4, 10, 10);
     return QIcon(pm);
 }
 
@@ -1869,12 +2511,6 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
             auto size = ui->splitter->size();
             ui->splitter->setSizes({size.height() / 2, size.height() / 2});
         }
-    } else if (event->type() == QEvent::Resize) {
-        // Keep the onboarding overlay sized to the table viewport on every resize
-        // (no isVisible guard — the critical first-show resize can fire while hidden).
-        if (onboarding_panel != nullptr && obj == ui->proxyListTable->viewport()) {
-            onboarding_panel->setGeometry(ui->proxyListTable->viewport()->rect());
-        }
     }
     return QMainWindow::eventFilter(obj, event);
 }
@@ -1938,13 +2574,13 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
         QString obLabel = outboundTag;
         QColor obColor;
         if (outboundTag == "proxy") {
-            obLabel = QString::fromUtf8("\xF0\x9F\x8C\x8D ") + tr("Proxy"); // 🌍 foreign
+            obLabel = QString::fromUtf8("\xF0\x9F\x8C\x8D ") + tr("Прокси"); // 🌍 foreign
             obColor = QColor(0x4C, 0x9A, 0xFF);
         } else if (outboundTag == "direct" || outboundTag == "bypass") {
-            obLabel = QString::fromUtf8("\xF0\x9F\x87\xB7\xF0\x9F\x87\xBA ") + tr("Direct"); // 🇷🇺 domestic
+            obLabel = QString::fromUtf8("\xF0\x9F\x87\xB7\xF0\x9F\x87\xBA ") + tr("Напрямую"); // 🇷🇺 domestic
             obColor = QColor(0x3F, 0xB9, 0x50);
         } else if (outboundTag == "block") {
-            obLabel = QString::fromUtf8("\xE2\x9B\x94 ") + tr("Block"); // ⛔
+            obLabel = QString::fromUtf8("\xE2\x9B\x94 ") + tr("Блокировка"); // ⛔
             obColor = QColor(0xE5, 0x48, 0x4D);
         }
         f->setText(obLabel);

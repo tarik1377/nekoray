@@ -38,6 +38,16 @@ QToolButton {
     border-radius: 8px;
 }
 
+QToolButton::menu-indicator {
+    image: none;
+    width: 0;
+    height: 0;
+}
+
+QLabel {
+    background: transparent;
+}
+
 QToolButton:hover {
     background-color: #262a30;
     color: #e4e6eb;
@@ -144,7 +154,7 @@ QTableView, QTreeView, QListView {
 }
 
 QTableView::item, QTreeView::item, QListView::item {
-    padding: 6px;
+    padding: 4px 10px;
     border: none;
 }
 
@@ -322,6 +332,14 @@ QScrollBar::add-line, QScrollBar::sub-line {
 
 QScrollBar::add-page, QScrollBar::sub-page {
     background: none;
+}
+
+QSplitter::handle {
+    background-color: #16181d;
+}
+
+QSplitter::handle:vertical {
+    height: 6px;
 }
 
 QStatusBar {

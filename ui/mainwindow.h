@@ -7,6 +7,7 @@
 #ifndef MW_INTERFACE
 
 #include <QTime>
+#include <QTimer>
 #include <QTableWidgetItem>
 #include <QKeyEvent>
 #include <QSystemTrayIcon>
@@ -15,6 +16,7 @@
 #include <QShortcut>
 #include <QSemaphore>
 #include <QMutex>
+#include <QSet>
 
 #include "GroupSort.hpp"
 
@@ -171,13 +173,16 @@ private:
 
     void refresh_proxy_list_impl_refresh_data(const int &id = -1);
 
-    // Onboarding / empty-state overlay (branding entry points; opt-in help panel)
+    // Onboarding / empty-state page (takes the table's layout slot while the profile
+    // list is empty; branding entry points, opt-in help panel)
     QWidget *onboarding_panel = nullptr;
-    QWidget *onboarding_title = nullptr;
-    QWidget *onboarding_subtitle = nullptr;
     bool onboarding_dismissed = false;
     void build_onboarding_panel();
     void refresh_onboarding();
+
+    // greenrhythm://import/<payload> deep link (untrusted; validated inside)
+    void import_scheme_url(const QString &raw);
+    QSet<QString> scheme_import_inflight; // dedupe reentrant identical deep links
 
     void keyPressEvent(QKeyEvent *event) override;
 
@@ -202,6 +207,21 @@ private:
     void CheckUpdate();
 
     void show_about_greenrhythm();
+    void refresh_subscription_status(); // «Зелёный Ритм» days/traffic-left badge + renew nudge
+    void smart_connect_greenrhythm();   // connect to the fastest server in the brand group
+    void show_subscription_qr();        // QR bridge: scan the subscription into a mobile client
+    void import_link_offer_connect(const QString &link); // onboarding import → «Подключиться?»
+    void run_diagnostics();             // internet/DNS/server/TLS checks + support report
+
+    // «Автопилот»: watchdog that probes the live tunnel end-to-end and self-heals —
+    // refresh subscription (rotated keys), reconnect, switch server, then back off.
+    QTimer *autopilot_timer = nullptr;
+    int autopilot_fails = 0;
+    int autopilot_stage = 0;
+    qint64 autopilot_cooldown_until = 0;
+    bool autopilot_probing = false;
+    void autopilot_tick();
+    void autopilot_recover();
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;

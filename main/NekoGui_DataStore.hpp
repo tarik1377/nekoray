@@ -107,7 +107,8 @@ namespace NekoGui {
         int mux_concurrency = 8;
         bool mux_default_on = false;
         bool auto_failover = false; // urltest: auto-pick fastest server in the group + fail over
-        QString theme = "0";
+        bool connection_autopilot = true; // watchdog: probe the live tunnel, self-heal (sub refresh / server switch)
+        QString theme = "4"; // GreenRhythm Modern by default; existing installs keep their saved choice
         int language = 0;
         QString mw_size = "";
         bool check_include_pre = false;

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.16) # target_precompile_headers needs 3.16+
 
 project(greenrhythm VERSION 0.1 LANGUAGES CXX)
 
@@ -268,6 +268,9 @@ set_property(TARGET greenrhythm PROPERTY AUTORCC ON)
 set_target_properties(greenrhythm PROPERTIES
         WIN32_EXECUTABLE TRUE
 )
+
+# Precompiled header — speeds up incremental rebuilds (heavy Qt includes compiled once).
+target_precompile_headers(greenrhythm PRIVATE main/pch.hpp)
 
 # Target Source Translations
 

@@ -703,8 +703,8 @@ This needs to be run NekoBox with administrator privileges.</source>
         <translation>Пропускать процессы</translation>
     </message>
     <message>
-        <source>Whether blacklisted or whitelisted, your traffic will be handled by nekobox_core (sing-tun). This is NOT equal to &quot;process mode&quot; of some software.</source>
-        <translation>При использовании белого или черного списка, ваш трафик будет обработан ядром nekobox (sign-tun). Это НЕ эквивалент &quot;process mode&quot; как в некотором ПО.</translation>
+        <source>Whether blacklisted or whitelisted, your traffic will be handled by greenrhythm_core (sing-tun). This is NOT equal to &quot;process mode&quot; of some software.</source>
+        <translation>При использовании белого или чёрного списка ваш трафик обрабатывается ядром GreenRhythm (sing-tun). Это НЕ эквивалент &quot;process mode&quot; из некоторого ПО.</translation>
     </message>
     <message>
         <source>Whitelist mode</source>
@@ -723,14 +723,14 @@ This needs to be run NekoBox with administrator privileges.</source>
         <translation>Проксировать процессы</translation>
     </message>
     <message>
-        <source>If you have trouble starting VPN, you can force reset nekobox_core process here.
+        <source>If you have trouble starting VPN, you can force reset greenrhythm_core process here.
 
 If still not working, see documentation for more information.
-https://matsuridayo.github.io/n-configuration/#vpn-tun</source>
-        <translation>Если у вас проблемы с запуском VPN, можно принудительно перезапустить процесс nekobox-core.
+https://github.com/tarik1377/nekoray/wiki/VPN-TUN</source>
+        <translation>Если возникли проблемы с запуском VPN, здесь можно принудительно перезапустить процесс greenrhythm_core.
 
-Если ничего по-прежнему не работает, ознакомьтесь с документацией:
-https://matsuridayo.github.io/n-configuration/#vpn-tun</translation>
+Если не помогло, см. документацию:
+https://github.com/tarik1377/nekoray/wiki/VPN-TUN</translation>
     </message>
     <message>
         <source>Reset</source>

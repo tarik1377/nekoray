@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "main/NekoGui.hpp"
 #include "ProxyEntity.hpp"
 
@@ -14,6 +16,11 @@ namespace NekoGui {
         QString info = "";
         qint64 sub_last_update = 0;
         int front_proxy_id = -1;
+
+        // transient, NOT persisted (not registered as configItem): outcome of the
+        // last subscription update. 0 unknown, 1 ok, 2 empty list / request failed.
+        // atomic — written on the updater worker, read on the UI thread.
+        std::atomic<int> last_update_outcome{0};
 
         // list ui
         bool manually_column_width = false;

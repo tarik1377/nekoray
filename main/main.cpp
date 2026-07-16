@@ -8,6 +8,7 @@
 #include <QLocalSocket>
 #include <QLocalServer>
 #include <QThread>
+#include <QTimer>
 
 #include "3rdparty/RunGuard.hpp"
 #include "main/NekoGui.hpp"
@@ -91,6 +92,16 @@ int main(int argc, char* argv[]) {
     if (NekoGui::dataStore->argv.contains("-debug")) NekoGui::dataStore->flag_debug = true;
     if (NekoGui::dataStore->argv.contains("-flag_restart_tun_on")) NekoGui::dataStore->flag_restart_tun_on = true;
     if (NekoGui::dataStore->argv.contains("-flag_reorder")) NekoGui::dataStore->flag_reorder = true;
+
+    // greenrhythm:// deep link from the OS scheme handler. Raw and UNTRUSTED here —
+    // only a length cap; full validation happens in MainWindow::import_scheme_url.
+    QString scheme_arg;
+    for (const auto &arg: NekoGui::dataStore->argv) {
+        if (arg.startsWith("greenrhythm://", Qt::CaseInsensitive)) {
+            if (arg.size() <= 16 * 1024) scheme_arg = arg;
+            break;
+        }
+    }
 #ifdef NKR_CPP_USE_APPDATA
     NekoGui::dataStore->flag_use_appdata = true; // Example: Package & MacOS
 #endif
@@ -137,6 +148,13 @@ int main(int argc, char* argv[]) {
                 return 0;
             }
             qDebug() << "connected to local server, try to raise another program";
+            // Hand the deep link to the running instance (it validates and imports).
+            if (!scheme_arg.isEmpty()) {
+                socket.write(scheme_arg.toUtf8());
+                socket.flush();
+                socket.waitForBytesWritten(1000);
+            }
+            socket.disconnectFromServer();
             return 0;
         }
         // Some Bad System
@@ -232,11 +250,27 @@ int main(int argc, char* argv[]) {
     QObject::connect(&server, &QLocalServer::newConnection, &a, [&] {
         auto socket = server.nextPendingConnection();
         qDebug() << "nextPendingConnection:" << server_name << socket;
-        socket->deleteLater();
+        // A second instance may push a greenrhythm:// deep link before it exits.
+        // Accumulate — one write() is not guaranteed to arrive as one readyRead —
+        // and only parse the whole message once the sender disconnects.
+        auto buf = std::make_shared<QByteArray>();
+        QObject::connect(socket, &QLocalSocket::readyRead, socket, [socket, buf] {
+            if (buf->size() < 16 * 1024) buf->append(socket->readAll());
+        });
+        QObject::connect(socket, &QLocalSocket::disconnected, socket, [socket, buf] {
+            auto data = QString::fromUtf8(buf->left(16 * 1024)).trimmed();
+            if (data.startsWith("greenrhythm://", Qt::CaseInsensitive)) MW_dialog_message("", "SchemeImport#" + data);
+            socket->deleteLater();
+        });
+        QTimer::singleShot(3000, socket, &QLocalSocket::deleteLater); // idle-connection safety net
         // raise main window
         MW_dialog_message("", "Raise");
     });
 
     UI_InitMainWindow();
+    if (!scheme_arg.isEmpty()) {
+        // Launched by a deep link with no instance running: import once the UI is up.
+        QTimer::singleShot(500, [scheme_arg] { MW_dialog_message("", "SchemeImport#" + scheme_arg); });
+    }
     return QApplication::exec();
 }

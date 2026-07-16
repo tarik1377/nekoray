@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QDir>
 #include <QColor>
+#include <QMutexLocker>
 
 namespace NekoGui {
 
@@ -245,6 +246,7 @@ namespace NekoGui {
     // Profile
 
     int ProfileManager::NewProfileID() const {
+        QMutexLocker locker(&mutex);
         if (profiles.empty()) {
             return 0;
         } else {
@@ -253,6 +255,7 @@ namespace NekoGui {
     }
 
     bool ProfileManager::AddProfile(const std::shared_ptr<ProxyEntity> &ent, int gid) {
+        QMutexLocker locker(&mutex);
         if (ent->id >= 0) {
             return false;
         }
@@ -268,6 +271,7 @@ namespace NekoGui {
     }
 
     void ProfileManager::DeleteProfile(int id) {
+        QMutexLocker locker(&mutex);
         if (id < 0) return;
         if (dataStore->started_id == id) return;
         profiles.erase(id);
@@ -292,6 +296,7 @@ namespace NekoGui {
     }
 
     std::shared_ptr<ProxyEntity> ProfileManager::GetProfile(int id) {
+        QMutexLocker locker(&mutex);
         return profiles.count(id) ? profiles[id] : nullptr;
     }
 
@@ -319,6 +324,7 @@ namespace NekoGui {
     }
 
     int ProfileManager::NewGroupID() const {
+        QMutexLocker locker(&mutex);
         if (groups.empty()) {
             return 0;
         } else {
@@ -327,6 +333,7 @@ namespace NekoGui {
     }
 
     bool ProfileManager::AddGroup(const std::shared_ptr<Group> &ent) {
+        QMutexLocker locker(&mutex);
         if (ent->id >= 0) {
             return false;
         }
@@ -342,6 +349,7 @@ namespace NekoGui {
     }
 
     void ProfileManager::DeleteGroup(int gid) {
+        QMutexLocker locker(&mutex);
         if (groups.size() <= 1) return;
         QList<int> toDelete;
         for (const auto &[id, profile]: profiles) {
@@ -357,6 +365,7 @@ namespace NekoGui {
     }
 
     std::shared_ptr<Group> ProfileManager::GetGroup(int id) {
+        QMutexLocker locker(&mutex);
         return groups.count(id) ? groups[id] : nullptr;
     }
 
@@ -365,6 +374,11 @@ namespace NekoGui {
     }
 
     QList<std::shared_ptr<ProxyEntity>> Group::Profiles() const {
+        // Central reader — most profile-list access funnels through here (UI refresh,
+        // config build, subscription workers). Lock so it can't iterate the shared map
+        // while a worker-thread import mutates it. Recursive mutex → safe if a locked
+        // writer calls this indirectly.
+        QMutexLocker locker(&profileManager->mutex);
         QList<std::shared_ptr<ProxyEntity>> ret;
         for (const auto &[_, profile]: profileManager->profiles) {
             if (id == profile->gid) ret += profile;
