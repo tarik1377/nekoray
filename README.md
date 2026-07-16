@@ -50,6 +50,23 @@ A cross-platform proxy client with Qt GUI, built on **sing-box 1.13.5** core. De
 
 ---
 
+## «Зелёный Ритм» service
+
+GreenRhythm is a universal client and also the desktop app for the **«Зелёный Ритм»**
+VPN subscription service ([verdantvibe.ru](https://verdantvibe.ru) ·
+[@VerdantVibeBot](https://t.me/VerdantVibeBot)). Subscriptions from any other provider
+keep working exactly the same — the service ties below are optional convenience only,
+there is no lock-in and no telemetry.
+
+- **First-run onboarding** — paste a subscription link, or open the site / Telegram to get one.
+- **One-click import** — `greenrhythm://import/<link>` adds a subscription or a single
+  profile straight from the website or bot. See [INTEGRATION.md](INTEGRATION.md) for the
+  URL contract, behaviour and security model.
+- **Renew hint** — when a subscription update returns nothing, the group row shows a
+  soft "renew" link. Never modal, never nagging.
+
+---
+
 ## Quick Start
 
 ### 1. Download
@@ -58,7 +75,7 @@ Download the latest release from [**Releases**](https://github.com/tarik1377/nek
 
 ### 2. Unzip & Run
 
-Extract the archive. Run `nekobox.exe` **as Administrator** (required for TUN mode).
+Extract the archive. Run `greenrhythm.exe` **as Administrator** (required for TUN mode).
 
 ### 3. Add Profile
 
