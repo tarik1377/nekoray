@@ -646,6 +646,7 @@
     <addaction name="separator"/>
     <addaction name="menu_gr_buy"/>
     <addaction name="menu_gr_telegram"/>
+    <addaction name="menu_gr_diag"/>
     <addaction name="separator"/>
     <addaction name="menu_gr_about"/>
    </widget>
@@ -667,6 +668,11 @@
   <action name="menu_gr_qr">
    <property name="text">
     <string>Показать QR подписки</string>
+   </property>
+  </action>
+  <action name="menu_gr_diag">
+   <property name="text">
+    <string>Диагностика соединения</string>
    </property>
   </action>
   <action name="menu_gr_buy">

@@ -64,6 +64,11 @@
 #include <QSettings>
 #include <QRegularExpression>
 #include <QDateTime>
+#include <QTcpSocket>
+#include <QSslSocket>
+#include <QHostInfo>
+#include <QProgressDialog>
+#include <QSysInfo>
 
 #ifdef Q_OS_WIN
 static void RegisterGreenRhythmScheme();
@@ -146,6 +151,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // GreenRhythm service entry points (opt-in default help/purchase points)
     connect(ui->menu_gr_connect, &QAction::triggered, this, [=] { smart_connect_greenrhythm(); });
     connect(ui->menu_gr_qr, &QAction::triggered, this, [=] { show_subscription_qr(); });
+    connect(ui->menu_gr_diag, &QAction::triggered, this, [=] { run_diagnostics(); });
     connect(ui->menu_gr_buy, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
     connect(ui->menu_gr_telegram, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kTelegramUrl)); });
     connect(ui->menu_gr_about, &QAction::triggered, this, [=] { show_about_greenrhythm(); });
@@ -284,6 +290,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     tray = new QSystemTrayIcon(this); // 初始化托盘对象tray
     tray->setIcon(Icon::GetTrayIcon(Icon::NONE));
     tray->setContextMenu(ui->menu_program); // 创建托盘菜单
+    // Surface one-click «Быстрое подключение» + the «Зелёный Ритм» hub at the top of
+    // the tray menu (tray context menu == menu_program). Same QActions as the toolbar.
+    if (!ui->menu_program->actions().isEmpty()) {
+        auto *anchor = ui->menu_program->actions().first();
+        ui->menu_program->insertAction(anchor, ui->menu_gr_connect);
+        ui->menu_program->insertAction(anchor, ui->menu_greenrhythm->menuAction());
+        ui->menu_program->insertSeparator(anchor);
+    }
     tray->show();                           // 让托盘图标显示在系统托盘上
     connect(tray, &QSystemTrayIcon::activated, this, [=](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::Trigger) {
@@ -1195,11 +1209,7 @@ void MainWindow::build_onboarding_panel() {
     importBtn->setObjectName("onboardPrimary");
     importBtn->setMinimumHeight(32);
     importBtn->setCursor(Qt::PointingHandCursor);
-    connect(importBtn, &QPushButton::clicked, this, [=] {
-        auto link = subEdit->text().trimmed();
-        if (link.isEmpty()) return;
-        NekoGui_sub::groupUpdater->AsyncUpdate(link);
-    });
+    connect(importBtn, &QPushButton::clicked, this, [=] { import_link_offer_connect(subEdit->text()); });
     connect(subEdit, &QLineEdit::returnPressed, importBtn, &QPushButton::click);
     rowA->addWidget(importBtn);
     cardL->addLayout(rowA);
@@ -1207,7 +1217,11 @@ void MainWindow::build_onboarding_panel() {
     auto *rowB = new QHBoxLayout();
     rowB->setSpacing(8);
     auto *pasteBtn = new QPushButton(tr("Вставить из буфера"), card);
-    connect(pasteBtn, &QPushButton::clicked, this, [=] { on_menu_add_from_clipboard_triggered(); });
+    connect(pasteBtn, &QPushButton::clicked, this, [=] {
+        const auto clip = QApplication::clipboard()->text().trimmed();
+        if (clip.isEmpty()) return;
+        import_link_offer_connect(clip);
+    });
     rowB->addWidget(pasteBtn);
     rowB->addStretch();
     auto *links = new QLabel(card);
@@ -1497,6 +1511,153 @@ void MainWindow::show_subscription_qr() {
     lay->addWidget(copyBtn);
     w->exec();
     w->deleteLater();
+}
+
+// Onboarding / paste import that offers to connect on success — mirrors the deep-link
+// flow so the first-run funnel doesn't dead-end at an empty table. Diffs the profile
+// set around the async import to find what was added; offers the first new server.
+void MainWindow::import_link_offer_connect(const QString &link) {
+    const auto trimmed = link.trimmed();
+    if (trimmed.isEmpty()) return;
+    auto before = std::make_shared<QSet<int>>();
+    {
+        QMutexLocker locker(&NekoGui::profileManager->mutex);
+        for (const auto &[pid, p]: NekoGui::profileManager->profiles) before->insert(pid);
+    }
+    NekoGui_sub::groupUpdater->AsyncUpdate(trimmed, -1, [this, before] {
+        runOnUiThread([this, before] {
+            refresh_proxy_list();
+            int first = -1, added = 0;
+            {
+                QMutexLocker locker(&NekoGui::profileManager->mutex);
+                for (const auto &[pid, p]: NekoGui::profileManager->profiles) {
+                    if (before->contains(pid)) continue;
+                    added++;
+                    if (first < 0) first = pid; // std::map iterates ascending → lowest new id
+                }
+            }
+            if (first < 0) return; // nothing added (import cancelled or failed)
+            if (QMessageBox::question(GetMessageBoxParent(), GreenRhythm::kServiceName,
+                                      tr("Добавлено серверов: %1. Подключиться сейчас?").arg(added)) == QMessageBox::Yes) {
+                neko_start(first);
+            }
+        });
+    });
+}
+
+// One-click connection diagnostics — the manual check we kept doing by hand (is the
+// internet up? does DNS resolve? does the server's port accept TCP? does its TLS
+// handshake complete, or is it DPI-filtered?). Runs off the UI thread; produces a
+// plain-language verdict plus a secrets-free report the user can hand to support.
+void MainWindow::run_diagnostics() {
+    QString host;
+    int port = 0;
+    {
+        std::shared_ptr<NekoGui::ProxyEntity> ent;
+        auto sel = get_now_selected_list();
+        if (!sel.isEmpty()) {
+            ent = sel.first();
+        } else if (NekoGui::dataStore->started_id >= 0) {
+            ent = NekoGui::profileManager->GetProfile(NekoGui::dataStore->started_id);
+        } else {
+            auto cg = NekoGui::profileManager->CurrentGroup();
+            if (cg != nullptr) {
+                auto ps = cg->ProfilesWithOrder();
+                if (!ps.isEmpty()) ent = ps.first();
+            }
+        }
+        if (ent != nullptr && ent->bean != nullptr) {
+            host = ent->bean->serverAddress;
+            port = ent->bean->serverPort;
+        }
+    }
+
+    auto *dlg = new QProgressDialog(tr("Проверка соединения…"), QString(), 0, 0, this);
+    dlg->setWindowTitle(tr("Диагностика соединения"));
+    dlg->setWindowModality(Qt::WindowModal);
+    dlg->setCancelButton(nullptr);
+    dlg->setMinimumDuration(0);
+    dlg->show();
+
+    runOnNewThread([this, host, port, dlg] {
+        bool net, dns, tcp = false, tls = false;
+        {
+            QTcpSocket s;
+            s.connectToHost(QStringLiteral("1.1.1.1"), 443);
+            net = s.waitForConnected(4000);
+            s.abort();
+        }
+        {
+            auto hi = QHostInfo::fromName(QStringLiteral("www.google.com"));
+            dns = hi.error() == QHostInfo::NoError && !hi.addresses().isEmpty();
+        }
+        if (!host.isEmpty() && port > 0) {
+            {
+                QTcpSocket s;
+                s.connectToHost(host, port);
+                tcp = s.waitForConnected(5000);
+                s.abort();
+            }
+            if (tcp) {
+                QSslSocket ss;
+                ss.setPeerVerifyMode(QSslSocket::VerifyNone); // Reality/self-signed nodes
+                ss.connectToHostEncrypted(host, port);
+                tls = ss.waitForEncrypted(6000);
+                ss.abort();
+            }
+        }
+
+        runOnUiThread([=] {
+            dlg->close();
+            dlg->deleteLater();
+
+            QString verdict;
+            if (!net)
+                verdict = tr("Нет интернета — проверьте подключение к сети.");
+            else if (!dns)
+                verdict = tr("Интернет есть, но DNS не отвечает — попробуйте сменить DNS-сервер.");
+            else if (host.isEmpty())
+                verdict = tr("Сеть в порядке. Сервер не выбран — импортируйте подписку и выберите сервер.");
+            else if (!tcp)
+                verdict = tr("Сервер недоступен из вашей сети — возможно, блокировка провайдера или сервер выключен. Попробуйте другой сервер.");
+            else if (!tls)
+                verdict = tr("Сервер отвечает, но TLS не проходит — вероятна фильтрация (DPI). Попробуйте другой сервер или порт 443.");
+            else
+                verdict = tr("Всё в порядке — сеть и сервер доступны.");
+
+            auto mark = [](bool b) { return b ? QString::fromUtf8("\xE2\x9C\x94") : QString::fromUtf8("\xE2\x9C\x95"); }; // ✔ / ✕
+            QStringList rows;
+            rows << tr("Интернет: %1").arg(mark(net));
+            rows << tr("DNS: %1").arg(mark(dns));
+            if (!host.isEmpty()) {
+                rows << tr("Сервер (TCP): %1").arg(mark(tcp));
+                rows << tr("TLS-соединение: %1").arg(mark(tls));
+            }
+
+            // Support report — no secrets: server host:port is public and helps support,
+            // but the subscription token / keys are never included.
+            QString report = QStringLiteral("GreenRhythm diagnostics\nVersion: %1\nOS: %2\n")
+                                 .arg(QString(NKR_VERSION), QSysInfo::prettyProductName());
+            report += QStringLiteral("Internet: %1\nDNS: %2\n").arg(net ? "OK" : "FAIL", dns ? "OK" : "FAIL");
+            if (!host.isEmpty()) {
+                report += QStringLiteral("Server %1:%2 TCP: %3\nTLS: %4\n")
+                              .arg(host).arg(port).arg(tcp ? "OK" : "FAIL", tls ? "OK" : "FAIL");
+            }
+            report += QStringLiteral("Verdict: %1\n").arg(verdict);
+
+            QMessageBox box(QMessageBox::Information, tr("Диагностика соединения"),
+                            rows.join("\n") + "\n\n" + verdict, QMessageBox::Ok, GetMessageBoxParent());
+            auto *copyBtn = box.addButton(tr("Скопировать отчёт"), QMessageBox::ActionRole);
+            auto *tgBtn = box.addButton(tr("Написать в поддержку"), QMessageBox::ActionRole);
+            box.exec();
+            if (box.clickedButton() == copyBtn) {
+                QApplication::clipboard()->setText(report);
+            } else if (box.clickedButton() == tgBtn) {
+                QApplication::clipboard()->setText(report); // report is on the clipboard to paste
+                QDesktopServices::openUrl(QUrl(GreenRhythm::kTelegramUrl));
+            }
+        });
+    });
 }
 
 // «Зелёный Ритм» subscription badge in the bottom status row: days + traffic left,
