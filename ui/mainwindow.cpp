@@ -224,7 +224,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->proxyListTable->verticalHeader()->setDefaultSectionSize(24);
 
     build_onboarding_panel();
-    ui->proxyListTable->viewport()->installEventFilter(this);
 
     // search box
     ui->search->setVisible(false);
@@ -889,6 +888,11 @@ void MainWindow::refresh_status(const QString &traffic_update) {
         ui->label_conn_pill->setStyleSheet(QStringLiteral(
             "QLabel#label_conn_pill{border-radius:9px;padding:2px 10px;color:white;background:%1;}")
             .arg(up ? QStringLiteral("#3FB950") : QStringLiteral("#5A5F66")));
+        // Hug the text — otherwise the pill absorbs the row's slack and stretches.
+        ui->label_conn_pill->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
+        // label_running duplicates the pill's "Not Running"; keep it only when it adds
+        // info (running profile detail / select mode) — it is also the speedtest click target.
+        ui->label_running->setVisible(up || select_mode);
     }
 
     // From UI
@@ -1093,111 +1097,127 @@ void MainWindow::refresh_proxy_list_impl(const int &id, GroupSortAction groupSor
     refresh_onboarding();
 }
 
-// Onboarding / empty-state overlay over the (empty) profile table. One opaque panel,
-// parented to the table viewport so it travels with tab reparenting. Full welcome on
-// first run; compact CTAs once the list has been used and later emptied. Branding help
-// point only — GreenRhythm stays a universal client.
+// Onboarding / empty-state page. Lives in the same layout cell as the profile table:
+// while there are no profiles the table is hidden and this page takes its slot, so it
+// can never overlap or clip anything at any window size. Branding help point only —
+// GreenRhythm stays a universal client (✕ hides it for the session).
 void MainWindow::build_onboarding_panel() {
-    auto *vp = ui->proxyListTable->viewport();
-    auto *panel = new QFrame(vp);
+    auto *panel = new QFrame(this);
     panel->setObjectName("onboardingPanel");
-    panel->setAutoFillBackground(true);
-    panel->setAttribute(Qt::WA_StyledBackground, true);
     panel->hide();
     onboarding_panel = panel;
 
+    // Translucent neutral card so the page follows any theme (dark or light);
+    // the only hardcoded color is the brand-green primary button.
+    panel->setStyleSheet(QStringLiteral(
+        "#onboardingPanel{background:transparent;}"
+        "#onboardCard{background-color:rgba(127,134,147,0.10);border:1px solid rgba(127,134,147,0.28);border-radius:12px;}"
+        "QPushButton#onboardPrimary{background-color:#2ea043;color:#ffffff;border:none;border-radius:8px;padding:6px 22px;font-weight:600;}"
+        "QPushButton#onboardPrimary:hover{background-color:#3fb950;}"
+        "QPushButton#onboardPrimary:pressed{background-color:#2c974b;}"));
+
     auto *outer = new QVBoxLayout(panel);
-    outer->setContentsMargins(28, 16, 28, 28);
-    outer->setSpacing(12);
+    outer->setContentsMargins(24, 6, 24, 12);
+    outer->setSpacing(0);
 
     auto *topRow = new QHBoxLayout();
     topRow->addStretch();
     auto *closeBtn = new QToolButton(panel);
     closeBtn->setText(QString::fromUtf8("\xE2\x9C\x95")); // ✕
     closeBtn->setAutoRaise(true);
+    closeBtn->setToolTip(tr("Скрыть"));
     connect(closeBtn, &QToolButton::clicked, this, [=] {
         onboarding_dismissed = true;
-        onboarding_panel->hide();
+        refresh_onboarding();
     });
     topRow->addWidget(closeBtn);
     outer->addLayout(topRow);
 
+    outer->addStretch(2);
+
     auto *title = new QLabel(tr("Добро пожаловать в GreenRhythm") + QString::fromUtf8(" \xF0\x9F\x8C\xBF"), panel); // 🌿
     title->setAlignment(Qt::AlignHCenter);
-    { QFont f = title->font(); f.setPointSizeF(f.pointSizeF() * 1.35); f.setBold(true); title->setFont(f); }
+    { QFont f = title->font(); f.setPointSizeF(f.pointSizeF() * 1.5); f.setBold(true); title->setFont(f); }
     outer->addWidget(title);
-    onboarding_title = title;
+    outer->addSpacing(6);
 
-    auto *subtitle = new QLabel(tr("Выберите, как начать"), panel);
+    auto *subtitle = new QLabel(tr("Вставьте ссылку подписки — или получите доступ за пару минут"), panel);
     subtitle->setAlignment(Qt::AlignHCenter);
+    subtitle->setEnabled(false); // dimmed via the theme's disabled palette
     outer->addWidget(subtitle);
-    onboarding_subtitle = subtitle;
+    outer->addSpacing(16);
 
-    // Row A — «У меня есть подписка»: link field + import buttons on one line (can't cramp).
+    // One centered card, width-capped so it reads like a dialog, not a stretched bar.
+    auto *card = new QFrame(panel);
+    card->setObjectName("onboardCard");
+    card->setMaximumWidth(620);
+    auto *cardL = new QVBoxLayout(card);
+    cardL->setContentsMargins(18, 16, 18, 16);
+    cardL->setSpacing(10);
+
     auto *rowA = new QHBoxLayout();
     rowA->setSpacing(8);
-    rowA->addWidget(new QLabel(tr("У меня есть подписка:"), panel));
-    auto *subEdit = new QLineEdit(panel);
-    subEdit->setPlaceholderText(tr("вставьте ссылку подписки"));
+    auto *subEdit = new QLineEdit(card);
+    subEdit->setPlaceholderText(tr("Ссылка подписки или профиля…"));
+    subEdit->setMinimumHeight(32);
     rowA->addWidget(subEdit, 1);
-    auto *importBtn = new QPushButton(tr("Импорт"), panel);
+    auto *importBtn = new QPushButton(tr("Импорт"), card);
+    importBtn->setObjectName("onboardPrimary");
+    importBtn->setMinimumHeight(32);
+    importBtn->setCursor(Qt::PointingHandCursor);
     connect(importBtn, &QPushButton::clicked, this, [=] {
         auto link = subEdit->text().trimmed();
         if (link.isEmpty()) return;
         NekoGui_sub::groupUpdater->AsyncUpdate(link);
     });
+    connect(subEdit, &QLineEdit::returnPressed, importBtn, &QPushButton::click);
     rowA->addWidget(importBtn);
-    auto *pasteBtn = new QPushButton(tr("Из буфера"), panel);
-    connect(pasteBtn, &QPushButton::clicked, this, [=] { on_menu_add_from_clipboard_triggered(); });
-    rowA->addWidget(pasteBtn);
-    outer->addLayout(rowA);
+    cardL->addLayout(rowA);
 
-    // Row B — «Получить доступ»: open the site + Telegram link on one line.
     auto *rowB = new QHBoxLayout();
     rowB->setSpacing(8);
-    rowB->addWidget(new QLabel(tr("Получить доступ:"), panel));
-    auto *getBtn = new QPushButton(tr("Открыть verdantvibe.ru"), panel);
-    connect(getBtn, &QPushButton::clicked, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
-    rowB->addWidget(getBtn);
-    auto *tg = new QLabel(panel);
-    tg->setTextFormat(Qt::RichText);
-    tg->setOpenExternalLinks(true);
-    tg->setText(QStringLiteral("<a href=\"%1\">%2</a>").arg(GreenRhythm::kTelegramUrl, tr("или в Telegram — @VerdantVibeBot")));
-    rowB->addWidget(tg);
+    auto *pasteBtn = new QPushButton(tr("Вставить из буфера"), card);
+    connect(pasteBtn, &QPushButton::clicked, this, [=] { on_menu_add_from_clipboard_triggered(); });
+    rowB->addWidget(pasteBtn);
     rowB->addStretch();
-    outer->addLayout(rowB);
-    outer->addStretch();
+    auto *links = new QLabel(card);
+    links->setTextFormat(Qt::RichText);
+    links->setOpenExternalLinks(true);
+    links->setText(QStringLiteral("<a href=\"%1\" style=\"color:#3fb950;text-decoration:none;\">%2</a>"
+                                  "&nbsp;&nbsp;·&nbsp;&nbsp;"
+                                  "<a href=\"%3\" style=\"color:#3fb950;text-decoration:none;\">Telegram</a>")
+                       .arg(GreenRhythm::kBuyUrl, tr("Нет подписки? Получить"), GreenRhythm::kTelegramUrl));
+    rowB->addWidget(links);
+    cardL->addLayout(rowB);
+
+    auto *cardRow = new QHBoxLayout();
+    cardRow->addStretch();
+    cardRow->addWidget(card, 1);
+    cardRow->addStretch();
+    outer->addLayout(cardRow);
+
+    outer->addStretch(3);
 }
 
-// Show/hide brain for the onboarding overlay. Full welcome only while no profile has
-// ever been added; compact empty-state after; hidden once any profile exists.
+// Empty-state switcher: with zero profiles the table hides and the welcome page takes
+// its layout slot; with any profile (or after ✕) the table is restored. The page follows
+// the table across group tabs — both live in the current tab's layout.
 void MainWindow::refresh_onboarding() {
     if (onboarding_panel == nullptr) return;
     const bool empty = NekoGui::profileManager->profiles.empty();
-    if (!empty) {
-        if (!NekoGui::dataStore->onboarding_completed) {
-            NekoGui::dataStore->onboarding_completed = true;
-            NekoGui::dataStore->Save();
+    if (!empty && !NekoGui::dataStore->onboarding_completed) {
+        NekoGui::dataStore->onboarding_completed = true;
+        NekoGui::dataStore->Save();
+    }
+    const bool show = empty && !onboarding_dismissed;
+    if (show) {
+        auto *host = ui->proxyListTable->parentWidget();
+        if (host != nullptr && host->layout() != nullptr && onboarding_panel->parentWidget() != host) {
+            host->layout()->addWidget(onboarding_panel);
         }
-        onboarding_panel->hide();
-        return;
     }
-    if (onboarding_dismissed) {
-        onboarding_panel->hide();
-        return;
-    }
-    const bool compact = NekoGui::dataStore->onboarding_completed;
-    onboarding_title->setVisible(!compact);
-    onboarding_subtitle->setVisible(!compact);
-    onboarding_panel->setGeometry(ui->proxyListTable->viewport()->rect());
-    onboarding_panel->raise();
-    onboarding_panel->show();
-    // The viewport may still settle to its final size after this first show; re-apply
-    // geometry once the event loop drains so the cards get the full height (no overlap).
-    QTimer::singleShot(0, this, [this] {
-        if (onboarding_panel != nullptr && onboarding_panel->isVisible())
-            onboarding_panel->setGeometry(ui->proxyListTable->viewport()->rect());
-    });
+    onboarding_panel->setVisible(show);
+    ui->proxyListTable->setVisible(!show);
 }
 
 // Small round status dot for a profile row (green connected / red last-test-failed / grey idle).
@@ -1856,12 +1876,6 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
         if (obj == ui->splitter) {
             auto size = ui->splitter->size();
             ui->splitter->setSizes({size.height() / 2, size.height() / 2});
-        }
-    } else if (event->type() == QEvent::Resize) {
-        // Keep the onboarding overlay sized to the table viewport on every resize
-        // (no isVisible guard — the critical first-show resize can fire while hidden).
-        if (onboarding_panel != nullptr && obj == ui->proxyListTable->viewport()) {
-            onboarding_panel->setGeometry(ui->proxyListTable->viewport()->rect());
         }
     }
     return QMainWindow::eventFilter(obj, event);
