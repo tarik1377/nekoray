@@ -73,6 +73,8 @@
 #include <QNetworkReply>
 #include <QNetworkProxy>
 #include <QEventLoop>
+#include <QMenu>
+#include <QHostAddress>
 
 #ifdef Q_OS_WIN
 static void RegisterGreenRhythmScheme();
@@ -253,6 +255,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    // Right-click a live connection → одним кликом сделать правило маршрутизации.
+    ui->tableWidget_conn->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(ui->tableWidget_conn, &QWidget::customContextMenuRequested, this, [=](const QPoint &p) { show_conn_context_menu(p); });
     // Card-like rows: taller for breathing room, no gridlines (surface comes from
     // the theme's alternating rows + rounded selection). Columns/sort/drag intact.
     ui->proxyListTable->verticalHeader()->setDefaultSectionSize(40);
@@ -2599,7 +2604,79 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
             target2 = "";
         }
         f->setText("[" + target1 + "] " + target2);
+        // Stash the bare host (no port) so the context menu can build a rule from it.
+        // Prefer the resolved domain (RDest) over a bare IP when both exist.
+        QString host = !target2.isEmpty() ? target2 : target1;
+        int colon = host.lastIndexOf(':');
+        if (colon > 0) {
+            bool okPort = false;
+            host.mid(colon + 1).toInt(&okPort);
+            if (okPort) host = host.left(colon);
+        }
+        f->setData(Qt::UserRole, host);
         ui->tableWidget_conn->setItem(row, 2, f);
+    }
+}
+
+// Right-click a live connection → make a persistent routing rule from its destination.
+// Turns "I see youtube.com going direct" into a one-click «Всегда через прокси».
+void MainWindow::show_conn_context_menu(const QPoint &pos) {
+    auto *cell = ui->tableWidget_conn->itemAt(pos);
+    if (cell == nullptr) return;
+    auto *destItem = ui->tableWidget_conn->item(cell->row(), 2);
+    const QString host = destItem != nullptr ? destItem->data(Qt::UserRole).toString() : QString();
+    if (host.isEmpty()) return;
+
+    QMenu menu(this);
+    auto *aDirect = menu.addAction(QString::fromUtf8("\xF0\x9F\x87\xB7\xF0\x9F\x87\xBA ") + tr("Всегда напрямую: %1").arg(host));   // 🇷🇺
+    auto *aProxy = menu.addAction(QString::fromUtf8("\xF0\x9F\x8C\x8D ") + tr("Всегда через прокси: %1").arg(host));               // 🌍
+    auto *aBlock = menu.addAction(QString::fromUtf8("\xE2\x9B\x94 ") + tr("Блокировать: %1").arg(host));                          // ⛔
+    menu.addSeparator();
+    auto *aCopy = menu.addAction(tr("Копировать адрес"));
+    auto *chosen = menu.exec(ui->tableWidget_conn->viewport()->mapToGlobal(pos));
+    if (chosen == nullptr) return;
+    if (chosen == aCopy) {
+        QApplication::clipboard()->setText(host);
+    } else if (chosen == aDirect) {
+        add_routing_rule(host, 0);
+    } else if (chosen == aProxy) {
+        add_routing_rule(host, 1);
+    } else if (chosen == aBlock) {
+        add_routing_rule(host, 2);
+    }
+}
+
+void MainWindow::add_routing_rule(const QString &host, int kind) {
+    auto &r = NekoGui::dataStore->routing;
+    if (r == nullptr || host.isEmpty()) return;
+    const bool isIp = !QHostAddress(host).isNull();
+
+    QString *field = nullptr;
+    QString kindName;
+    if (kind == 0) {
+        field = isIp ? &r->direct_ip : &r->direct_domain;
+        kindName = tr("напрямую");
+    } else if (kind == 1) {
+        field = isIp ? &r->proxy_ip : &r->proxy_domain;
+        kindName = tr("через прокси");
+    } else {
+        field = isIp ? &r->block_ip : &r->block_domain;
+        kindName = tr("в блокировку");
+    }
+    const QString entry = isIp ? host : QStringLiteral("domain:") + host;
+    if (field->split('\n', Qt::SkipEmptyParts).contains(entry)) {
+        show_log_impl(tr("Правило уже есть: %1").arg(host));
+        return;
+    }
+    if (!field->isEmpty() && !field->endsWith('\n')) field->append('\n');
+    field->append(entry);
+    r->Save();
+    show_log_impl(tr("Правило добавлено: %1 → %2").arg(host, kindName));
+
+    if (NekoGui::dataStore->started_id >= 0 &&
+        QMessageBox::question(GetMessageBoxParent(), tr("Правило добавлено"),
+                              tr("«%1» теперь идёт %2. Перезапустить подключение, чтобы применить?").arg(host, kindName)) == QMessageBox::Yes) {
+        neko_start(NekoGui::dataStore->started_id);
     }
 }
 
