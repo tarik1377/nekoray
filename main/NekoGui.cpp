@@ -447,7 +447,10 @@ namespace NekoGui {
         for (const auto &c: obj.keys()) {
             if (c == id) {
                 auto path = obj[id].toString();
-                if (!path.isEmpty()) return path;
+                // Only honour a stored path if it still exists — otherwise a stale
+                // entry (old install / migration) would shadow the bundled core and
+                // break "works out of the box". Fall through to the bundled binary.
+                if (!path.isEmpty() && QFile::exists(path)) return path;
                 break;
             }
         }
