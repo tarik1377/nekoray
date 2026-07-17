@@ -14,6 +14,9 @@
 #include <QDesktopServices>
 #include <QMessageBox>
 #include <QDialogButtonBox>
+#include <QProgressDialog>
+#include <QFileInfo>
+#include <QApplication>
 
 // ext core
 
@@ -527,6 +530,27 @@ void MainWindow::CheckUpdate() {
         box.exec();
         //
         if (btn1 == box.clickedButton() && allow_updater) {
+            // The download is a single blocking gRPC call for a ~55 MB package; without
+            // visible feedback the app looks frozen. Show a live progress dialog that
+            // polls the growing package on disk so the user sees real megabytes tick up.
+            auto *dlg = new QProgressDialog(QObject::tr("Загрузка обновления…"), QString(), 0, 0, this);
+            dlg->setWindowTitle(QObject::tr("Обновление"));
+            dlg->setWindowModality(Qt::WindowModal);
+            dlg->setMinimumDuration(0);
+            dlg->setCancelButton(nullptr); // the core download can't be interrupted mid-call
+            dlg->setAutoClose(false);
+            dlg->setAutoReset(false);
+            const QString zipPath = QApplication::applicationDirPath() + "/greenrhythm.zip";
+            auto *poll = new QTimer(dlg);
+            connect(poll, &QTimer::timeout, dlg, [dlg, zipPath] {
+                QFileInfo fi(zipPath);
+                if (fi.exists()) {
+                    dlg->setLabelText(QObject::tr("Загрузка обновления… %1 МБ")
+                                          .arg(fi.size() / 1048576.0, 0, 'f', 1));
+                }
+            });
+            poll->start(250);
+            dlg->show();
             // Download Update
             runOnNewThread([=] {
                 bool ok2;
@@ -534,9 +558,12 @@ void MainWindow::CheckUpdate() {
                 request2.set_action(libcore::UpdateAction::Download);
                 auto response2 = NekoGui_rpc::defaultClient->Update(&ok2, request2);
                 runOnUiThread([=] {
+                    poll->stop();
+                    dlg->close();
+                    dlg->deleteLater();
                     if (response2.error().empty()) {
                         auto q = QMessageBox::question(nullptr, QObject::tr("Update"),
-                                                       QObject::tr("Update is ready, restart to install?"));
+                                                       QObject::tr("Обновление загружено. Перезапустить для установки?"));
                         if (q == QMessageBox::StandardButton::Yes) {
                             this->exit_reason = 1;
                             on_menu_exit_triggered();

@@ -215,6 +215,8 @@ private:
     void show_conn_context_menu(const QPoint &pos);     // right-click a connection → make a routing rule
     void add_routing_rule(const QString &host, int kind); // kind: 0 direct, 1 proxy, 2 block
 
+    QLabel *conn_route_summary = nullptr; // live route "map": proxy/direct/block split + bar
+
     // «Автопилот»: watchdog that probes the live tunnel end-to-end and self-heals —
     // refresh subscription (rotated keys), reconnect, switch server, then back off.
     QTimer *autopilot_timer = nullptr;
