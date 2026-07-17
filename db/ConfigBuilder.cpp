@@ -331,7 +331,18 @@ namespace NekoGui {
             if (thisExternalStat > 0) {
                 auto extR = ent->bean->BuildExternal(ext_mapping_port, ext_socks_port, thisExternalStat);
                 if (extR.program.isEmpty()) {
-                    status->result->error = QObject::tr("Core not found: %1").arg(ent->bean->DisplayCoreType());
+                    const auto core = ent->bean->DisplayCoreType();
+                    QString msg = QObject::tr("Ядро «%1» не найдено.").arg(core);
+                    if (core.compare("xray", Qt::CaseInsensitive) == 0) {
+                        // xray.exe ships next to the app; if it vanished, antivirus is the
+                        // usual culprit — xray is widely false-flagged on Windows.
+                        msg += QObject::tr(" Оно входит в комплект (xray.exe рядом с программой). "
+                                           "Скорее всего, его удалил антивирус — восстановите файл из "
+                                           "архива GreenRhythm или добавьте программу в исключения антивируса.");
+                    } else {
+                        msg += QObject::tr(" Укажите путь к ядру в Настройках → Extra cores.");
+                    }
+                    status->result->error = msg;
                     return {};
                 }
                 if (!extR.error.isEmpty()) { // rejected
