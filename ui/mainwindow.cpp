@@ -2362,9 +2362,13 @@ void MainWindow::show_log_impl(const QString &log) {
     auto lines = SplitLines(log.trimmed());
     if (lines.isEmpty()) return;
 
+    // Strip ANSI colour/escape sequences the sing-box / xray cores emit on stderr —
+    // otherwise raw «\x1b[36mINFO\x1b[0m» garbage leaks into the log view.
+    static const QRegularExpression ansiRe(QStringLiteral("\x1B\\[[0-9;]*[A-Za-z]"));
     QStringList newLines;
     auto log_ignore = NekoGui::dataStore->log_ignore;
-    for (const auto &line: lines) {
+    for (const auto &rawLine: lines) {
+        QString line = QString(rawLine).remove(ansiRe);
         bool showThisLine = true;
         for (const auto &str: log_ignore) {
             if (line.contains(str)) {
