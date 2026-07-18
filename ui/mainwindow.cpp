@@ -258,6 +258,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Right-click a live connection → одним кликом сделать правило маршрутизации.
     ui->tableWidget_conn->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(ui->tableWidget_conn, &QWidget::customContextMenuRequested, this, [=](const QPoint &p) { show_conn_context_menu(p); });
+    // Live route "map" strip above the connections table: at-a-glance split of what
+    // goes 🌍 proxy / 🇷🇺 direct / ⛔ block, aggregating the fast-scrolling log.
+    conn_route_summary = new QLabel(ui->tab_2);
+    conn_route_summary->setTextFormat(Qt::RichText);
+    conn_route_summary->setMargin(6);
+    conn_route_summary->setText(tr("Нет активных соединений"));
+    if (auto *lay = qobject_cast<QVBoxLayout *>(ui->tab_2->layout())) lay->insertWidget(0, conn_route_summary);
     // Card-like rows: taller for breathing room, no gridlines (surface comes from
     // the theme's alternating rows + rounded selection). Columns/sort/drag intact.
     ui->proxyListTable->verticalHeader()->setDefaultSectionSize(40);
@@ -2546,10 +2553,19 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
 
     ui->tableWidget_conn->setRowCount(0);
 
+    int nProxy = 0, nDirect = 0, nBlock = 0; // route-map tallies (active connections only)
     int row = -1;
     for (const auto &_item: arr) {
         auto item = _item.toObject();
         if (NekoGui::dataStore->ignoreConnTag.contains(item["Tag"].toString())) continue;
+
+        // Count active (not-yet-ended) connections per outbound for the route map.
+        if (item["End"].toInt() == 0) {
+            const auto t = item["Tag"].toString();
+            if (t == "proxy") nProxy++;
+            else if (t == "direct" || t == "bypass") nDirect++;
+            else if (t == "block") nBlock++;
+        }
 
         row++;
         ui->tableWidget_conn->insertRow(row);
@@ -2615,6 +2631,29 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
         }
         f->setData(Qt::UserRole, host);
         ui->tableWidget_conn->setItem(row, 2, f);
+    }
+
+    // Update the route-map strip.
+    if (conn_route_summary != nullptr) {
+        const int total = nProxy + nDirect + nBlock;
+        if (total == 0) {
+            conn_route_summary->setText(tr("Нет активных соединений"));
+        } else {
+            const int W = 44; // bar cells
+            int wp = nProxy * W / total, wd = nDirect * W / total;
+            int wb = W - wp - wd; // give the remainder to block so the bar is always full
+            if (nBlock == 0) { wb = 0; if (nDirect >= nProxy) wd = W - wp; else wp = W - wd; }
+            auto seg = [](int n, const QString &color) {
+                return n > 0 ? QStringLiteral("<span style='color:%1;'>%2</span>").arg(color, QString(n, QChar(0x2588))) : QString(); // █
+            };
+            const QString bar = QStringLiteral("<span style='font-family:monospace;font-size:11px;'>%1%2%3</span>")
+                                    .arg(seg(wp, "#4C9AFF"), seg(wd, "#3FB950"), seg(wb, "#E5484D"));
+            const QString counts =
+                QString::fromUtf8("\xF0\x9F\x8C\x8D ") + QStringLiteral("<span style='color:#4C9AFF;'>") + tr("Прокси: %1").arg(nProxy) + "</span>&nbsp;&nbsp;" +
+                QString::fromUtf8("\xF0\x9F\x87\xB7\xF0\x9F\x87\xBA ") + QStringLiteral("<span style='color:#3FB950;'>") + tr("Напрямую: %1").arg(nDirect) + "</span>&nbsp;&nbsp;" +
+                QString::fromUtf8("\xE2\x9B\x94 ") + QStringLiteral("<span style='color:#E5484D;'>") + tr("Блок: %1").arg(nBlock) + "</span>";
+            conn_route_summary->setText(bar + "<br>" + counts);
+        }
     }
 }
 
