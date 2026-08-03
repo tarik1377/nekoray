@@ -321,7 +321,10 @@ namespace NekoGui {
             remote_dns = "https://1.1.1.1/dns-query";
             remote_dns_strategy = "ipv4_only";
             dns_routing = true;
-            dns_final_out = "proxy";
+            // Direct/bypass traffic must resolve names locally. With "proxy" here every
+            // unmatched DNS query is tunnelled abroad and back, adding seconds of latency
+            // to the very domains we deliberately route direct (RU sites, games, launchers).
+            dns_final_out = "bypass";
             sniffing_mode = 1;
             block_domain =
                 "geosite:category-ads-all\n"
@@ -375,13 +378,36 @@ namespace NekoGui {
                 "domain:outlook.com\n"
                 "domain:msn.com\n"
                 "domain:bing.com\n"
-                "domain:skype.com";
+                "domain:skype.com\n"
+                // Gaming: these break when the account/session IP differs between the game
+                // and its auth services, and Epic/Cloudflare challenges datacenter IPs.
+                "domain:epicgames.com\n"
+                "domain:epicgames.dev\n"
+                "domain:epicgames.net\n"
+                "domain:on.epicgames.com\n"
+                "domain:ol.epicgames.com\n"
+                "domain:unrealengine.com\n"
+                "domain:easyanticheat.net\n"
+                "domain:eac-cdn.com\n"
+                "domain:xboxlive.com\n"
+                "domain:xbox.com\n"
+                "domain:seaofthieves.com\n"
+                "domain:rare.co.uk\n"
+                "domain:playfabapi.com\n"
+                "domain:steampowered.com\n"
+                "domain:steamcommunity.com\n"
+                "domain:steamserver.net\n"
+                "domain:steamcontent.com";
             direct_ip =
                 "geoip:ru\n"
                 "geoip:private";
             proxy_domain = "";
             proxy_ip = "";
-            custom = "{\"rules\":[{\"outbound\":\"proxy\",\"process_name\":[\"Discord.exe\",\"discord.exe\",\"Telegram.exe\",\"telegram.exe\",\"Codex.exe\",\"codex.exe\",\"Claude.exe\",\"claude.exe\",\"claude-code.exe\"]},{\"outbound\":\"direct\",\"process_name\":[\"BsgLauncher.exe\"]}]}";
+            // Games and their auth/anti-cheat helpers use "bypass", not "direct": "direct"
+            // still re-injects packets through the TUN adapter, which resets long-lived
+            // game connections. Every helper must share the game's exit IP or Xbox/Epic
+            // auth fails (observed as Sea of Thieves "Lavenderbeard").
+            custom = "{\"rules\":[{\"outbound\":\"bypass\",\"process_name\":[\"SoTGame.exe\",\"SoTLauncher.exe\",\"UnrealCEFSubProcess.exe\",\"XboxPcAppFT.exe\",\"XboxPcApp.exe\",\"GameBarPresenceWriter.exe\",\"GamingServices.exe\",\"GamingServicesNet.exe\",\"XboxIdentityProvider.exe\",\"steam.exe\",\"steamwebhelper.exe\",\"steamservice.exe\",\"BsgLauncher.exe\",\"EscapeFromTarkov.exe\"]},{\"outbound\":\"proxy\",\"process_name\":[\"Discord.exe\",\"discord.exe\",\"Telegram.exe\",\"telegram.exe\",\"Codex.exe\",\"codex.exe\",\"Claude.exe\",\"claude.exe\",\"claude-code.exe\"]}]}";
         }
         if (!Preset::SingBox::DomainStrategy.contains(domain_strategy)) domain_strategy = "";
         if (!Preset::SingBox::DomainStrategy.contains(outbound_domain_strategy)) outbound_domain_strategy = "";
