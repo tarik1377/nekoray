@@ -158,6 +158,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->menu_gr_connect, &QAction::triggered, this, [=] { smart_connect_greenrhythm(); });
     connect(ui->menu_gr_qr, &QAction::triggered, this, [=] { show_subscription_qr(); });
     connect(ui->menu_gr_diag, &QAction::triggered, this, [=] { run_diagnostics(); });
+    connect(ui->menu_gr_fixnet, &QAction::triggered, this, [=] { repair_windows_network(); });
     ui->menu_gr_autopilot->setChecked(NekoGui::dataStore->connection_autopilot);
     connect(ui->menu_gr_autopilot, &QAction::toggled, this, [=](bool checked) {
         NekoGui::dataStore->connection_autopilot = checked;
@@ -1684,6 +1685,91 @@ void MainWindow::run_diagnostics() {
             }
         });
     });
+}
+
+// Repairs a Windows network stack left broken by OTHER tools. Users who tried
+// Zapret/GoodbyeDPI/WARP and "uninstalled" them keep the parts that actually block
+// us: the WinDivert driver still filters packets, services still run, and the system
+// proxy/DNS still point at a resolver that no longer exists — so our tunnel cannot
+// come up and the user only sees "не подключается". Deleting the app folder removes
+// none of that, which is why support kept hitting a wall.
+//
+// Everything here is destructive and needs elevation, so it is strictly opt-in: we
+// spell out what will change, require confirmation, and never touch the hosts file —
+// on a real machine it held the user's own work entries (corporate hosts, docker),
+// and wiping those would break something we were never asked to touch.
+void MainWindow::repair_windows_network() {
+#ifndef Q_OS_WIN
+    QMessageBox::information(this, tr("Починить сеть Windows"),
+                             tr("Эта функция доступна только в Windows."));
+#else
+    QMessageBox ask(QMessageBox::Warning, tr("Починить сеть Windows"),
+                    tr("Будут убраны следы других VPN и утилит обхода блокировок "
+                       "(Zapret, GoodbyeDPI, WARP и подобных), которые перехватывают "
+                       "трафик и мешают подключению.\n\n"
+                       "Что изменится:\n"
+                       "• остановятся службы и драйверы-перехватчики;\n"
+                       "• сбросится системный прокси и кэш DNS;\n"
+                       "• сбросится Winsock и стек TCP/IP.\n\n"
+                       "Файл hosts и ваши настройки НЕ трогаются.\n\n"
+                       "Потребуются права администратора и перезагрузка. Продолжить?"),
+                    QMessageBox::NoButton, this);
+    auto *go = ask.addButton(tr("Починить"), QMessageBox::AcceptRole);
+    ask.addButton(tr("Отмена"), QMessageBox::RejectRole);
+    ask.exec();
+    if (ask.clickedButton() != go) return;
+
+    // One elevated shell for the whole sequence: a UAC prompt per command would be
+    // both hostile and easy to half-accept, leaving the stack in a worse state.
+    const QString script =
+        "$ErrorActionPreference='SilentlyContinue';"
+        // Kill the interceptors first — resetting the stack under a live filter driver
+        // leaves the driver attached and the reset half-applied.
+        "foreach($n in 'WinDivert','WinDivert1.4','WinDivert14'){sc.exe stop $n;sc.exe delete $n};"
+        "foreach($s in Get-Service | Where-Object {$_.Name -match 'warp|cloudflare|zapret|goodbyedpi|byedpi'}){"
+        "Stop-Service $s.Name -Force; Set-Service $s.Name -StartupType Disabled};"
+        "foreach($p in Get-Process | Where-Object {$_.ProcessName -match 'winws|goodbyedpi|zapret|byedpi|warp-svc'}){"
+        "Stop-Process -Id $p.Id -Force};"
+        "Set-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings' ProxyEnable 0;"
+        "netsh winhttp reset proxy;"
+        "netsh winsock reset;"
+        "netsh int ip reset;"
+        "ipconfig /flushdns;";
+
+    const QStringList args{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script};
+    // Quote each argument: the script contains spaces and quotes, and Start-Process
+    // -ArgumentList would otherwise split it into garbage.
+    QString quoted;
+    for (const auto &a : args) quoted += (quoted.isEmpty() ? "" : ",") + QString("'%1'").arg(QString(a).replace("'", "''"));
+
+    const QString launcher = QString("Start-Process powershell -Verb RunAs -Wait -ArgumentList %1").arg(quoted);
+    QProcess proc;
+    proc.start("powershell", {"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", launcher});
+    const bool finished = proc.waitForFinished(180000);
+
+    if (!finished || proc.exitCode() != 0) {
+        // The usual cause is the user dismissing the UAC prompt, which is a choice,
+        // not a failure — so offer the manual path instead of just reporting an error.
+        QMessageBox::warning(this, tr("Починить сеть Windows"),
+                             tr("Не удалось выполнить очистку — вероятно, не были выданы "
+                                "права администратора.\n\nПопробуйте ещё раз и подтвердите "
+                                "запрос Windows."));
+        return;
+    }
+
+    QMessageBox done(QMessageBox::Information, tr("Починить сеть Windows"),
+                     tr("Сеть очищена.\n\nЧтобы изменения вступили в силу, нужна "
+                        "перезагрузка компьютера."),
+                     QMessageBox::NoButton, this);
+    auto *reboot = done.addButton(tr("Перезагрузить сейчас"), QMessageBox::AcceptRole);
+    done.addButton(tr("Позже"), QMessageBox::RejectRole);
+    done.exec();
+    if (done.clickedButton() == reboot) {
+        // /t 5, not /t 0 — a reboot with no grace period would kill anything the user
+        // still has open, and we just asked them to trust us with their network stack.
+        QProcess::startDetached("shutdown", {"/r", "/t", "5"});
+    }
+#endif
 }
 
 // «Автопилот» watchdog. Probes the RUNNING tunnel end-to-end (HTTP 204 through the

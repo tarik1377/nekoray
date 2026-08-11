@@ -648,6 +648,7 @@
     <addaction name="menu_gr_buy"/>
     <addaction name="menu_gr_telegram"/>
     <addaction name="menu_gr_diag"/>
+    <addaction name="menu_gr_fixnet"/>
     <addaction name="separator"/>
     <addaction name="menu_gr_about"/>
    </widget>
@@ -674,6 +675,14 @@
   <action name="menu_gr_diag">
    <property name="text">
     <string>Диагностика соединения</string>
+   </property>
+  </action>
+  <action name="menu_gr_fixnet">
+   <property name="text">
+    <string>Починить сеть Windows</string>
+   </property>
+   <property name="toolTip">
+    <string>Убрать следы других VPN и утилит обхода: службы, драйверы-перехватчики, прокси, DNS</string>
    </property>
   </action>
   <action name="menu_gr_autopilot">
