@@ -544,6 +544,19 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         NekoGui::dataStore->Save();
     }
 
+#ifdef Q_OS_WIN
+    // One-shot, Windows only: the persisted default was the gvisor stack, which runs
+    // its own TCP/IP in userspace and breaks in a way that is nearly impossible to
+    // report — DNS resolves, the tunnel's own probes succeed, and no page ever loads.
+    // The system stack does not have this failure. Only the old default is flipped, so
+    // anyone who deliberately picked gvisor or mixed keeps their choice.
+    if (!NekoGui::dataStore->vpn_stack_migrated) {
+        if (NekoGui::dataStore->vpn_implementation == 0) NekoGui::dataStore->vpn_implementation = 1;
+        NekoGui::dataStore->vpn_stack_migrated = true;
+        NekoGui::dataStore->Save();
+    }
+#endif
+
     TM_auto_update_subsctiption = new QTimer;
     TM_auto_update_subsctiption_Reset_Minute = [&](int m) {
         TM_auto_update_subsctiption->stop();

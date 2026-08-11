@@ -132,6 +132,7 @@ namespace NekoGui {
         // One-shot flag: flip legacy configs still on the old disabled default (-30) to the
         // new enabled default exactly once, without ever re-overriding a user's own choice.
         bool sub_auto_update_migrated = false;
+        bool vpn_stack_migrated = false;
 
         // Security
         bool skip_cert = false;
@@ -155,7 +156,16 @@ namespace NekoGui {
         // VPN
         bool fake_dns = false;
         bool vpn_internal_tun = true;
-        int vpn_implementation = 0;
+        // Index into Preset::SingBox::VpnImplementation {"gvisor", "system", "mixed"}.
+        // "system" hands packets to the OS network stack; "gvisor" runs its own TCP/IP
+        // in userspace and is noticeably less reliable on Windows — a customer on the
+        // default saw DNS resolve and small requests succeed while no page would load,
+        // and the same build with "system" works. Default to it on Windows.
+#ifdef Q_OS_WIN
+        int vpn_implementation = 1; // system
+#else
+        int vpn_implementation = 0; // gvisor
+#endif
         int vpn_mtu = 1500;
         bool vpn_ipv6 = false;
         bool vpn_hide_console = true;
