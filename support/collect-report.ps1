@@ -48,10 +48,23 @@ if ($srv) {
     Add " TCP 443 до сервера: $(if($t.TcpTestSucceeded){'ДОСТУПЕН'}else{'НЕДОСТУПЕН'})"
 }
 
-Sec "Адаптеры"
-Get-NetAdapter | Where-Object Status -eq 'Up' |
-    Select-Object Name, InterfaceDescription, ifIndex, LinkSpeed |
-    Format-Table -AutoSize | Out-String -Width 140 | ForEach-Object { Add $_ }
+Sec "Адаптеры (ВСЕ, не только активные)"
+# Не фильтруем по Status: отключённый или полуживой TAP от другого VPN всё равно
+# участвует в выборе маршрута и DNS. Один такой (outline-tap0 с APIPA-адресом)
+# на реальной машине не попал в отчёт именно из-за фильтра по Up.
+Get-NetAdapter |
+    Select-Object Name, InterfaceDescription, ifIndex, Status, LinkSpeed |
+    Format-Table -AutoSize | Out-String -Width 150 | ForEach-Object { Add $_ }
+
+Sec "Чужие VPN-адаптеры"
+$foreign = Get-NetAdapter | Where-Object {
+    $_.InterfaceDescription -match 'TAP|TUN|WireGuard|Wintun|WARP|Outline' -and
+    $_.InterfaceDescription -notmatch 'sing-tun'
+}
+if ($foreign) {
+    foreach ($f in $foreign) { Add " ЕСТЬ: $($f.Name) - $($f.InterfaceDescription) [$($f.Status)]" }
+    Add " Эти адаптеры конфликтуют с нашим туннелем - их нужно отключить или удалить."
+} else { Add " не найдено" }
 
 Sec "IP и шлюзы"
 Get-NetIPConfiguration | ForEach-Object {
@@ -71,9 +84,20 @@ foreach ($d in 'ya.ru', 'google.com') {
 }
 
 Sec "Локальный прокси приложения"
+$listening = $false
 foreach ($p in 2080, 2081) {
     $c = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue
+    if ($c) { $listening = $true }
     Add " порт $p : $(if($c){'слушает'}else{'не слушает'})"
+}
+# Отчёт снятый при остановленном профиле бесполезен, но выглядит как рабочий:
+# интернет есть, проверки зелёные - и по нему делают неверный вывод.
+$tun = Get-NetAdapter | Where-Object { $_.InterfaceDescription -match 'sing-tun' -and $_.Status -eq 'Up' }
+if (-not $listening -and -not $tun) {
+    Add ""
+    Add " ВНИМАНИЕ: туннель НЕ ЗАПУЩЕН (прокси не слушает, адаптера sing-tun нет)."
+    Add " Отчёт снят без VPN и не показывает проблему. Нажмите ПОДКЛЮЧИТЬСЯ в приложении,"
+    Add " дождитесь пропадания интернета и запустите скрипт заново."
 }
 # Прямая проверка через локальный прокси: отделяет "туннель не работает" от
 # "туннель работает, но система в него не заходит".
