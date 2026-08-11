@@ -405,17 +405,19 @@ namespace NekoGui {
             proxy_ip = "";
             // Rule order matters — first match wins.
             //
-            // 1. Block QUIC. Chrome/Opera send almost everything over HTTP/3 (UDP 443).
-            //    Tunnelled QUIC is unreliable, and browsers do NOT fall back to TCP when
-            //    it silently stalls — the user just sees pages that never load while the
-            //    log fills with "outbound/vless[proxy]: outbound packet connection" to
-            //    :443 and nothing comes back. Blocking it makes the browser retry over
-            //    TCP immediately, which works.
+            // 1. Block QUIC, by port first. Chrome/Opera send almost everything over
+            //    HTTP/3 (UDP 443). Tunnelled QUIC is unreliable, and browsers do NOT
+            //    fall back to TCP when it silently stalls — the user just sees pages
+            //    that never load while the log fills with "outbound/vless[proxy]:
+            //    outbound packet connection" to :443 and nothing comes back.
+            //    "protocol":"quic" alone is not enough: it needs sniffing, and a user
+            //    who turned sniffing off gets no match and no clue why. udp/443 matches
+            //    regardless, so it goes first and the protocol rule stays as backup.
             // 2. Games and their auth/anti-cheat helpers go "bypass", not "direct":
             //    "direct" still re-injects packets through the TUN adapter, which resets
             //    long-lived game connections. Every helper must share the game's exit IP
             //    or Xbox/Epic auth fails (seen as Sea of Thieves "Lavenderbeard").
-            custom = "{\"rules\":[{\"protocol\":\"quic\",\"outbound\":\"block\"},{\"outbound\":\"bypass\",\"process_name\":[\"SoTGame.exe\",\"SoTLauncher.exe\",\"UnrealCEFSubProcess.exe\",\"XboxPcAppFT.exe\",\"XboxPcApp.exe\",\"GameBarPresenceWriter.exe\",\"GamingServices.exe\",\"GamingServicesNet.exe\",\"XboxIdentityProvider.exe\",\"steam.exe\",\"steamwebhelper.exe\",\"steamservice.exe\",\"BsgLauncher.exe\",\"EscapeFromTarkov.exe\"]},{\"outbound\":\"proxy\",\"process_name\":[\"Discord.exe\",\"discord.exe\",\"Telegram.exe\",\"telegram.exe\",\"Codex.exe\",\"codex.exe\",\"Claude.exe\",\"claude.exe\",\"claude-code.exe\"]}]}";
+            custom = "{\"rules\":[{\"network\":\"udp\",\"port\":443,\"outbound\":\"block\"},{\"protocol\":\"quic\",\"outbound\":\"block\"},{\"outbound\":\"bypass\",\"process_name\":[\"SoTGame.exe\",\"SoTLauncher.exe\",\"UnrealCEFSubProcess.exe\",\"XboxPcAppFT.exe\",\"XboxPcApp.exe\",\"GameBarPresenceWriter.exe\",\"GamingServices.exe\",\"GamingServicesNet.exe\",\"XboxIdentityProvider.exe\",\"steam.exe\",\"steamwebhelper.exe\",\"steamservice.exe\",\"BsgLauncher.exe\",\"EscapeFromTarkov.exe\"]},{\"outbound\":\"proxy\",\"process_name\":[\"Discord.exe\",\"discord.exe\",\"Telegram.exe\",\"telegram.exe\",\"Codex.exe\",\"codex.exe\",\"Claude.exe\",\"claude.exe\",\"claude-code.exe\"]}]}";
         }
         if (!Preset::SingBox::DomainStrategy.contains(domain_strategy)) domain_strategy = "";
         if (!Preset::SingBox::DomainStrategy.contains(outbound_domain_strategy)) outbound_domain_strategy = "";
