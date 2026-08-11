@@ -54,8 +54,11 @@ if ($Fix -and -not $isAdmin) {
 # WinDivert — общий движок GoodbyeDPI/Zapret/ByeDPI. Пока драйвер загружен,
 # он фильтрует пакеты, даже если сама программа удалена.
 Section "Драйверы-перехватчики трафика"
+# По имени И по пути: драйвер регистрируют под любым именем, но файл всё равно
+# WinDivert*.sys — по нему и ловим.
 $badDrivers = Get-CimInstance Win32_SystemDriver |
-              Where-Object { $_.Name -match 'divert|zapret|byedpi|goodbyedpi' }
+              Where-Object { $_.Name -match 'divert|zapret|byedpi|goodbyedpi' -or
+                             $_.PathName -match 'divert|zapret|byedpi|winws' }
 if ($badDrivers) {
     foreach ($d in $badDrivers) {
         Warn "драйвер '$($d.Name)' ($($d.State)) - $($d.PathName)"
@@ -68,9 +71,17 @@ if ($badDrivers) {
 } else { Ok "перехватчиков не найдено" }
 
 # --- 2. Службы обхода ---------------------------------------------------------
+# Ищем И по имени, И по пути к исполняемому файлу: Zapret ставится под произвольным
+# именем службы (winws1, zapret1, ...), поэтому поиск только по названию его пропускает.
 Section "Службы обхода блокировок"
-$svcPattern = 'warp|cloudflare|zapret|goodbyedpi|byedpi|amnezia|outline|tun2socks'
-$svcs = Get-Service | Where-Object { $_.Name -match $svcPattern -or $_.DisplayName -match $svcPattern }
+$svcPattern  = 'warp|cloudflare|zapret|goodbyedpi|byedpi|amnezia|outline|tun2socks'
+$pathPattern = 'winws|windivert|zapret|goodbyedpi|byedpi'
+$byPath = @(Get-CimInstance Win32_Service |
+            Where-Object { $_.PathName -match $pathPattern } |
+            ForEach-Object { $_.Name })
+$svcs = Get-Service | Where-Object {
+    $_.Name -match $svcPattern -or $_.DisplayName -match $svcPattern -or $byPath -contains $_.Name
+}
 if ($svcs) {
     foreach ($s in $svcs) {
         Warn "служба '$($s.Name)' - $($s.DisplayName) [$($s.Status)]"
@@ -91,6 +102,26 @@ if ($procs) {
         if ($Fix) { Act "завершаю $($p.ProcessName)"; Stop-Process -Id $p.Id -Force }
     }
 } else { Ok "лишних процессов нет" }
+
+# --- 3b. Файлы на диске -------------------------------------------------------
+# Служба может быть удалена, а папка остаться — и человек запустит её снова
+# вручную из .bat, "потому что раньше помогало". Поэтому показываем и файлы.
+Section "Файлы утилит обхода на диске"
+# Только вероятные места и мелкая глубина: обход C:\ целиком занимает минуты,
+# а это инструмент поддержки — он должен отвечать сразу.
+$roots = @("$env:USERPROFILE\Desktop", "$env:USERPROFILE\Downloads",
+           "$env:USERPROFILE\Documents", "$env:ProgramData",
+           "C:\Program Files", "C:\Program Files (x86)") | Where-Object { Test-Path $_ }
+$names = @('winws.exe','WinDivert64.sys','WinDivert.dll','goodbyedpi.exe')
+$hits = foreach ($r in $roots) {
+    Get-ChildItem $r -Recurse -Depth 3 -File -Include $names -ErrorAction SilentlyContinue
+}
+$hits = $hits | Sort-Object FullName -Unique
+if ($hits) {
+    Warn "найдены файлы Zapret/GoodbyeDPI:"
+    $hits | Select-Object -First 10 | ForEach-Object { Write-Host "      $($_.FullName)" -ForegroundColor Yellow }
+    Write-Host "      Папку нужно удалить вручную - скрипт файлы не трогает." -ForegroundColor Yellow
+} else { Ok "файлов не найдено" }
 
 # --- 4. Системный прокси ------------------------------------------------------
 # Утилиты часто прописывают себя прокси и не убирают запись при удалении.
@@ -113,14 +144,16 @@ if ($ie.AutoConfigURL) {
     }
 }
 
-# netsh отдаёт массив строк - склеиваем, иначе -notmatch вернёт непустой
-# список несовпавших строк и условие сработает всегда.
+# Не сравниваем с локализованным текстом netsh: он печатается в кодировке консоли,
+# и русское "Прямой доступ" не совпадает с литералом в скрипте (кодировки разные) -
+# из-за этого чистая машина отмечалась как проблемная. Проверяем по существу:
+# если прокси задан, в выводе есть адрес вида host:port.
 $winhttp = (& netsh winhttp show proxy) -join ' '
-if ($winhttp -match 'irect access|рямой доступ') {
-    Ok "WinHTTP чист"
-} else {
-    Warn "WinHTTP-прокси задан: $($winhttp.Trim())"
+if ($winhttp -match '(\d{1,3}(\.\d{1,3}){3}|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}):\d{1,5}') {
+    Warn "WinHTTP-прокси задан: $($Matches[0])"
     if ($Fix) { Act "сбрасываю WinHTTP"; & netsh winhttp reset proxy | Out-Null }
+} else {
+    Ok "WinHTTP чист"
 }
 
 # --- 5. DNS -------------------------------------------------------------------
