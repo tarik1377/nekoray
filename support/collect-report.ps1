@@ -26,11 +26,15 @@ function Sec($t) { Add ""; Add "=== $t ===" }
 Add " VerdantVibe - отчёт для поддержки"
 Add " дата: $(Get-Date -Format 'dd.MM.yyyy HH:mm:ss')"
 
-Sec "Маршруты по умолчанию (порядок решает всё)"
-Get-NetRoute -DestinationPrefix '0.0.0.0/0' |
-    Sort-Object RouteMetric |
-    Select-Object ifIndex, InterfaceAlias, NextHop, RouteMetric |
-    Format-Table -AutoSize | Out-String -Width 120 | ForEach-Object { Add $_ }
+Sec "Маршруты по умолчанию и перехватывающие"
+# Не только 0.0.0.0/0: туннель перехватывает трафик парой 0.0.0.0/1 + 128.0.0.0/1,
+# чтобы перебить системный маршрут, не удаляя его. Фильтр по одному 0.0.0.0/0
+# показывал "маршрут один" на машине, где туннель уже забрал весь трафик.
+Get-NetRoute -AddressFamily IPv4 |
+    Where-Object { $_.DestinationPrefix -in @('0.0.0.0/0','0.0.0.0/1','128.0.0.0/1') } |
+    Sort-Object DestinationPrefix, RouteMetric |
+    Select-Object DestinationPrefix, ifIndex, InterfaceAlias, NextHop, RouteMetric |
+    Format-Table -AutoSize | Out-String -Width 130 | ForEach-Object { Add $_ }
 
 Sec "Маршрут до VPN-сервера"
 # Если сюда попадает neko-tun, туннель заворачивает сам себя - это и есть обрыв.
@@ -41,11 +45,19 @@ if ($srv) {
         Where-Object { $_.DestinationPrefix -like "$srv*" } |
         Select-Object DestinationPrefix, InterfaceAlias, NextHop, RouteMetric |
         Format-Table -AutoSize | Out-String -Width 120 | ForEach-Object { Add $_ }
+    $hops = (Test-NetConnection -ComputerName $srv -TraceRoute -WarningAction SilentlyContinue).TraceRoute
     Add " трассировка первых узлов:"
-    (Test-NetConnection -ComputerName $srv -TraceRoute -WarningAction SilentlyContinue).TraceRoute |
-        Select-Object -First 5 | ForEach-Object { Add "   $_" }
+    $hops | Select-Object -First 5 | ForEach-Object { Add "   $_" }
     $t = Test-NetConnection -ComputerName $srv -Port 443 -WarningAction SilentlyContinue
     Add " TCP 443 до сервера: $(if($t.TcpTestSucceeded){'ДОСТУПЕН'}else{'НЕДОСТУПЕН'})"
+    # Один хоп до сервера = маршрут до него завёрнут в туннель. Туннель идёт к
+    # своему серверу через самого себя, и связь пропадает целиком - включая связь
+    # с сервером, из-за чего симптом выглядит как "VPN сломал интернет".
+    if ($hops -and @($hops).Count -le 1 -and -not $t.TcpTestSucceeded) {
+        Add ""
+        Add " НАЙДЕНО: маршрут до VPN-сервера идёт ЧЕРЕЗ туннель (петля)."
+        Add " Обходной путь: снять 'Режим TUN', включить 'Режим системного прокси'."
+    }
 }
 
 Sec "Адаптеры (ВСЕ, не только активные)"
