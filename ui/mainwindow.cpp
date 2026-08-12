@@ -255,7 +255,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     });
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
     // Right-click a live connection → одним кликом сделать правило маршрутизации.
     ui->tableWidget_conn->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(ui->tableWidget_conn, &QWidget::customContextMenuRequested, this, [=](const QPoint &p) { show_conn_context_menu(p); });
@@ -2765,7 +2766,17 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
             if (okPort) host = host.left(colon);
         }
         f->setData(Qt::UserRole, host);
-        ui->tableWidget_conn->setItem(row, 2, f);
+        // C2: Program that opened the connection — the answer to "what actually goes
+        // through the VPN", which the tab could never show before.
+        {
+            auto proc = item["Process"].toString();
+            if (proc.isEmpty()) proc = "—";
+            auto fp = new QTableWidgetItem(proc);
+            fp->setToolTip(proc);
+            ui->tableWidget_conn->setItem(row, 2, fp);
+        }
+
+        ui->tableWidget_conn->setItem(row, 3, f);
     }
 
     // Update the route-map strip.

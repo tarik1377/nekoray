@@ -100,7 +100,10 @@ namespace NekoGui {
         int test_concurrent = 5;
         bool old_share_link_format = true;
         int traffic_loop_interval = 1000;
-        bool connection_statistics = false;
+        // Drives the Connections tab and the route summary. Off by default meant users
+        // had no way to see what actually goes through the tunnel versus direct — the
+        // single most common support question.
+        bool connection_statistics = true;
         int current_group = 0; // group id
         QString mux_protocol = "h2mux";
         bool mux_padding = false;

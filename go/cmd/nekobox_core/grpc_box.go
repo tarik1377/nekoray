@@ -40,6 +40,7 @@ func (s *server) Start(ctx context.Context, in *gen.LoadConfigReq) (out *gen.Err
 
 	// V2Ray stats outbounds are now expected to be configured in the JSON config
 	// passed from the C++ side, so no manual injection is needed.
+	rememberClashAPI([]byte(in.CoreConfig))
 	instance, instance_cancel, err = nekoCreate([]byte(in.CoreConfig))
 
 	return
@@ -138,8 +139,8 @@ func (s *server) QueryStats(ctx context.Context, in *gen.QueryStatsReq) (out *ge
 }
 
 func (s *server) ListConnections(ctx context.Context, in *gen.EmptyReq) (*gen.ListConnectionsResp, error) {
-	out := &gen.ListConnectionsResp{
-		// TODO upstream api
+	if instance == nil {
+		return &gen.ListConnectionsResp{NekorayConnectionsJson: "[]"}, nil
 	}
-	return out, nil
+	return &gen.ListConnectionsResp{NekorayConnectionsJson: buildConnectionListJSON()}, nil
 }
