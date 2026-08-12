@@ -212,6 +212,7 @@ private:
     void show_subscription_qr();        // QR bridge: scan the subscription into a mobile client
     void import_link_offer_connect(const QString &link); // onboarding import → «Подключиться?»
     void run_diagnostics();             // internet/DNS/server/TLS checks + support report
+    void repair_windows_network();      // strip leftovers of other VPN/DPI tools that hijack traffic
     void show_conn_context_menu(const QPoint &pos);     // right-click a connection → make a routing rule
     void add_routing_rule(const QString &host, int kind); // kind: 0 direct, 1 proxy, 2 block
 

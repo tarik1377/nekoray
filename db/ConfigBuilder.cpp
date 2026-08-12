@@ -798,12 +798,23 @@ namespace NekoGui {
         // experimental
         QJsonObject experimentalObj;
 
-        if (!status->forTest && dataStore->core_box_clash_api > 0) {
+        if (!status->forTest) {
+            // The connection list (and the route summary built from it) is read from
+            // this API — without it the Connections tab is permanently empty, which is
+            // how it shipped. Enable it even when the user has not asked for the
+            // dashboard: bind to loopback on a port derived from the core's own, and
+            // generate a secret so nothing else on the machine can query it.
+            const bool userConfigured = dataStore->core_box_clash_api > 0;
+            const int port = userConfigured ? dataStore->core_box_clash_api : dataStore->core_port + 1;
+            QString secret = dataStore->core_box_clash_api_secret;
+            if (secret.isEmpty()) secret = dataStore->core_token;
             QJsonObject clash_api = {
-                {"external_controller", "127.0.0.1:" + Int2String(dataStore->core_box_clash_api)},
-                {"secret", dataStore->core_box_clash_api_secret},
-                {"external_ui", "dashboard"},
+                {"external_controller", "127.0.0.1:" + Int2String(port)},
+                {"secret", secret},
             };
+            // The bundled web dashboard is only served when the user turned the API on
+            // deliberately; the internal one exists to answer /connections, nothing more.
+            if (userConfigured) clash_api["external_ui"] = "dashboard";
             experimentalObj["clash_api"] = clash_api;
         }
 

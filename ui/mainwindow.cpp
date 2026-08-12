@@ -158,6 +158,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->menu_gr_connect, &QAction::triggered, this, [=] { smart_connect_greenrhythm(); });
     connect(ui->menu_gr_qr, &QAction::triggered, this, [=] { show_subscription_qr(); });
     connect(ui->menu_gr_diag, &QAction::triggered, this, [=] { run_diagnostics(); });
+    connect(ui->menu_gr_fixnet, &QAction::triggered, this, [=] { repair_windows_network(); });
     ui->menu_gr_autopilot->setChecked(NekoGui::dataStore->connection_autopilot);
     connect(ui->menu_gr_autopilot, &QAction::toggled, this, [=](bool checked) {
         NekoGui::dataStore->connection_autopilot = checked;
@@ -254,7 +255,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     });
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
     // Right-click a live connection → одним кликом сделать правило маршрутизации.
     ui->tableWidget_conn->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(ui->tableWidget_conn, &QWidget::customContextMenuRequested, this, [=](const QPoint &p) { show_conn_context_menu(p); });
@@ -1686,6 +1688,140 @@ void MainWindow::run_diagnostics() {
     });
 }
 
+// Repairs a Windows network stack left broken by OTHER tools. Users who tried
+// Zapret/GoodbyeDPI/WARP and "uninstalled" them keep the parts that actually block
+// us: the WinDivert driver still filters packets, services still run, and the system
+// proxy/DNS still point at a resolver that no longer exists — so our tunnel cannot
+// come up and the user only sees "не подключается". Deleting the app folder removes
+// none of that, which is why support kept hitting a wall.
+//
+// Everything here is destructive and needs elevation, so it is strictly opt-in: we
+// spell out what will change, require confirmation, and never touch the hosts file —
+// on a real machine it held the user's own work entries (corporate hosts, docker),
+// and wiping those would break something we were never asked to touch.
+void MainWindow::repair_windows_network() {
+#ifndef Q_OS_WIN
+    QMessageBox::information(this, tr("Починить сеть Windows"),
+                             tr("Эта функция доступна только в Windows."));
+#else
+    QMessageBox ask(QMessageBox::Warning, tr("Починить сеть Windows"),
+                    tr("Другие программы обхода блокировок (Zapret, GoodbyeDPI, WARP) "
+                       "и посторонние VPN перехватывают трафик раньше нашего клиента — "
+                       "из-за этого подключение есть, а сайты не открываются.\n\n"
+                       "Будут убраны:\n"
+                       "• драйверы-перехватчики (WinDivert и подобные);\n"
+                       "• их службы и задания в планировщике;\n"
+                       "• посторонние VPN-адаптеры;\n"
+                       "• системный прокси, кэш DNS, Winsock и стек TCP/IP.\n\n"
+                       "Ваши файлы, пароли и файл hosts НЕ затрагиваются.\n\n"
+                       "Нужны права администратора и перезагрузка. Продолжить?"),
+                    QMessageBox::NoButton, this);
+    auto *go = ask.addButton(tr("Починить"), QMessageBox::AcceptRole);
+    ask.addButton(tr("Отмена"), QMessageBox::RejectRole);
+    ask.exec();
+    if (ask.clickedButton() != go) return;
+
+    // Written from what actually broke on customer machines, not from a generic list:
+    //  - Zapret registers its service under an arbitrary name (winws1, zapret1, ...),
+    //    so services and drivers are matched on their ImagePath. Matching by name
+    //    reported a clean machine while Zapret was plainly installed on it.
+    //  - Its WinDivert driver keeps filtering TCP until a reboot even after the files
+    //    are gone, which is why the reboot below is not optional.
+    //  - Foreign TUN/TAP adapters (a stale outline-tap0 among them) keep their own DNS
+    //    and compete for routing; ours is excluded by name so we never disable it.
+    //  - hosts is never touched: a real machine had legitimate work entries in it.
+    const QString script = QStringLiteral(
+        "$ErrorActionPreference='SilentlyContinue';"
+        "$log=@();"
+        "foreach($s in Get-CimInstance Win32_Service | Where-Object {$_.PathName -match 'winws|windivert|zapret|goodbyedpi|byedpi'}){"
+        "$log+=('служба: '+$s.Name); sc.exe stop $s.Name|Out-Null; sc.exe delete $s.Name|Out-Null};"
+        "foreach($n in 'WinDivert','WinDivert1.4','WinDivert14'){"
+        "if(Get-Service $n){$log+=('драйвер: '+$n); sc.exe stop $n|Out-Null; sc.exe delete $n|Out-Null}};"
+        "foreach($d in Get-CimInstance Win32_SystemDriver | Where-Object {$_.PathName -match 'divert|zapret|winws'}){"
+        "$log+=('драйвер: '+$d.Name); sc.exe stop $d.Name|Out-Null; sc.exe delete $d.Name|Out-Null};"
+        "foreach($s in Get-Service | Where-Object {$_.Name -match 'warp|cloudflare|outline|amnezia' -or $_.DisplayName -match 'warp|cloudflare|outline|amnezia'}){"
+        "$log+=('служба: '+$s.Name); Stop-Service $s.Name -Force; Set-Service $s.Name -StartupType Disabled};"
+        "foreach($p in Get-Process | Where-Object {$_.ProcessName -match 'winws|goodbyedpi|zapret|byedpi|warp-svc'}){"
+        "$log+=('процесс: '+$p.ProcessName); Stop-Process -Id $p.Id -Force};"
+        "foreach($t in Get-ScheduledTask | Where-Object {$_.Actions.Execute -match 'winws|zapret|goodbyedpi|byedpi'}){"
+        "$log+=('задание: '+$t.TaskName); Unregister-ScheduledTask -TaskName $t.TaskName -Confirm:$false};"
+        "foreach($a in Get-NetAdapter | Where-Object {$_.InterfaceDescription -match 'TAP|TUN|WireGuard|Wintun|WARP|Outline' -and $_.InterfaceDescription -notmatch 'sing-tun' -and $_.Status -ne 'Disabled'}){"
+        "$log+=('адаптер: '+$a.Name); Disable-NetAdapter -Name $a.Name -Confirm:$false};"
+        "Set-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings' ProxyEnable 0;"
+        "Remove-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings' AutoConfigURL;"
+        "netsh winhttp reset proxy|Out-Null;"
+        "netsh winsock reset|Out-Null;"
+        "netsh int ip reset|Out-Null;"
+        "ipconfig /flushdns|Out-Null;"
+        "if($log.Count -eq 0){'NOTHING'}else{$log -join [Environment]::NewLine}");
+
+    // Capture the output: telling the user exactly what was removed turns a scary
+    // "we reset your network" into something checkable, and gives support a fact to
+    // work from instead of another "не помогло".
+    const QString outFile = QDir::tempPath() + "/gr_fixnet.txt";
+    QFile::remove(outFile);
+    const QString wrapped = QString("& { %1 } | Out-File -FilePath '%2' -Encoding UTF8").arg(script, outFile);
+    // -EncodedCommand: the script is full of quotes and pipes that would not survive
+    // being threaded through Start-Process -ArgumentList as plain text.
+    const QString b64 = QString::fromLatin1(
+        QByteArray(reinterpret_cast<const char *>(wrapped.utf16()), wrapped.size() * 2).toBase64());
+    const QString launcher =
+        QString("Start-Process powershell -Verb RunAs -WindowStyle Hidden -Wait "
+                "-ArgumentList '-NoProfile','-EncodedCommand','%1'")
+            .arg(b64);
+
+    QProcess proc;
+    proc.start("powershell", {"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", launcher});
+    if (!proc.waitForFinished(240000)) {
+        QMessageBox::warning(this, tr("Починить сеть Windows"),
+                             tr("Очистка не завершилась вовремя. Попробуйте ещё раз."));
+        return;
+    }
+
+    QString found;
+    QFile f(outFile);
+    if (f.open(QIODevice::ReadOnly)) {
+        found = QString::fromUtf8(f.readAll()).trimmed();
+        f.close();
+        QFile::remove(outFile);
+    }
+
+    if (found.isEmpty()) {
+        // Empty output means the elevated shell never ran - almost always a declined
+        // UAC prompt, which is a choice rather than an error worth alarming about.
+        QMessageBox::warning(this, tr("Починить сеть Windows"),
+                             tr("Очистка не выполнена — не были выданы права администратора.\n\n"
+                                "Попробуйте ещё раз и подтвердите запрос Windows."));
+        return;
+    }
+
+    const bool nothing = found.startsWith("NOTHING");
+    QMessageBox done(QMessageBox::Information, tr("Починить сеть Windows"),
+                     nothing
+                         ? tr("Посторонних программ не найдено.\n\n"
+                              "Сетевые настройки сброшены. Если подключение всё равно "
+                              "не работает, перезагрузите компьютер и напишите в поддержку.")
+                         // Adapters are only disabled, never removed, and we say so:
+                         // someone who needs a work VPN should not think we deleted it.
+                         : tr("Убрано:\n\n%1\n\nСетевые настройки сброшены.\n\n"
+                              "Чтобы изменения вступили в силу, нужна перезагрузка: "
+                              "драйверы-перехватчики остаются в памяти до неё.\n\n"
+                              "Адаптеры только отключены, не удалены. Если какой-то из них "
+                              "нужен для работы, включите его обратно в «Сетевые подключения» "
+                              "(Win+R → ncpa.cpl → правой кнопкой → Включить).")
+                               .arg(found),
+                     QMessageBox::NoButton, this);
+    auto *reboot = done.addButton(tr("Перезагрузить сейчас"), QMessageBox::AcceptRole);
+    done.addButton(tr("Позже"), QMessageBox::RejectRole);
+    done.exec();
+    if (done.clickedButton() == reboot) {
+        // /t 8, not /t 0: we just asked them to trust us with their network stack;
+        // killing whatever they have open without warning would be a poor thanks.
+        QProcess::startDetached("shutdown", {"/r", "/t", "8"});
+    }
+#endif
+}
+
 // «Автопилот» watchdog. Probes the RUNNING tunnel end-to-end (HTTP 204 through the
 // local mixed inbound — not a bare server ping) and self-heals on repeated failure,
 // encoding the real-world failure modes: panel key rotation → refresh the subscription
@@ -2630,7 +2766,17 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
             if (okPort) host = host.left(colon);
         }
         f->setData(Qt::UserRole, host);
-        ui->tableWidget_conn->setItem(row, 2, f);
+        // C2: Program that opened the connection — the answer to "what actually goes
+        // through the VPN", which the tab could never show before.
+        {
+            auto proc = item["Process"].toString();
+            if (proc.isEmpty()) proc = "—";
+            auto fp = new QTableWidgetItem(proc);
+            fp->setToolTip(proc);
+            ui->tableWidget_conn->setItem(row, 2, fp);
+        }
+
+        ui->tableWidget_conn->setItem(row, 3, f);
     }
 
     // Update the route-map strip.

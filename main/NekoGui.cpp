@@ -321,7 +321,10 @@ namespace NekoGui {
             remote_dns = "https://1.1.1.1/dns-query";
             remote_dns_strategy = "ipv4_only";
             dns_routing = true;
-            dns_final_out = "proxy";
+            // Direct/bypass traffic must resolve names locally. With "proxy" here every
+            // unmatched DNS query is tunnelled abroad and back, adding seconds of latency
+            // to the very domains we deliberately route direct (RU sites, games, launchers).
+            dns_final_out = "bypass";
             sniffing_mode = 1;
             block_domain =
                 "geosite:category-ads-all\n"
@@ -375,13 +378,50 @@ namespace NekoGui {
                 "domain:outlook.com\n"
                 "domain:msn.com\n"
                 "domain:bing.com\n"
-                "domain:skype.com";
+                "domain:skype.com\n"
+                // Gaming: these break when the account/session IP differs between the game
+                // and its auth services, and Epic/Cloudflare challenges datacenter IPs.
+                "domain:epicgames.com\n"
+                "domain:epicgames.dev\n"
+                "domain:epicgames.net\n"
+                "domain:on.epicgames.com\n"
+                "domain:ol.epicgames.com\n"
+                "domain:unrealengine.com\n"
+                "domain:easyanticheat.net\n"
+                "domain:eac-cdn.com\n"
+                "domain:xboxlive.com\n"
+                "domain:xbox.com\n"
+                "domain:seaofthieves.com\n"
+                "domain:rare.co.uk\n"
+                "domain:playfabapi.com\n"
+                "domain:steampowered.com\n"
+                "domain:steamcommunity.com\n"
+                "domain:steamserver.net\n"
+                "domain:steamcontent.com";
             direct_ip =
                 "geoip:ru\n"
                 "geoip:private";
             proxy_domain = "";
             proxy_ip = "";
-            custom = "{\"rules\":[{\"outbound\":\"proxy\",\"process_name\":[\"Discord.exe\",\"discord.exe\",\"Telegram.exe\",\"telegram.exe\",\"Codex.exe\",\"codex.exe\",\"Claude.exe\",\"claude.exe\",\"claude-code.exe\"]},{\"outbound\":\"direct\",\"process_name\":[\"BsgLauncher.exe\"]}]}";
+            // Rule order matters — first match wins.
+            //
+            // 1. Block QUIC, by port first. Chrome/Opera send almost everything over
+            //    HTTP/3 (UDP 443). Tunnelled QUIC is unreliable, and browsers do NOT
+            //    fall back to TCP when it silently stalls — the user just sees pages
+            //    that never load while the log fills with "outbound/vless[proxy]:
+            //    outbound packet connection" to :443 and nothing comes back.
+            //    "protocol":"quic" alone is not enough: it needs sniffing, and a user
+            //    who turned sniffing off gets no match and no clue why. udp/443 matches
+            //    regardless, so it goes first and the protocol rule stays as backup.
+            //    Public resolvers are exempted BEFORE the block: Chrome's "Secure DNS"
+            //    speaks DoH over QUIC to 8.8.8.8:443, so a blanket udp/443 block leaves
+            //    it unable to resolve anything and the browser opens no TCP at all —
+            //    which looks exactly like the bug we were trying to fix.
+            // 2. Games and their auth/anti-cheat helpers go "bypass", not "direct":
+            //    "direct" still re-injects packets through the TUN adapter, which resets
+            //    long-lived game connections. Every helper must share the game's exit IP
+            //    or Xbox/Epic auth fails (seen as Sea of Thieves "Lavenderbeard").
+            custom = "{\"rules\":[{\"network\":\"udp\",\"port\":443,\"ip_cidr\":[\"8.8.8.8/32\",\"8.8.4.4/32\",\"1.1.1.1/32\",\"1.0.0.1/32\",\"9.9.9.9/32\",\"77.88.8.8/32\",\"77.88.8.1/32\"],\"outbound\":\"direct\"},{\"network\":\"udp\",\"port\":443,\"outbound\":\"block\"},{\"protocol\":\"quic\",\"outbound\":\"block\"},{\"outbound\":\"bypass\",\"process_name\":[\"SoTGame.exe\",\"SoTLauncher.exe\",\"UnrealCEFSubProcess.exe\",\"XboxPcAppFT.exe\",\"XboxPcApp.exe\",\"GameBarPresenceWriter.exe\",\"GamingServices.exe\",\"GamingServicesNet.exe\",\"XboxIdentityProvider.exe\",\"steam.exe\",\"steamwebhelper.exe\",\"steamservice.exe\",\"BsgLauncher.exe\",\"EscapeFromTarkov.exe\"]},{\"outbound\":\"proxy\",\"process_name\":[\"Discord.exe\",\"discord.exe\",\"Telegram.exe\",\"telegram.exe\",\"Codex.exe\",\"codex.exe\",\"Claude.exe\",\"claude.exe\",\"claude-code.exe\"]}]}";
         }
         if (!Preset::SingBox::DomainStrategy.contains(domain_strategy)) domain_strategy = "";
         if (!Preset::SingBox::DomainStrategy.contains(outbound_domain_strategy)) outbound_domain_strategy = "";
