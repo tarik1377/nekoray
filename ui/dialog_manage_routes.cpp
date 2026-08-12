@@ -112,8 +112,10 @@ void DialogManageRoutes::accept() {
 
 QList<QAction *> DialogManageRoutes::getBuiltInSchemes() {
     QList<QAction *> list;
-    list.append(this->schemeToAction(tr("Bypass LAN and China"), routing_cn_lan));
-    list.append(this->schemeToAction(tr("Global"), routing_global));
+    // This is the RU preset the app now ships by default. Under its old upstream name no
+    // Russian customer would ever have clicked it — which is half the reason it went unused.
+    list.append(this->schemeToAction(tr("Россия: прямой RU-трафик, блок QUIC"), routing_cn_lan));
+    list.append(this->schemeToAction(tr("Всё через прокси"), routing_global));
     return list;
 }
 

@@ -27,9 +27,14 @@ cp $SRC_ROOT/res/public/greenrhythm.png $DEST/greenrhythm.png
 cp $SRC_ROOT/res/public/wintun.dll $DEST/wintun.dll
 
 #### copy default config templates ####
+# Ship as little as possible here. A shipped file is loaded verbatim and silently wins over
+# every in-code default, so each key duplicated in a template is a default that stops
+# tracking the source: the routing template still carried dns_final_out=proxy and no QUIC
+# rule long after both were fixed in code. The routing file is gone entirely — the app now
+# writes it from the in-code preset on first run — and the settings file keeps only the one
+# key that is deliberately different from the header default.
 mkdir -p $DEST/config/routes_box
 mkdir -p $DEST/config/groups
-cp $SRC_ROOT/res/config_template/routes_box/Default $DEST/config/routes_box/Default
 cp $SRC_ROOT/res/config_template/groups/nekobox.json $DEST/config/groups/nekobox.json
 
 #### copy .srs rule-set files into config/ (sing-box CWD = config/) ####

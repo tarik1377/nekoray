@@ -135,6 +135,10 @@ namespace NekoGui {
         // One-shot flag: flip legacy configs still on the old disabled default (-30) to the
         // new enabled default exactly once, without ever re-overriding a user's own choice.
         bool sub_auto_update_migrated = false;
+        // Same idea for conn_stat. Every existing config pins it to false — both because the
+        // shipped template said so and because the settings checkbox was disabled, so no user
+        // ever chose the value. Without this, flipping the in-code default changes nothing.
+        bool conn_stat_migrated = false;
 
         // Security
         bool skip_cert = false;

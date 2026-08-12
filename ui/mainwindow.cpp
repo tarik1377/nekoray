@@ -545,6 +545,17 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         NekoGui::dataStore->Save();
     }
 
+    // One-shot: turn the connection list on for everyone who already has a config. Unlike the
+    // interval above there is no user choice to preserve — the settings checkbox was disabled,
+    // so false is not a preference, it is just what the old shipped template wrote. Without
+    // this the Connections tab and the route strip stay empty on every existing install, no
+    // matter what the in-code default says.
+    if (!NekoGui::dataStore->conn_stat_migrated) {
+        NekoGui::dataStore->connection_statistics = true;
+        NekoGui::dataStore->conn_stat_migrated = true;
+        NekoGui::dataStore->Save();
+    }
+
     TM_auto_update_subsctiption = new QTimer;
     TM_auto_update_subsctiption_Reset_Minute = [&](int m) {
         TM_auto_update_subsctiption->stop();
@@ -2808,7 +2819,7 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
 void MainWindow::show_conn_context_menu(const QPoint &pos) {
     auto *cell = ui->tableWidget_conn->itemAt(pos);
     if (cell == nullptr) return;
-    auto *destItem = ui->tableWidget_conn->item(cell->row(), 2);
+    auto *destItem = ui->tableWidget_conn->item(cell->row(), 3); // destination moved right when the process column landed
     const QString host = destItem != nullptr ? destItem->data(Qt::UserRole).toString() : QString();
     if (host.isEmpty()) return;
 
