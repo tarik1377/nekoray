@@ -1704,70 +1704,119 @@ void MainWindow::repair_windows_network() {
                              tr("Эта функция доступна только в Windows."));
 #else
     QMessageBox ask(QMessageBox::Warning, tr("Починить сеть Windows"),
-                    tr("Будут убраны следы других VPN и утилит обхода блокировок "
-                       "(Zapret, GoodbyeDPI, WARP и подобных), которые перехватывают "
-                       "трафик и мешают подключению.\n\n"
-                       "Что изменится:\n"
-                       "• остановятся службы и драйверы-перехватчики;\n"
-                       "• сбросится системный прокси и кэш DNS;\n"
-                       "• сбросится Winsock и стек TCP/IP.\n\n"
-                       "Файл hosts и ваши настройки НЕ трогаются.\n\n"
-                       "Потребуются права администратора и перезагрузка. Продолжить?"),
+                    tr("Другие программы обхода блокировок (Zapret, GoodbyeDPI, WARP) "
+                       "и посторонние VPN перехватывают трафик раньше нашего клиента — "
+                       "из-за этого подключение есть, а сайты не открываются.\n\n"
+                       "Будут убраны:\n"
+                       "• драйверы-перехватчики (WinDivert и подобные);\n"
+                       "• их службы и задания в планировщике;\n"
+                       "• посторонние VPN-адаптеры;\n"
+                       "• системный прокси, кэш DNS, Winsock и стек TCP/IP.\n\n"
+                       "Ваши файлы, пароли и файл hosts НЕ затрагиваются.\n\n"
+                       "Нужны права администратора и перезагрузка. Продолжить?"),
                     QMessageBox::NoButton, this);
     auto *go = ask.addButton(tr("Починить"), QMessageBox::AcceptRole);
     ask.addButton(tr("Отмена"), QMessageBox::RejectRole);
     ask.exec();
     if (ask.clickedButton() != go) return;
 
-    // One elevated shell for the whole sequence: a UAC prompt per command would be
-    // both hostile and easy to half-accept, leaving the stack in a worse state.
-    const QString script =
+    // Written from what actually broke on customer machines, not from a generic list:
+    //  - Zapret registers its service under an arbitrary name (winws1, zapret1, ...),
+    //    so services and drivers are matched on their ImagePath. Matching by name
+    //    reported a clean machine while Zapret was plainly installed on it.
+    //  - Its WinDivert driver keeps filtering TCP until a reboot even after the files
+    //    are gone, which is why the reboot below is not optional.
+    //  - Foreign TUN/TAP adapters (a stale outline-tap0 among them) keep their own DNS
+    //    and compete for routing; ours is excluded by name so we never disable it.
+    //  - hosts is never touched: a real machine had legitimate work entries in it.
+    const QString script = QStringLiteral(
         "$ErrorActionPreference='SilentlyContinue';"
-        // Kill the interceptors first — resetting the stack under a live filter driver
-        // leaves the driver attached and the reset half-applied.
-        "foreach($n in 'WinDivert','WinDivert1.4','WinDivert14'){sc.exe stop $n;sc.exe delete $n};"
-        "foreach($s in Get-Service | Where-Object {$_.Name -match 'warp|cloudflare|zapret|goodbyedpi|byedpi'}){"
-        "Stop-Service $s.Name -Force; Set-Service $s.Name -StartupType Disabled};"
+        "$log=@();"
+        "foreach($s in Get-CimInstance Win32_Service | Where-Object {$_.PathName -match 'winws|windivert|zapret|goodbyedpi|byedpi'}){"
+        "$log+=('служба: '+$s.Name); sc.exe stop $s.Name|Out-Null; sc.exe delete $s.Name|Out-Null};"
+        "foreach($n in 'WinDivert','WinDivert1.4','WinDivert14'){"
+        "if(Get-Service $n){$log+=('драйвер: '+$n); sc.exe stop $n|Out-Null; sc.exe delete $n|Out-Null}};"
+        "foreach($d in Get-CimInstance Win32_SystemDriver | Where-Object {$_.PathName -match 'divert|zapret|winws'}){"
+        "$log+=('драйвер: '+$d.Name); sc.exe stop $d.Name|Out-Null; sc.exe delete $d.Name|Out-Null};"
+        "foreach($s in Get-Service | Where-Object {$_.Name -match 'warp|cloudflare|outline|amnezia' -or $_.DisplayName -match 'warp|cloudflare|outline|amnezia'}){"
+        "$log+=('служба: '+$s.Name); Stop-Service $s.Name -Force; Set-Service $s.Name -StartupType Disabled};"
         "foreach($p in Get-Process | Where-Object {$_.ProcessName -match 'winws|goodbyedpi|zapret|byedpi|warp-svc'}){"
-        "Stop-Process -Id $p.Id -Force};"
+        "$log+=('процесс: '+$p.ProcessName); Stop-Process -Id $p.Id -Force};"
+        "foreach($t in Get-ScheduledTask | Where-Object {$_.Actions.Execute -match 'winws|zapret|goodbyedpi|byedpi'}){"
+        "$log+=('задание: '+$t.TaskName); Unregister-ScheduledTask -TaskName $t.TaskName -Confirm:$false};"
+        "foreach($a in Get-NetAdapter | Where-Object {$_.InterfaceDescription -match 'TAP|TUN|WireGuard|Wintun|WARP|Outline' -and $_.InterfaceDescription -notmatch 'sing-tun' -and $_.Status -ne 'Disabled'}){"
+        "$log+=('адаптер: '+$a.Name); Disable-NetAdapter -Name $a.Name -Confirm:$false};"
         "Set-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings' ProxyEnable 0;"
-        "netsh winhttp reset proxy;"
-        "netsh winsock reset;"
-        "netsh int ip reset;"
-        "ipconfig /flushdns;";
+        "Remove-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings' AutoConfigURL;"
+        "netsh winhttp reset proxy|Out-Null;"
+        "netsh winsock reset|Out-Null;"
+        "netsh int ip reset|Out-Null;"
+        "ipconfig /flushdns|Out-Null;"
+        "if($log.Count -eq 0){'NOTHING'}else{$log -join [Environment]::NewLine}");
 
-    const QStringList args{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script};
-    // Quote each argument: the script contains spaces and quotes, and Start-Process
-    // -ArgumentList would otherwise split it into garbage.
-    QString quoted;
-    for (const auto &a : args) quoted += (quoted.isEmpty() ? "" : ",") + QString("'%1'").arg(QString(a).replace("'", "''"));
+    // Capture the output: telling the user exactly what was removed turns a scary
+    // "we reset your network" into something checkable, and gives support a fact to
+    // work from instead of another "не помогло".
+    const QString outFile = QDir::tempPath() + "/gr_fixnet.txt";
+    QFile::remove(outFile);
+    const QString wrapped = QString("& { %1 } | Out-File -FilePath '%2' -Encoding UTF8").arg(script, outFile);
+    // -EncodedCommand: the script is full of quotes and pipes that would not survive
+    // being threaded through Start-Process -ArgumentList as plain text.
+    const QString b64 = QString::fromLatin1(
+        QByteArray(reinterpret_cast<const char *>(wrapped.utf16()), wrapped.size() * 2).toBase64());
+    const QString launcher =
+        QString("Start-Process powershell -Verb RunAs -WindowStyle Hidden -Wait "
+                "-ArgumentList '-NoProfile','-EncodedCommand','%1'")
+            .arg(b64);
 
-    const QString launcher = QString("Start-Process powershell -Verb RunAs -Wait -ArgumentList %1").arg(quoted);
     QProcess proc;
     proc.start("powershell", {"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", launcher});
-    const bool finished = proc.waitForFinished(180000);
-
-    if (!finished || proc.exitCode() != 0) {
-        // The usual cause is the user dismissing the UAC prompt, which is a choice,
-        // not a failure — so offer the manual path instead of just reporting an error.
+    if (!proc.waitForFinished(240000)) {
         QMessageBox::warning(this, tr("Починить сеть Windows"),
-                             tr("Не удалось выполнить очистку — вероятно, не были выданы "
-                                "права администратора.\n\nПопробуйте ещё раз и подтвердите "
-                                "запрос Windows."));
+                             tr("Очистка не завершилась вовремя. Попробуйте ещё раз."));
         return;
     }
 
+    QString found;
+    QFile f(outFile);
+    if (f.open(QIODevice::ReadOnly)) {
+        found = QString::fromUtf8(f.readAll()).trimmed();
+        f.close();
+        QFile::remove(outFile);
+    }
+
+    if (found.isEmpty()) {
+        // Empty output means the elevated shell never ran - almost always a declined
+        // UAC prompt, which is a choice rather than an error worth alarming about.
+        QMessageBox::warning(this, tr("Починить сеть Windows"),
+                             tr("Очистка не выполнена — не были выданы права администратора.\n\n"
+                                "Попробуйте ещё раз и подтвердите запрос Windows."));
+        return;
+    }
+
+    const bool nothing = found.startsWith("NOTHING");
     QMessageBox done(QMessageBox::Information, tr("Починить сеть Windows"),
-                     tr("Сеть очищена.\n\nЧтобы изменения вступили в силу, нужна "
-                        "перезагрузка компьютера."),
+                     nothing
+                         ? tr("Посторонних программ не найдено.\n\n"
+                              "Сетевые настройки сброшены. Если подключение всё равно "
+                              "не работает, перезагрузите компьютер и напишите в поддержку.")
+                         // Adapters are only disabled, never removed, and we say so:
+                         // someone who needs a work VPN should not think we deleted it.
+                         : tr("Убрано:\n\n%1\n\nСетевые настройки сброшены.\n\n"
+                              "Чтобы изменения вступили в силу, нужна перезагрузка: "
+                              "драйверы-перехватчики остаются в памяти до неё.\n\n"
+                              "Адаптеры только отключены, не удалены. Если какой-то из них "
+                              "нужен для работы, включите его обратно в «Сетевые подключения» "
+                              "(Win+R → ncpa.cpl → правой кнопкой → Включить).")
+                               .arg(found),
                      QMessageBox::NoButton, this);
     auto *reboot = done.addButton(tr("Перезагрузить сейчас"), QMessageBox::AcceptRole);
     done.addButton(tr("Позже"), QMessageBox::RejectRole);
     done.exec();
     if (done.clickedButton() == reboot) {
-        // /t 5, not /t 0 — a reboot with no grace period would kill anything the user
-        // still has open, and we just asked them to trust us with their network stack.
-        QProcess::startDetached("shutdown", {"/r", "/t", "5"});
+        // /t 8, not /t 0: we just asked them to trust us with their network stack;
+        // killing whatever they have open without warning would be a poor thanks.
+        QProcess::startDetached("shutdown", {"/r", "/t", "8"});
     }
 #endif
 }
