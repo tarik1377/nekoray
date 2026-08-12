@@ -35,5 +35,7 @@ if [ -z "$SING_BOX_VERSION" ]; then
   exit 1
 fi
 echo "sing-box version: $SING_BOX_VERSION"
-go build -v -o $DEST/greenrhythm_core${GO_EXT} -trimpath -ldflags "-w -s -X github.com/matsuridayo/libneko/neko_common.Version_neko=$version_standalone -X github.com/sagernet/sing-box/constant.Version=$SING_BOX_VERSION" -tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api"
+# Quote each -X value: the Go tool splits -ldflags on whitespace, so an unquoted
+# version would silently become extra arguments for the linker instead of an error.
+go build -v -o $DEST/greenrhythm_core${GO_EXT} -trimpath -ldflags "-w -s -X 'github.com/matsuridayo/libneko/neko_common.Version_neko=$version_standalone' -X 'github.com/sagernet/sing-box/constant.Version=$SING_BOX_VERSION'" -tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api"
 popd
