@@ -278,6 +278,7 @@ namespace NekoGui {
         _add(new configItem("sub_auto_update", &sub_auto_update, itemType::integer));
         _add(new configItem("sub_auto_update_migrated", &sub_auto_update_migrated, itemType::boolean));
         _add(new configItem("conn_stat_migrated", &conn_stat_migrated, itemType::boolean));
+        _add(new configItem("routing_quic_migrated", &routing_quic_migrated, itemType::boolean));
         _add(new configItem("log_ignore", &log_ignore, itemType::stringList));
         _add(new configItem("start_minimal", &start_minimal, itemType::boolean));
         _add(new configItem("max_log_line", &max_log_line, itemType::integer));
@@ -463,6 +464,94 @@ namespace NekoGui {
     QStringList Routing::List() {
         QDir dr(ROUTES_PREFIX);
         return dr.entryList(QDir::Files);
+    }
+
+    // A rule counts as the QUIC guard if it is the sniffed-protocol rule or any udp/443
+    // rule — the port may be a single number or a list, and a user may well have written
+    // their own variant. Used both to detect "already guarded" and to lift the rules out
+    // of the shipped preset, so the two can never disagree.
+    static bool isQuicRule(const QJsonObject &o) {
+        if (o["protocol"].toString() == "quic") return true;
+        if (o["network"].toString() != "udp") return false;
+        const auto p = o["port"];
+        if (p.isDouble()) return p.toInt() == 443;
+        if (p.isArray()) {
+            for (const auto &v: p.toArray()) {
+                if (v.toInt() == 443) return true;
+            }
+        }
+        return false;
+    }
+
+    // Existing installs keep their own routes_box file, and no template change can reach
+    // it — which is why the QUIC block, the fix for the most common "подключается, но не
+    // грузится", never arrived for anyone who had already run the app once.
+    //
+    // Deliberately conservative, because this edits a file the customer may have curated:
+    //  - the QUIC rules are PREPENDED (order matters, first match wins) and only when the
+    //    scheme has no udp/443 or protocol:quic rule of its own;
+    //  - dns_final_out moves only from the exact old default "proxy", so anyone who chose
+    //    something else keeps it;
+    //  - a custom rule set we cannot parse is left completely alone — a hand-written
+    //    config is worth more than this migration;
+    //  - nothing is ever removed, and the domain/IP lists are not touched at all.
+    bool Routing::MigrateOne(Routing *r) {
+        if (r == nullptr) return false;
+        bool changed = false;
+
+        if (r->dns_final_out == "proxy") {
+            r->dns_final_out = "bypass";
+            changed = true;
+        }
+
+        const QString original = r->custom.trimmed();
+        auto obj = QString2QJsonObject(original);
+        const bool parsed = obj.contains("rules") && obj["rules"].isArray();
+        if (!parsed && !original.isEmpty()) return changed; // unreadable: leave it be
+
+        auto rules = obj["rules"].toArray();
+        for (const auto &v: rules) {
+            if (isQuicRule(v.toObject())) return changed; // already has its own guard
+        }
+
+        // Copy the rules out of the shipped preset rather than repeating them here, so a
+        // future change to the preset cannot leave this migration inserting stale rules.
+        Routing preset(1);
+        QJsonArray quic;
+        for (const auto &v: QString2QJsonObject(preset.custom)["rules"].toArray()) {
+            if (isQuicRule(v.toObject())) quic.append(v);
+        }
+        if (quic.isEmpty()) return changed;
+
+        for (int i = quic.size() - 1; i >= 0; i--) rules.prepend(quic[i]);
+        obj["rules"] = rules;
+        r->custom = QJsonObject2QString(obj, true);
+        return true;
+    }
+
+    int Routing::MigrateAll() {
+        int changed = 0;
+        const auto active = dataStore->active_routing;
+        for (const auto &name: List()) {
+            // The active scheme is already loaded in memory; patching the file underneath
+            // it would be overwritten by the next Save().
+            if (name == active && dataStore->routing != nullptr) {
+                if (MigrateOne(dataStore->routing.get())) {
+                    dataStore->routing->Save();
+                    changed++;
+                }
+                continue;
+            }
+            Routing other;
+            other.load_control_must = true;
+            other.fn = ROUTES_PREFIX + name;
+            if (!other.Load()) continue;
+            if (MigrateOne(&other)) {
+                other.Save();
+                changed++;
+            }
+        }
+        return changed;
     }
 
     bool Routing::SetToActive(const QString &name) {

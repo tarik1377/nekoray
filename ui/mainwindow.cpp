@@ -557,6 +557,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         NekoGui::dataStore->Save();
     }
 
+    // One-shot: bring existing routing schemes up to the shipped preset's QUIC guard and
+    // local DNS for direct traffic. Additive — see Routing::MigrateOne for the limits.
+    if (!NekoGui::dataStore->routing_quic_migrated) {
+        const int migrated = NekoGui::Routing::MigrateAll();
+        NekoGui::dataStore->routing_quic_migrated = true;
+        NekoGui::dataStore->Save();
+        if (migrated > 0)
+            MW_show_log(tr("Маршрутизация обновлена: блокировка QUIC и локальный DNS (схем: %1).").arg(migrated));
+    }
+
     TM_auto_update_subsctiption = new QTimer;
     TM_auto_update_subsctiption_Reset_Minute = [&](int m) {
         TM_auto_update_subsctiption->stop();
