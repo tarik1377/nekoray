@@ -73,6 +73,7 @@
 #include <QNetworkReply>
 #include <QNetworkProxy>
 #include <QEventLoop>
+#include <QFileDialog>
 #include <QMenu>
 #include <QHostAddress>
 
@@ -962,10 +963,30 @@ void MainWindow::refresh_status(const QString &traffic_update) {
     {
         const bool up = (running != nullptr);
         const QString nm = up ? running->bean->DisplayName().left(26) : QString();
-        ui->label_conn_pill->setText(up ? (tr("Подключено") + QStringLiteral(" · ") + nm) : tr("Не запущено"));
+        // Three states, not two: grey «Не запущено», amber «Подключено, нет трафика» when
+        // the tunnel is up but the autopilot probe cannot pass traffic, green otherwise.
+        // The amber state is the answer support could never see before.
+        const bool noTraffic = up && conn_health == Health_NoTraffic;
+        QString pillText, pillColor;
+        if (!up) {
+            pillText = tr("Не запущено");
+            pillColor = QStringLiteral("#5A5F66");
+        } else if (noTraffic) {
+            pillText = tr("Подключено, нет трафика");
+            pillColor = QStringLiteral("#E3A008");
+        } else {
+            pillText = tr("Подключено") + QStringLiteral(" · ") + nm;
+            pillColor = QStringLiteral("#3FB950");
+        }
+        ui->label_conn_pill->setText(pillText);
+        ui->label_conn_pill->setToolTip(noTraffic
+                                            ? tr("Соединение с сервером есть, но сайты не грузятся. "
+                                                 "Частые причины: QUIC/DoH в браузере, DPI, посторонний "
+                                                 "перехватчик. Попробуйте «Починить сеть Windows» или «Диагностику».")
+                                            : QString());
         ui->label_conn_pill->setStyleSheet(QStringLiteral(
             "QLabel#label_conn_pill{border-radius:9px;padding:2px 10px;color:white;background:%1;}")
-            .arg(up ? QStringLiteral("#3FB950") : QStringLiteral("#5A5F66")));
+            .arg(pillColor));
         // Hug the text — otherwise the pill absorbs the row's slack and stretches.
         ui->label_conn_pill->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
         // label_running duplicates the pill's "Not Running"; keep it only when it adds
@@ -1611,6 +1632,13 @@ void MainWindow::run_diagnostics() {
         }
     }
 
+    // Whether the tunnel is up, and where to reach it, are UI-thread facts — capture them
+    // before the worker so it can probe THROUGH the tunnel, not just around it.
+    const bool up = (running != nullptr);
+    const QString proxyAddr = NekoGui::dataStore->inbound_address;
+    const quint16 proxyPort = quint16(NekoGui::dataStore->inbound_socks_port);
+    const QString header = diagnostics_header();
+
     auto *dlg = new QProgressDialog(tr("Проверка соединения…"), QString(), 0, 0, this);
     dlg->setWindowTitle(tr("Диагностика соединения"));
     dlg->setWindowModality(Qt::WindowModal);
@@ -1618,7 +1646,7 @@ void MainWindow::run_diagnostics() {
     dlg->setMinimumDuration(0);
     dlg->show();
 
-    runOnNewThread([this, host, port, dlg] {
+    runOnNewThread([this, host, port, up, proxyAddr, proxyPort, header, dlg] {
         bool net, dns, tcp = false, tls = false;
         {
             QTcpSocket s;
@@ -1646,6 +1674,40 @@ void MainWindow::run_diagnostics() {
             }
         }
 
+        // The decisive test support could never run: does real traffic actually pass THROUGH
+        // the running tunnel, and what exit IP does the world see? A 204 through the local
+        // inbound proves the whole path; cloudflare's trace gives the exit IP for free.
+        bool tunnelTested = false, tunnelOk = false;
+        QString exitIp;
+        if (up) {
+            tunnelTested = true;
+            QNetworkProxy proxy(QNetworkProxy::Socks5Proxy, proxyAddr, proxyPort);
+            QNetworkAccessManager nam;
+            nam.setProxy(proxy);
+            {
+                auto *r = nam.get(QNetworkRequest(QUrl(QStringLiteral("http://cp.cloudflare.com/generate_204"))));
+                QEventLoop loop;
+                QTimer::singleShot(7000, r, &QNetworkReply::abort);
+                QObject::connect(r, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+                loop.exec();
+                tunnelOk = r->error() == QNetworkReply::NoError;
+                r->deleteLater();
+            }
+            if (tunnelOk) {
+                auto *r = nam.get(QNetworkRequest(QUrl(QStringLiteral("https://cp.cloudflare.com/cdn-cgi/trace"))));
+                QEventLoop loop;
+                QTimer::singleShot(7000, r, &QNetworkReply::abort);
+                QObject::connect(r, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+                loop.exec();
+                if (r->error() == QNetworkReply::NoError) {
+                    for (const auto &ln: QString::fromUtf8(r->readAll()).split('\n')) {
+                        if (ln.startsWith("ip=")) { exitIp = ln.mid(3).trimmed(); break; }
+                    }
+                }
+                r->deleteLater();
+            }
+        }
+
         runOnUiThread([=] {
             dlg->close();
             dlg->deleteLater();
@@ -1661,8 +1723,14 @@ void MainWindow::run_diagnostics() {
                 verdict = tr("Сервер недоступен из вашей сети — возможно, блокировка провайдера или сервер выключен. Попробуйте другой сервер.");
             else if (!tls)
                 verdict = tr("Сервер отвечает, но TLS не проходит — вероятна фильтрация (DPI). Попробуйте другой сервер или порт 443.");
+            else if (tunnelTested && !tunnelOk)
+                verdict = tr("VPN подключён, но трафик через него не проходит. Частые причины: QUIC/DoH "
+                             "в браузере или посторонний перехватчик (Zapret/GoodbyeDPI/WARP). "
+                             "Нажмите «Починить сеть Windows» в меню «Зелёный Ритм».");
+            else if (tunnelTested && tunnelOk)
+                verdict = tr("Всё работает — трафик идёт через VPN, внешний IP: %1.").arg(exitIp.isEmpty() ? "—" : exitIp);
             else
-                verdict = tr("Всё в порядке — сеть и сервер доступны.");
+                verdict = tr("Сеть и сервер доступны. Нажмите «Подключиться», чтобы пустить трафик через VPN.");
 
             auto mark = [](bool b) { return b ? QString::fromUtf8("\xE2\x9C\x94") : QString::fromUtf8("\xE2\x9C\x95"); }; // ✔ / ✕
             QStringList rows;
@@ -1672,15 +1740,21 @@ void MainWindow::run_diagnostics() {
                 rows << tr("Сервер (TCP): %1").arg(mark(tcp));
                 rows << tr("TLS-соединение: %1").arg(mark(tls));
             }
+            if (tunnelTested) {
+                rows << tr("Трафик через VPN: %1").arg(mark(tunnelOk));
+                if (tunnelOk) rows << tr("Внешний IP: %1").arg(exitIp.isEmpty() ? "—" : exitIp);
+            }
 
             // Support report — no secrets: server host:port is public and helps support,
             // but the subscription token / keys are never included.
-            QString report = QStringLiteral("GreenRhythm diagnostics\nVersion: %1\nOS: %2\n")
-                                 .arg(QString(NKR_VERSION), QSysInfo::prettyProductName());
+            QString report = header;
             report += QStringLiteral("Internet: %1\nDNS: %2\n").arg(net ? "OK" : "FAIL", dns ? "OK" : "FAIL");
             if (!host.isEmpty()) {
                 report += QStringLiteral("Server %1:%2 TCP: %3\nTLS: %4\n")
                               .arg(host).arg(port).arg(tcp ? "OK" : "FAIL", tls ? "OK" : "FAIL");
+            }
+            if (tunnelTested) {
+                report += QStringLiteral("Tunnel: %1\nExitIP: %2\n").arg(tunnelOk ? "OK" : "FAIL", exitIp.isEmpty() ? "-" : exitIp);
             }
             report += QStringLiteral("Verdict: %1\n").arg(verdict);
 
@@ -1967,9 +2041,13 @@ void MainWindow::autopilot_tick() {
             autopilot_probing = false;
             if (running == nullptr) { // stopped while probing
                 autopilot_fails = 0;
+                conn_health = Health_Unknown;
                 autopilot_timer->start(60 * 1000);
                 return;
             }
+            // Surface the probe result in the status pill regardless of whether we act on it.
+            conn_health = ok ? Health_Ok : Health_NoTraffic;
+            refresh_status();
             if (ok) {
                 autopilot_fails = 0;
                 autopilot_stage = 0;
@@ -2641,6 +2719,11 @@ void MainWindow::show_log_impl(const QString &log) {
     }
     if (newLines.isEmpty()) return;
 
+    // Persist to disk before rendering: the on-screen buffer is capped at max_log_line and
+    // gone on close, which is why support only ever got screenshots. The file keeps the
+    // history a customer can attach in one click.
+    append_log_to_file(newLines);
+
     // Colour-code so routing reads at a glance: [proxy] (foreign) blue,
     // [bypass] (domestic/direct) green, errors red, everything else default.
     {
@@ -2675,6 +2758,43 @@ void MainWindow::show_log_impl(const QString &log) {
         }
         break;
     }
+}
+
+// Append filtered log lines to a rotating file next to the executable. Kept small (one
+// live file + one .1 backup) — this is a support aid, not an audit trail.
+void MainWindow::append_log_to_file(const QStringList &lines) {
+    if (lines.isEmpty()) return;
+    if (log_file_path.isEmpty()) {
+        const QString dir = QCoreApplication::applicationDirPath() + "/logs";
+        QDir().mkpath(dir);
+        log_file_path = dir + "/greenrhythm.log";
+    }
+    constexpr qint64 kMaxBytes = 3 * 1024 * 1024;
+    if (QFileInfo(log_file_path).size() > kMaxBytes) {
+        const QString bak = log_file_path + ".1";
+        QFile::remove(bak);
+        QFile::rename(log_file_path, bak); // keep exactly one previous file
+    }
+    QFile f(log_file_path);
+    if (!f.open(QIODevice::Append | QIODevice::Text)) return;
+    f.write((lines.join("\n") + "\n").toUtf8());
+    f.close();
+}
+
+// A short, secret-free preamble for the copyable report and the saved log: what version,
+// OS, server and mode — the facts support asks for first. Never the token or keys.
+QString MainWindow::diagnostics_header() const {
+    QString h = QStringLiteral("GreenRhythm %1\nOS: %2\n")
+                    .arg(QString(NKR_VERSION), QSysInfo::prettyProductName());
+    if (running != nullptr && running->bean != nullptr) {
+        h += QStringLiteral("Server: %1:%2\n").arg(running->bean->serverAddress).arg(running->bean->serverPort);
+    } else {
+        h += QStringLiteral("Server: (не запущен)\n");
+    }
+    h += QStringLiteral("Mode: %1%2\n")
+             .arg(NekoGui::dataStore->spmode_vpn ? "TUN " : "",
+                  NekoGui::dataStore->spmode_system_proxy ? "SystemProxy" : (NekoGui::dataStore->spmode_vpn ? "" : "Proxy-only"));
+    return h;
 }
 
 #define ADD_TO_CURRENT_ROUTE(a, b)                                                                   \
@@ -2747,6 +2867,46 @@ void MainWindow::on_masterLogBrowser_customContextMenuRequested(const QPoint &po
         }
     });
     menu->addAction(action_add_route);
+
+    // «Сохранить лог…» — one attachment for support instead of a wall of screenshots.
+    // Writes the secret-free header plus the full on-disk history (both rotated files).
+    auto action_save_log = new QAction(this);
+    action_save_log->setText(tr("Сохранить лог в файл…"));
+    connect(action_save_log, &QAction::triggered, this, [=] {
+        const QString suggested = QDir::homePath() + "/greenrhythm-log-" +
+                                  QDateTime::currentDateTime().toString("yyyyMMdd-HHmm") + ".txt";
+        const QString dst = QFileDialog::getSaveFileName(GetMessageBoxParent(), tr("Сохранить лог"), suggested,
+                                                         tr("Текст (*.txt)"));
+        if (dst.isEmpty()) return;
+        QFile out(dst);
+        if (!out.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QMessageBox::warning(GetMessageBoxParent(), tr("Сохранить лог"), tr("Не удалось записать файл."));
+            return;
+        }
+        out.write(diagnostics_header().toUtf8());
+        out.write("\n");
+        // Prefer the on-disk history (full); fall back to the on-screen buffer if no file yet.
+        bool wroteFile = false;
+        for (const QString &src: {log_file_path + ".1", log_file_path}) {
+            if (src.isEmpty()) continue;
+            QFile in(src);
+            if (in.open(QIODevice::ReadOnly)) {
+                out.write(in.readAll());
+                in.close();
+                wroteFile = true;
+            }
+        }
+        if (!wroteFile) out.write(qvLogDocument->toPlainText().toUtf8());
+        out.close();
+        QMessageBox box(QMessageBox::Information, tr("Сохранить лог"),
+                        tr("Лог сохранён:\n%1\n\nПрикрепите этот файл в поддержку.").arg(dst),
+                        QMessageBox::Ok, GetMessageBoxParent());
+        auto *openBtn = box.addButton(tr("Показать папку"), QMessageBox::ActionRole);
+        box.exec();
+        if (box.clickedButton() == openBtn)
+            QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(dst).absolutePath()));
+    });
+    menu->addAction(action_save_log);
 
     auto action_clear = new QAction(this);
     action_clear->setText(tr("Clear"));

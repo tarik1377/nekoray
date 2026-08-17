@@ -218,6 +218,18 @@ private:
 
     QLabel *conn_route_summary = nullptr; // live route "map": proxy/direct/block split + bar
 
+    // Connection health for the status pill, so it can say more than up/down: the tunnel
+    // can be "connected" yet pass no traffic (QUIC stall, DPI, dead DNS), which is exactly
+    // the case support cannot see today. Driven by the autopilot probe's result.
+    enum ConnHealth { Health_Unknown = 0, Health_Ok = 1, Health_NoTraffic = 2 };
+    int conn_health = Health_Unknown;
+
+    // Persist the log to a rotating file so a customer can send it as one attachment
+    // instead of a screenshot; also the source for «Сохранить лог…».
+    QString log_file_path;
+    void append_log_to_file(const QStringList &lines);
+    QString diagnostics_header() const; // version/OS/server/mode, no secrets — for report + log
+
     // «Автопилот»: watchdog that probes the live tunnel end-to-end and self-heals —
     // refresh subscription (rotated keys), reconnect, switch server, then back off.
     QTimer *autopilot_timer = nullptr;
