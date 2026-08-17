@@ -1847,6 +1847,15 @@ void MainWindow::repair_windows_network() {
     //  - kill-switch WFP filters, the ndisrd driver and browser Secure-DNS are only reported,
     //    never touched: they explain "clean machine still broken" without us deleting an
     //    antivirus or a setting the user needs.
+    //  - the adapter pass can never touch real hardware. It used to select purely on the
+    //    description text and then act by NAME, which is two hazards at once: a physical
+    //    NIC whose description happens to carry one of the tokens would be disabled, and
+    //    Disable-NetAdapter -Name treats its argument as a WILDCARD — and Windows really
+    //    does name adapters "Подключение по локальной сети* 2". A report naming
+    //    "Ethernet 2" (which on the dev box is the physical Intel NIC) is what prompted
+    //    this. Now: virtual adapters only, never the one carrying the default route,
+    //    acted on by object rather than by name, and the log records the description and
+    //    whether the adapter actually ended up disabled instead of assuming it did.
     //  - 'netsh int ip reset' is skipped when a PHYSICAL adapter has a static IP (offices),
     //    so we do not wipe a fixed LAN address; Hyper-V/WSL virtual adapters do not count.
     //  - hosts is never touched: real customers had legitimate work entries in it.
@@ -1882,7 +1891,10 @@ foreach($sid in (Get-ChildItem 'Registry::HKEY_USERS' | Where-Object {$_.PSChild
 foreach($rk in $runkeys){if(Test-Path $rk){$ip=Get-ItemProperty $rk; foreach($n in (Get-Item $rk).Property){$v=[string]$ip.$n; if($v -match $t -and $v -notmatch 'greenrhythm'){$log+=('автозапуск: '+$n); Remove-ItemProperty $rk $n}}}}
 $cs=[Environment]::GetFolderPath('CommonStartup')
 if($cs -and (Test-Path $cs)){foreach($f in Get-ChildItem $cs -File){$c=''; if($f.Extension -match '\.(bat|cmd|ps1)$'){$c=Get-Content $f.FullName -Raw} elseif($f.Extension -eq '.lnk'){try{$sh=New-Object -ComObject WScript.Shell; $l=$sh.CreateShortcut($f.FullName); $c=$l.TargetPath+' '+$l.Arguments}catch{}}; if($c -match $t){$log+=('автозапуск: '+$f.Name); Remove-Item $f.FullName -Force}}}
-foreach($a in Get-NetAdapter | Where-Object {$_.InterfaceDescription -match 'TAP|TUN|WireGuard|Wintun|WARP|Outline' -and $_.InterfaceDescription -notmatch 'sing-tun' -and $_.Status -ne 'Disabled'}){$log+=('адаптер: '+$a.Name); Disable-NetAdapter -Name $a.Name -Confirm:$false}
+$defIdx=@(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -EA SilentlyContinue | Sort-Object RouteMetric | Select-Object -ExpandProperty InterfaceIndex)
+foreach($a in Get-NetAdapter | Where-Object {$_.InterfaceDescription -match 'TAP|TUN|WireGuard|Wintun|WARP|Outline' -and $_.InterfaceDescription -notmatch 'sing-tun' -and $_.Status -ne 'Disabled' -and -not $_.HardwareInterface -and $_.ifIndex -notin $defIdx}){
+Disable-NetAdapter -InputObject $a -Confirm:$false
+if((Get-NetAdapter -InterfaceIndex $a.ifIndex -EA SilentlyContinue).Status -eq 'Disabled'){$log+=('адаптер отключён: '+$a.Name+' ['+$a.InterfaceDescription+']')}else{$log+=('НЕ удалось отключить адаптер: '+$a.Name+' ['+$a.InterfaceDescription+']')}}
 foreach($i in Get-DnsClientServerAddress | Where-Object {$_.ServerAddresses -match '^127\.|^::1$|^fd01:db8:1111'}){$dead=@($i.ServerAddresses | Where-Object {$_ -match '^127\.|^::1$|^fd01:db8:1111'} | Where-Object { -not (Resolve-DnsName -Name 'dns.msftncsi.com' -Server $_ -DnsOnly -QuickTimeout -EA SilentlyContinue) }); if($dead){$log+=('мёртвый DNS '+($dead -join ',')+' сброшен: '+$i.InterfaceAlias); Set-DnsClientServerAddress -InterfaceIndex $i.InterfaceIndex -ResetServerAddresses}}
 $wf=Join-Path $env:TEMP 'gr_wfp.xml'; netsh wfp show state file="$wf"|Out-Null
 if(Test-Path $wf){try{$w=[xml](Get-Content $wf -Raw); $nm=@($w.wfpstate.providers.item|ForEach-Object{$_.displayData.name})+@($w.wfpstate.subLayers.item|ForEach-Object{$_.displayData.name}); foreach($x in ($nm|Where-Object{$_}|Sort-Object -Unique)){if($x -notmatch 'Microsoft|Windows|MPSSVC|NetIo|FWPM|Teredo|IPsec|WSH|sing-?(box|tun)|Hyper-V|WNV|WSL|Built-in'){$log+=('сетевой фильтр (НЕ удалён): '+$x)}}}catch{}; Remove-Item $wf -Force}
