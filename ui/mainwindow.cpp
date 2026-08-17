@@ -1721,9 +1721,9 @@ void MainWindow::repair_windows_network() {
                        "из-за этого подключение есть, а сайты не открываются.\n\n"
                        "Будут убраны:\n"
                        "• драйверы-перехватчики (WinDivert и подобные);\n"
-                       "• их службы и задания в планировщике;\n"
+                       "• их службы, задания и записи автозапуска;\n"
                        "• посторонние VPN-адаптеры;\n"
-                       "• системный прокси, кэш DNS, Winsock и стек TCP/IP.\n\n"
+                       "• зависший прокси, мёртвый DNS, кэш DNS, Winsock и стек TCP/IP.\n\n"
                        "Ваши файлы, пароли и файл hosts НЕ затрагиваются.\n\n"
                        "Нужны права администратора и перезагрузка. Продолжить?"),
                     QMessageBox::NoButton, this);
@@ -1741,86 +1741,188 @@ void MainWindow::repair_windows_network() {
     //  - Foreign TUN/TAP adapters (a stale outline-tap0 among them) keep their own DNS
     //    and compete for routing; ours is excluded by name so we never disable it.
     //  - hosts is never touched: a real machine had legitimate work entries in it.
-    const QString script = QStringLiteral(
-        "$ErrorActionPreference='SilentlyContinue';"
-        "$log=@();"
-        "foreach($s in Get-CimInstance Win32_Service | Where-Object {$_.PathName -match 'winws|windivert|zapret|goodbyedpi|byedpi'}){"
-        "$log+=('служба: '+$s.Name); sc.exe stop $s.Name|Out-Null; sc.exe delete $s.Name|Out-Null};"
-        "foreach($n in 'WinDivert','WinDivert1.4','WinDivert14'){"
-        "if(Get-Service $n){$log+=('драйвер: '+$n); sc.exe stop $n|Out-Null; sc.exe delete $n|Out-Null}};"
-        "foreach($d in Get-CimInstance Win32_SystemDriver | Where-Object {$_.PathName -match 'divert|zapret|winws'}){"
-        "$log+=('драйвер: '+$d.Name); sc.exe stop $d.Name|Out-Null; sc.exe delete $d.Name|Out-Null};"
-        "foreach($s in Get-Service | Where-Object {$_.Name -match 'warp|cloudflare|outline|amnezia' -or $_.DisplayName -match 'warp|cloudflare|outline|amnezia'}){"
-        "$log+=('служба: '+$s.Name); Stop-Service $s.Name -Force; Set-Service $s.Name -StartupType Disabled};"
-        "foreach($p in Get-Process | Where-Object {$_.ProcessName -match 'winws|goodbyedpi|zapret|byedpi|warp-svc'}){"
-        "$log+=('процесс: '+$p.ProcessName); Stop-Process -Id $p.Id -Force};"
-        "foreach($t in Get-ScheduledTask | Where-Object {$_.Actions.Execute -match 'winws|zapret|goodbyedpi|byedpi'}){"
-        "$log+=('задание: '+$t.TaskName); Unregister-ScheduledTask -TaskName $t.TaskName -Confirm:$false};"
-        "foreach($a in Get-NetAdapter | Where-Object {$_.InterfaceDescription -match 'TAP|TUN|WireGuard|Wintun|WARP|Outline' -and $_.InterfaceDescription -notmatch 'sing-tun' -and $_.Status -ne 'Disabled'}){"
-        "$log+=('адаптер: '+$a.Name); Disable-NetAdapter -Name $a.Name -Confirm:$false};"
-        "Set-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings' ProxyEnable 0;"
-        "Remove-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings' AutoConfigURL;"
-        "netsh winhttp reset proxy|Out-Null;"
-        "netsh winsock reset|Out-Null;"
-        "netsh int ip reset|Out-Null;"
-        "ipconfig /flushdns|Out-Null;"
-        "if($log.Count -eq 0){'NOTHING'}else{$log -join [Environment]::NewLine}");
+    // Two passes. Most of the work needs admin rights, but two things must run as the
+    // logged-in customer, not the elevating admin: the per-user system proxy and the
+    // browser DoH check both live in the customer's own profile, and on a standard-user PC
+    // the UAC prompt elevates a different account whose HKCU/AppData is the wrong one. So a
+    // non-elevated pass runs first as the customer, then the elevated pass does the rest.
+    //
+    // The scripts are C++11 raw literals (no backslash/quote escaping) written to temp .ps1
+    // files with a UTF-8 BOM so PowerShell 5.1 reads the Cyrillic. Written from what actually
+    // breaks RU machines:
+    //  - bypass tools register services under arbitrary names and via nssm, so services are
+    //    matched on ImagePath, Name AND DisplayName; ByeDPI's real binary is ciadpi.exe
+    //    (+proxifyre.exe / the bdmanager supervisor), which the old 'byedpi' token never hit.
+    //  - the forced reboot used to re-arm the tool from its Run key / Startup shortcut; those
+    //    are now removed first, ours excluded by the 'greenrhythm' marker, and the HKCU Run
+    //    key is swept per real-user SID under HKEY_USERS so the elevating admin's hive is not
+    //    the one we look at.
+    //  - stopping WARP's service leaves the adapter on WARP's dead loopback DNS (127.0.2.x),
+    //    so the machine could resolve nothing; loopback resolvers are probed and only the
+    //    dead ones reset — never a live AdGuard/Acrylic the user installed on purpose.
+    //  - kill-switch WFP filters, the ndisrd driver and browser Secure-DNS are only reported,
+    //    never touched: they explain "clean machine still broken" without us deleting an
+    //    antivirus or a setting the user needs.
+    //  - 'netsh int ip reset' is skipped when a PHYSICAL adapter has a static IP (offices),
+    //    so we do not wipe a fixed LAN address; Hyper-V/WSL virtual adapters do not count.
+    //  - hosts is never touched: real customers had legitimate work entries in it.
+    static const char *const kUserPs = R"PS(
+$u=@()
+$k='HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+if((Get-ItemProperty $k -Name ProxyEnable -EA SilentlyContinue).ProxyEnable){$u+='системный прокси отключён'}
+Set-ItemProperty $k ProxyEnable 0 -EA SilentlyContinue
+if((Get-ItemProperty $k -Name AutoConfigURL -EA SilentlyContinue).AutoConfigURL){$u+='PAC-скрипт удалён'; Remove-ItemProperty $k AutoConfigURL -EA SilentlyContinue}
+$t='winws|zapret|goodbyedpi|byedpi|ciadpi|proxifyre|spoofdpi|powertunnel'
+$rk='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+if(Test-Path $rk){$ip=Get-ItemProperty $rk; foreach($n in (Get-Item $rk).Property){$v=[string]$ip.$n; if($v -match $t -and $v -notmatch 'greenrhythm'){$u+=('автозапуск удалён: '+$n); Remove-ItemProperty $rk $n -EA SilentlyContinue}}}
+$sf=[Environment]::GetFolderPath('Startup')
+if($sf -and (Test-Path $sf)){foreach($f in Get-ChildItem $sf -File -EA SilentlyContinue){$c=''; if($f.Extension -match '\.(bat|cmd|ps1)$'){$c=Get-Content $f.FullName -Raw -EA SilentlyContinue} elseif($f.Extension -eq '.lnk'){try{$sh=New-Object -ComObject WScript.Shell; $l=$sh.CreateShortcut($f.FullName); $c=$l.TargetPath+' '+$l.Arguments}catch{}}; if($c -match $t){$u+=('автозапуск удалён: '+$f.Name); Remove-Item $f.FullName -Force -EA SilentlyContinue}}}
+foreach($b in @(@('Chrome',"$env:LOCALAPPDATA\Google\Chrome\User Data\Local State"),@('Edge',"$env:LOCALAPPDATA\Microsoft\Edge\User Data\Local State"),@('Yandex',"$env:LOCALAPPDATA\Yandex\YandexBrowser\User Data\Local State"),@('Opera',"$env:APPDATA\Opera Software\Opera Stable\Local State"))){if(Test-Path $b[1]){try{$j=Get-Content $b[1] -Raw|ConvertFrom-Json; if($j.dns_over_https.mode -eq 'secure'){$u+=('браузер '+$b[0]+': включён Безопасный DNS')}}catch{}}}
+foreach($pf in Get-ChildItem "$env:APPDATA\Mozilla\Firefox\Profiles" -Directory -EA SilentlyContinue){$pj=Join-Path $pf.FullName 'prefs.js'; if((Test-Path $pj) -and ((Get-Content $pj -Raw -EA SilentlyContinue) -match 'network\.trr\.mode",\s*3')){$u+='браузер Firefox: включён строгий DoH'}}
+if($u.Count){$u -join [Environment]::NewLine}
+)PS";
 
-    // Capture the output: telling the user exactly what was removed turns a scary
-    // "we reset your network" into something checkable, and gives support a fact to
-    // work from instead of another "не помогло".
-    const QString outFile = QDir::tempPath() + "/gr_fixnet.txt";
-    QFile::remove(outFile);
-    const QString wrapped = QString("& { %1 } | Out-File -FilePath '%2' -Encoding UTF8").arg(script, outFile);
-    // -EncodedCommand: the script is full of quotes and pipes that would not survive
-    // being threaded through Start-Process -ArgumentList as plain text.
-    const QString b64 = QString::fromLatin1(
-        QByteArray(reinterpret_cast<const char *>(wrapped.utf16()), wrapped.size() * 2).toBase64());
+    static const char *const kAdminPs = R"PS(
+param([string]$Report)
+$ErrorActionPreference='SilentlyContinue'
+$log=@()
+$t='winws|windivert|zapret|goodbyedpi|byedpi|ciadpi|proxifyre|spoofdpi|powertunnel'
+foreach($s in Get-CimInstance Win32_Service | Where-Object {$_.PathName -match $t -or $_.Name -match $t -or $_.DisplayName -match $t}){$log+=('служба: '+$s.Name); sc.exe stop $s.Name|Out-Null; sc.exe config $s.Name start= disabled|Out-Null; sc.exe delete $s.Name|Out-Null}
+foreach($n in 'WinDivert','WinDivert1.4','WinDivert14'){if(Get-Service $n -EA SilentlyContinue){$log+=('драйвер: '+$n); sc.exe stop $n|Out-Null; sc.exe delete $n|Out-Null}}
+foreach($d in Get-CimInstance Win32_SystemDriver | Where-Object {$_.PathName -match 'divert|zapret|winws'}){$log+=('драйвер: '+$d.Name); sc.exe stop $d.Name|Out-Null; sc.exe delete $d.Name|Out-Null}
+foreach($s in Get-Service | Where-Object {$_.Name -match 'warp|cloudflare|outline|amnezia' -or $_.DisplayName -match 'warp|cloudflare|outline|amnezia'}){$log+=('служба: '+$s.Name); Stop-Service $s.Name -Force; Set-Service $s.Name -StartupType Disabled}
+foreach($p in Get-Process | Where-Object {$_.ProcessName -match 'winws|goodbyedpi|zapret|byedpi|ciadpi|proxifyre|bdmanager|spoofdpi|powertunnel|warp-svc'}){$log+=('процесс: '+$p.ProcessName); Stop-Process -Id $p.Id -Force}
+foreach($tk in Get-ScheduledTask | Where-Object {($_.Actions.Execute -match $t) -or ($_.Actions.Arguments -match $t)}){$log+=('задание: '+$tk.TaskName); $tk | Unregister-ScheduledTask -Confirm:$false}
+$runkeys=@('HKLM:\Software\Microsoft\Windows\CurrentVersion\Run','HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Run')
+foreach($sid in (Get-ChildItem 'Registry::HKEY_USERS' | Where-Object {$_.PSChildName -match '^S-1-5-21-' -and $_.PSChildName -notmatch '_Classes$'})){$runkeys+="Registry::HKEY_USERS\$($sid.PSChildName)\Software\Microsoft\Windows\CurrentVersion\Run"}
+foreach($rk in $runkeys){if(Test-Path $rk){$ip=Get-ItemProperty $rk; foreach($n in (Get-Item $rk).Property){$v=[string]$ip.$n; if($v -match $t -and $v -notmatch 'greenrhythm'){$log+=('автозапуск: '+$n); Remove-ItemProperty $rk $n}}}}
+$cs=[Environment]::GetFolderPath('CommonStartup')
+if($cs -and (Test-Path $cs)){foreach($f in Get-ChildItem $cs -File){$c=''; if($f.Extension -match '\.(bat|cmd|ps1)$'){$c=Get-Content $f.FullName -Raw} elseif($f.Extension -eq '.lnk'){try{$sh=New-Object -ComObject WScript.Shell; $l=$sh.CreateShortcut($f.FullName); $c=$l.TargetPath+' '+$l.Arguments}catch{}}; if($c -match $t){$log+=('автозапуск: '+$f.Name); Remove-Item $f.FullName -Force}}}
+foreach($a in Get-NetAdapter | Where-Object {$_.InterfaceDescription -match 'TAP|TUN|WireGuard|Wintun|WARP|Outline' -and $_.InterfaceDescription -notmatch 'sing-tun' -and $_.Status -ne 'Disabled'}){$log+=('адаптер: '+$a.Name); Disable-NetAdapter -Name $a.Name -Confirm:$false}
+foreach($i in Get-DnsClientServerAddress | Where-Object {$_.ServerAddresses -match '^127\.|^::1$|^fd01:db8:1111'}){$dead=@($i.ServerAddresses | Where-Object {$_ -match '^127\.|^::1$|^fd01:db8:1111'} | Where-Object { -not (Resolve-DnsName -Name 'dns.msftncsi.com' -Server $_ -DnsOnly -QuickTimeout -EA SilentlyContinue) }); if($dead){$log+=('мёртвый DNS '+($dead -join ',')+' сброшен: '+$i.InterfaceAlias); Set-DnsClientServerAddress -InterfaceIndex $i.InterfaceIndex -ResetServerAddresses}}
+$wf=Join-Path $env:TEMP 'gr_wfp.xml'; netsh wfp show state file="$wf"|Out-Null
+if(Test-Path $wf){try{$w=[xml](Get-Content $wf -Raw); $nm=@($w.wfpstate.providers.item|ForEach-Object{$_.displayData.name})+@($w.wfpstate.subLayers.item|ForEach-Object{$_.displayData.name}); foreach($x in ($nm|Where-Object{$_}|Sort-Object -Unique)){if($x -notmatch 'Microsoft|Windows|MPSSVC|NetIo|FWPM|Teredo|IPsec|WSH|sing-?(box|tun)|Hyper-V|WNV|WSL|Built-in'){$log+=('сетевой фильтр (НЕ удалён): '+$x)}}}catch{}; Remove-Item $wf -Force}
+if(Get-CimInstance Win32_SystemDriver | Where-Object {$_.Name -eq 'ndisrd' -and $_.State -eq 'Running'}){$log+='драйвер ndisrd (ProxiFyre/WireSock, НЕ удалён)'}
+Set-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' ProxyEnable 0 -EA SilentlyContinue
+Remove-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' AutoConfigURL -EA SilentlyContinue
+netsh winhttp reset proxy|Out-Null
+netsh winsock reset|Out-Null
+$phys=Get-NetAdapter -Physical | Where-Object {$_.Status -eq 'Up'} | Select-Object -ExpandProperty ifIndex
+$sp=Get-NetIPInterface -AddressFamily IPv4 | Where-Object {$_.Dhcp -eq 'Disabled' -and $_.ConnectionState -eq 'Connected' -and $phys -contains $_.InterfaceIndex}
+if($sp){$log+='статический IP — глубокий сброс IP пропущен'}else{netsh int ip reset|Out-Null; netsh int ipv6 reset|Out-Null}
+ipconfig /flushdns|Out-Null
+$out = if($log.Count){$log -join [Environment]::NewLine}else{'NOTHING'}
+Set-Content -LiteralPath $Report -Value $out -Encoding UTF8
+)PS";
+
+    const QString dir = QDir::tempPath();
+    const QString userPs = dir + "/gr_fixnet_user.ps1";
+    const QString adminPs = dir + "/gr_fixnet_admin.ps1";
+    const QString report = dir + "/gr_fixnet.txt";
+    QFile::remove(report);
+
+    auto writePs = [](const QString &path, const char *body) {
+        QFile pf(path);
+        if (!pf.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+        pf.write("\xEF\xBB\xBF"); // UTF-8 BOM: PowerShell 5.1 reads .ps1 as ANSI otherwise
+        pf.write(QByteArray(body));
+        pf.close();
+        return true;
+    };
+    if (!writePs(userPs, kUserPs) || !writePs(adminPs, kAdminPs)) {
+        QMessageBox::warning(this, tr("Починить сеть Windows"),
+                             tr("Не удалось подготовить очистку (нет доступа к временной папке)."));
+        return;
+    }
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+
+    // Customer-context pass: runs as the logged-in user, so its HKCU proxy and AppData
+    // browser paths are the right ones. Its stdout is the report, no file needed.
+    QProcess up;
+    up.start("powershell", {"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", userPs});
+    up.waitForFinished(60000);
+    const QString userOut = QString::fromUtf8(up.readAllStandardOutput()).trimmed();
+
+    // Elevated pass: the destructive work. Paths are quoted inside a single -ArgumentList
+    // string so a user name with spaces cannot split them.
     const QString launcher =
         QString("Start-Process powershell -Verb RunAs -WindowStyle Hidden -Wait "
-                "-ArgumentList '-NoProfile','-EncodedCommand','%1'")
-            .arg(b64);
+                "-ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"%1\" -Report \"%2\"'")
+            .arg(QDir::toNativeSeparators(adminPs), QDir::toNativeSeparators(report));
 
     QProcess proc;
     proc.start("powershell", {"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", launcher});
     if (!proc.waitForFinished(240000)) {
+        QApplication::restoreOverrideCursor();
         QMessageBox::warning(this, tr("Починить сеть Windows"),
                              tr("Очистка не завершилась вовремя. Попробуйте ещё раз."));
         return;
     }
 
-    QString found;
-    QFile f(outFile);
-    if (f.open(QIODevice::ReadOnly)) {
-        found = QString::fromUtf8(f.readAll()).trimmed();
-        f.close();
-        QFile::remove(outFile);
+    QString adminOut;
+    QFile rf(report);
+    if (rf.open(QIODevice::ReadOnly)) {
+        adminOut = QString::fromUtf8(rf.readAll());
+        rf.close();
+        QFile::remove(report);
     }
+    QFile::remove(userPs);
+    QFile::remove(adminPs);
+    QApplication::restoreOverrideCursor();
 
-    if (found.isEmpty()) {
-        // Empty output means the elevated shell never ran - almost always a declined
-        // UAC prompt, which is a choice rather than an error worth alarming about.
+    // Set-Content -Encoding UTF8 prepends a BOM; strip it so 'NOTHING' and isEmpty() work.
+    if (!adminOut.isEmpty() && adminOut.front() == QChar(0xFEFF)) adminOut.remove(0, 1);
+    adminOut = adminOut.trimmed();
+
+    if (adminOut.isEmpty()) {
+        // The elevated pass always writes at least 'NOTHING', so an empty report means it
+        // never ran — almost always a declined UAC prompt, a choice, not an error.
         QMessageBox::warning(this, tr("Починить сеть Windows"),
                              tr("Очистка не выполнена — не были выданы права администратора.\n\n"
                                 "Попробуйте ещё раз и подтвердите запрос Windows."));
         return;
     }
 
-    const bool nothing = found.startsWith("NOTHING");
-    QMessageBox done(QMessageBox::Information, tr("Починить сеть Windows"),
-                     nothing
-                         ? tr("Посторонних программ не найдено.\n\n"
-                              "Сетевые настройки сброшены. Если подключение всё равно "
-                              "не работает, перезагрузите компьютер и напишите в поддержку.")
-                         // Adapters are only disabled, never removed, and we say so:
-                         // someone who needs a work VPN should not think we deleted it.
-                         : tr("Убрано:\n\n%1\n\nСетевые настройки сброшены.\n\n"
-                              "Чтобы изменения вступили в силу, нужна перезагрузка: "
-                              "драйверы-перехватчики остаются в памяти до неё.\n\n"
-                              "Адаптеры только отключены, не удалены. Если какой-то из них "
-                              "нужен для работы, включите его обратно в «Сетевые подключения» "
-                              "(Win+R → ncpa.cpl → правой кнопкой → Включить).")
-                               .arg(found),
+    // Combine both passes. "Nothing at all" only when neither pass did anything.
+    const bool adminNothing = adminOut.startsWith("NOTHING");
+    QStringList parts;
+    if (!adminNothing) parts << adminOut;
+    if (!userOut.isEmpty()) parts << userOut;
+    const QString found = parts.join("\n");
+    const bool nothingAll = found.isEmpty();
+
+    // Advisories for the report-only findings the cleaner deliberately does not touch.
+    QString extra;
+    if (found.contains(QString::fromUtf8("Безопасный DNS")) || found.contains("DoH")) {
+        extra += QString::fromUtf8(
+            "\n\nВ браузере включён Безопасный DNS. Если сайты не открываются только в браузере — "
+            "отключите его: Настройки → Конфиденциальность и безопасность → «Использовать безопасный "
+            "DNS-сервер» выключить.");
+    }
+    if (found.contains(QString::fromUtf8("сетевой фильтр")) || found.contains("ndisrd")) {
+        extra += QString::fromUtf8(
+            "\n\nНайдены сетевые фильтры сторонних программ — мы их не удаляем. Если после "
+            "перезагрузки интернета нет совсем, откройте эту программу (WARP, AmneziaVPN и т.п.), "
+            "отключите в ней Kill Switch / «постоянную защиту» и удалите её штатным деинсталлятором.");
+    }
+
+    QString body =
+        nothingAll
+            ? tr("Посторонних программ не найдено.\n\n"
+                 "Сетевые настройки сброшены. Если подключение всё равно "
+                 "не работает, перезагрузите компьютер и напишите в поддержку.")
+            // Adapters are only disabled, never removed, and we say so:
+            // someone who needs a work VPN should not think we deleted it.
+            : tr("Сделано:\n\n%1\n\nСетевые настройки сброшены.\n\n"
+                 "Чтобы изменения вступили в силу, нужна перезагрузка: "
+                 "драйверы-перехватчики остаются в памяти до неё.\n\n"
+                 "Адаптеры только отключены, не удалены. Если какой-то из них "
+                 "нужен для работы, включите его обратно в «Сетевые подключения» "
+                 "(Win+R → ncpa.cpl → правой кнопкой → Включить).")
+                  .arg(found);
+    body += extra;
+    QMessageBox done(QMessageBox::Information, tr("Починить сеть Windows"), body,
                      QMessageBox::NoButton, this);
     auto *reboot = done.addButton(tr("Перезагрузить сейчас"), QMessageBox::AcceptRole);
     done.addButton(tr("Позже"), QMessageBox::RejectRole);
