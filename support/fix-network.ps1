@@ -213,9 +213,21 @@ if ($virt) {
     foreach ($v in $virt) { Warn "поднят: $($v.Name) - $($v.InterfaceDescription)" }
     Write-Host "      (наш клиент использует sing-tun; остальные лучше отключить)"
     if ($Fix) {
-        foreach ($v in ($virt | Where-Object { $_.InterfaceDescription -notmatch 'sing-tun' })) {
-            Act "отключаю адаптер $($v.Name)"
-            Disable-NetAdapter -Name $v.Name -Confirm:$false
+        # Never touch real hardware, and never the adapter carrying the default route.
+        # Selecting on description alone and then acting by NAME is doubly unsafe: a
+        # physical NIC whose vendor string contains one of those tokens would be disabled,
+        # and -Name is a wildcard parameter while Windows really does name adapters
+        # "Подключение по локальной сети* 2".
+        $defIdx = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty InterfaceIndex)
+        foreach ($v in ($virt | Where-Object {
+                    $_.InterfaceDescription -notmatch 'sing-tun' -and
+                    -not $_.HardwareInterface -and $_.ifIndex -notin $defIdx })) {
+            Act "отключаю адаптер $($v.Name) [$($v.InterfaceDescription)]"
+            Disable-NetAdapter -InputObject $v -Confirm:$false
+            if ((Get-NetAdapter -InterfaceIndex $v.ifIndex -ErrorAction SilentlyContinue).Status -ne 'Disabled') {
+                Warn "не удалось отключить $($v.Name)"
+            }
         }
     }
 } else { Ok "лишних адаптеров нет" }
