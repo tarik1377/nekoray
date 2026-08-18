@@ -144,6 +144,41 @@ foreach ($u in @('http://cp.cloudflare.com/generate_204', 'https://www.google.co
     }
 }
 
+# --- 7b. Скорость ------------------------------------------------------------
+# «Медленно» — это не диагноз, а ощущение. Цифра отделяет три разных случая:
+# узкий канал у провайдера, задушенный туннель и тормозящий сервер. Меряем тем
+# же путём, которым ходит браузер, и рядом — напрямую через локальный вход, без
+# перехвата: если через прокси быстро, а через систему медленно, виноват не
+# сервер, а захват трафика на этой машине.
+Head "7b. Скорость (25 МБ)"
+# Меряем через System.Net.WebClient, а НЕ через Invoke-WebRequest: в PowerShell 5.1
+# он рисует прогресс-бар на каждый блок и упирается в него сам. На машине, где curl
+# показывал 124-152 Мбит/с, Invoke-WebRequest выдавал 14,8 — прибор мерил себя, а не
+# канал, и с такими цифрами клиента отправили бы чинить исправный туннель.
+$ProgressPreference = 'SilentlyContinue'
+$url = "https://speed.cloudflare.com/__down?bytes=25000000"
+$tmp = Join-Path $env:TEMP 'gr_speed.bin'
+foreach ($mode in @("через систему (TUN)", "через прокси напрямую")) {
+    $wc = New-Object System.Net.WebClient
+    if ($mode -like "*прокси*") { $wc.Proxy = New-Object System.Net.WebProxy("http://127.0.0.1:$port") }
+    else { $wc.Proxy = $null }
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        $wc.DownloadFile($url, $tmp)
+        $sw.Stop()
+        $mb = (Get-Item $tmp).Length / 1MB
+        $mbps = [math]::Round($mb * 8 / $sw.Elapsed.TotalSeconds, 1)
+        Add ("  {0,-22} {1,6} Мбит/с   ({2} с)" -f $mode, $mbps, [math]::Round($sw.Elapsed.TotalSeconds, 1))
+    } catch {
+        $sw.Stop()
+        Add ("  {0,-22} НЕ ИЗМЕРЕНО ({1} с)" -f $mode, [math]::Round($sw.Elapsed.TotalSeconds, 1))
+    } finally {
+        $wc.Dispose()
+        Remove-Item $tmp -ErrorAction SilentlyContinue
+    }
+}
+Add "  Для сравнения: исправный туннель на нашем железе даёт 120-250 Мбит/с."
+
 # --- 8. Внешний IP ---------------------------------------------------------
 Head "8. Какой IP видит мир"
 try {
