@@ -27,12 +27,20 @@ Add " VerdantVibe - отчёт для поддержки"
 Add " дата: $(Get-Date -Format 'dd.MM.yyyy HH:mm:ss')"
 
 Sec "Маршруты по умолчанию и перехватывающие"
-# Не только 0.0.0.0/0: туннель перехватывает трафик парой 0.0.0.0/1 + 128.0.0.0/1,
-# чтобы перебить системный маршрут, не удаляя его. Фильтр по одному 0.0.0.0/0
-# показывал "маршрут один" на машине, где туннель уже забрал весь трафик.
+# Не фильтровать по 0.0.0.0/1 + 128.0.0.0/1: мы их не создаём. route_exclude_address
+# заставляет sing-box ставить ДОПОЛНЕНИЕ к приватным сетям — несколько десятков
+# префиксов (0.0.0.0/5, 8.0.0.0/7, ... 224.0.0.0/3). Старый фильтр их не видел и писал
+# "маршрут один" на машине, где туннель уже забрал весь трафик, из-за чего диагностика
+# уходила в ложную сторону. Считаем маршруты на каждом туннельном адаптере: ноль или
+# единицы — туннель не перехватывает; два адаптера neko-tun* — остался клон от прошлого
+# запуска, и трафик может уходить в мёртвый.
 Get-NetRoute -AddressFamily IPv4 |
-    Where-Object { $_.DestinationPrefix -in @('0.0.0.0/0','0.0.0.0/1','128.0.0.0/1') } |
-    Sort-Object DestinationPrefix, RouteMetric |
+    Where-Object { $_.InterfaceAlias -like 'neko-tun*' } |
+    Group-Object InterfaceAlias |
+    ForEach-Object { Add ("  {0}: маршрутов {1}" -f $_.Name, $_.Count) }
+Get-NetRoute -AddressFamily IPv4 |
+    Where-Object { $_.DestinationPrefix -eq '0.0.0.0/0' } |
+    Sort-Object RouteMetric |
     Select-Object DestinationPrefix, ifIndex, InterfaceAlias, NextHop, RouteMetric |
     Format-Table -AutoSize | Out-String -Width 130 | ForEach-Object { Add $_ }
 

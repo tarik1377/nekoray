@@ -211,7 +211,11 @@ int main(int argc, char* argv[]) {
     if (NekoGui::dataStore->start_minimal) NekoGui::dataStore->flag_tray = true;
 
     // load routing
-    NekoGui::dataStore->routing = std::make_unique<NekoGui::Routing>();
+    // Preset 1 is the RU preset — QUIC blocked with the public resolvers exempted first,
+    // domestic domains and game/anti-cheat traffic direct, local DNS for direct traffic.
+    // This used to build preset 0 (an empty rule set), so none of that reached a fresh
+    // install; the preset was only ever applied by hand from the routing dialog.
+    NekoGui::dataStore->routing = std::make_unique<NekoGui::Routing>(1);
     NekoGui::dataStore->routing->fn = ROUTES_PREFIX + NekoGui::dataStore->active_routing;
     isLoaded = NekoGui::dataStore->routing->Load();
     if (!isLoaded) {

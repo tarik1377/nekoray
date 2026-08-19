@@ -93,7 +93,9 @@ DialogBasicSettings::DialogBasicSettings(QWidget *parent)
 #endif
 
     // Style
-    ui->connection_statistics_box->setDisabled(true);
+    // The box used to be disabled because the core never implemented the connection list, so
+    // the toggle did nothing. It works now, and leaving it greyed out meant a user whose config
+    // pinned conn_stat:false had no way back — the tab stayed empty with no explanation.
     //
     D_LOAD_BOOL(check_include_pre)
     D_LOAD_BOOL(connection_statistics)

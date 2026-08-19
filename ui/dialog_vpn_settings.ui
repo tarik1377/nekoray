@@ -37,12 +37,13 @@
        </widget>
       </item>
       <item>
+       <!-- Order MUST match Preset::SingBox::VpnImplementation {"gvisor","system","mixed"}:
+            the index is stored verbatim as vpn_impl and used to index that list. The items
+            used to read Mixed/gVisor/System, so every label named a different stack than the
+            one applied — picking "Mixed" gave gvisor, and the shipped default (2) displayed
+            as "System" while actually running mixed. Reordering the labels keeps every stored
+            value meaning exactly what it did, so no migration is needed. -->
        <widget class="QComboBox" name="vpn_implementation">
-        <item>
-         <property name="text">
-          <string notr="true">Mixed</string>
-         </property>
-        </item>
         <item>
          <property name="text">
           <string notr="true">gVisor</string>
@@ -51,6 +52,11 @@
         <item>
          <property name="text">
           <string notr="true">System</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">Mixed</string>
          </property>
         </item>
        </widget>

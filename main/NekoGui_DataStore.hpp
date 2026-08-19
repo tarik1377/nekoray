@@ -35,6 +35,12 @@ namespace NekoGui {
         static QStringList List();
 
         static bool SetToActive(const QString &name);
+
+        // One-shot repair of schemes written before the RU preset shipped. Additive only:
+        // see the implementation for exactly what it will and will not touch.
+        static bool MigrateOne(Routing *r);
+
+        static int MigrateAll();
     };
 
     class ExtraCore : public JsonStore {
@@ -135,6 +141,13 @@ namespace NekoGui {
         // One-shot flag: flip legacy configs still on the old disabled default (-30) to the
         // new enabled default exactly once, without ever re-overriding a user's own choice.
         bool sub_auto_update_migrated = false;
+        // Same idea for conn_stat. Every existing config pins it to false — both because the
+        // shipped template said so and because the settings checkbox was disabled, so no user
+        // ever chose the value. Without this, flipping the in-code default changes nothing.
+        bool conn_stat_migrated = false;
+        // And for the routing schemes: an existing routes_box file shadows the shipped
+        // preset forever, so the QUIC block reached nobody who had already run the app.
+        bool routing_quic_migrated = false;
 
         // Security
         bool skip_cert = false;

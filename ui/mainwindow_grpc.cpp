@@ -342,6 +342,7 @@ void MainWindow::neko_start(int _id) {
 
         NekoGui::dataStore->UpdateStartedId(ent->id);
         running = ent;
+        conn_health = Health_Unknown; // wait for the first probe before claiming green
 
         runOnUiThread([=] {
             refresh_status();

@@ -120,10 +120,17 @@ func buildConnectionListJSON() string {
 
 	list := make([]uiConnection, 0, len(conns))
 	for i, c := range conns {
-		// The outbound tag is the last hop of the chain; Clash lists it first.
+		// The tag we want is the one the routing rule picked (proxy / direct / bypass / block),
+		// and that is the LAST element. sing-box walks outwards-in from the matched outbound
+		// into the group members it resolves to, then reverses the slice
+		// (experimental/clashapi/trafficontrol/tracker.go:139-164), so Chains[0] is the
+		// innermost concrete outbound. Reading Chains[0] worked only while nothing wrapped the
+		// outbound; with auto-failover on, every row's tag became the urltest member "g-<id>",
+		// which the GUI cannot classify — the table filled up while the route strip still said
+		// "Нет активных соединений".
 		tag := ""
-		if len(c.Chains) > 0 {
-			tag = c.Chains[0]
+		if n := len(c.Chains); n > 0 {
+			tag = c.Chains[n-1]
 		}
 
 		dest := c.Metadata.DestinationIP
