@@ -15,8 +15,13 @@ Actual behavior:
 
 ## How to reproduce
 
-Provide helpful screenshots, videos, text descriptions, subscription links, etc.
+Screenshots, videos and a step-by-step description help a lot.
 
-## log
+> **Never post your subscription link or activation code here.**
+> This is a public issue tracker: a subscription link is access to your paid
+> plan, and anyone reading can take it. Support will ask privately if needed.
 
-If you have logs, please upload them. Please see the detailed steps for exporting logs in the documentation.
+## Log
+
+Attach the log if you have it — but **read it first and remove anything
+personal**: it can contain server addresses and profile names.

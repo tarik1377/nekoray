@@ -25,6 +25,7 @@
 #include "3rdparty/VT100Parser.hpp"
 #include "3rdparty/qv2ray/v2/components/proxy/QvProxyConfigurator.hpp"
 #include "sys/ForeignTunnels.hpp"
+#include "fmt/RelayBean.hpp"
 #include "ui/dialog_macos_mode.h"
 
 #ifdef Q_OS_MACOS
@@ -237,6 +238,21 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         // активация не сработала.
         if (d.ProfileAdded()) refresh_proxy_list();
     });
+    /*
+     * РЕЗЕРВ ПОКАЗЫВАЕТСЯ, ТОЛЬКО ЕСЛИ ЕГО КОМПОНЕНТ ЕСТЬ.
+     *
+     * Пункт меню без компонента — это дорога в никуда: человек активируется по
+     * коду, заводит профиль, нажимает подключиться и получает отказ. Разбор
+     * перед выпуском показал, что компонент в пакет не кладёт ни один скрипт,
+     * то есть у людей функция была бы мёртвой при живом на вид меню.
+     *
+     * Прятать, а не гасить: серый пункт обещает условие, при котором он
+     * заработает, и человек будет его искать. Появится компонент рядом с
+     * программой — появится и пункт, без всяких настроек.
+     */
+    if (NekoGui::dataStore->extraCore->Get(NekoGui_fmt::kRelayCoreId).isEmpty()) {
+        ui->menu_gr_relay->setVisible(false);
+    }
     connect(ui->menu_gr_buy, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
     connect(ui->menu_gr_telegram, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kTelegramUrl)); });
     connect(ui->menu_gr_about, &QAction::triggered, this, [=] { show_about_greenrhythm(); });
@@ -3364,12 +3380,17 @@ inline void FastAppendTextDocument(const QString &message, QTextDocument *doc) {
 
 void MainWindow::show_about_greenrhythm() {
     auto title = tr("<b>Клиент сервиса «%1»</b>").arg(GreenRhythm::kServiceName);
+    // Лицензия и ссылка на исходники — не украшение: GPL-3.0 требует сообщать
+    // их получателю программы, а «О программе» — то место, где человек их и
+    // станет искать.
     auto body = tr("Версия: %1<br><br>"
                    "Сайт: <a href=\"%2\">%2</a><br>"
-                   "Поддержка: <a href=\"%3\">%4</a>")
+                   "Поддержка: <a href=\"%3\">%4</a><br><br>"
+                   "Лицензия GPL-3.0 · исходный код: <a href=\"%5\">%5</a>")
                     .arg(QString(NKR_VERSION))
                     .arg(GreenRhythm::kSiteUrl)
-                    .arg(GreenRhythm::kTelegramUrl, GreenRhythm::kTelegramHandle);
+                    .arg(GreenRhythm::kTelegramUrl, GreenRhythm::kTelegramHandle,
+                         QStringLiteral("https://github.com/tarik1377/nekoray"));
     QMessageBox box(QMessageBox::Information, tr("О программе"), title, QMessageBox::Ok, this);
     box.setTextFormat(Qt::RichText);
     box.setInformativeText(body);

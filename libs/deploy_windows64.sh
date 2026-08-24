@@ -22,6 +22,14 @@ fi
 
 popd
 
+#### лицензии ####
+# GPL-3.0 §4 обязывает передавать копию лицензии ВМЕСТЕ с программой, а не
+# только держать её в репозитории. Плюс уведомления по чужим компонентам: Qt
+# (LGPL), OpenSSL (Apache-2.0), xray (MPL-2.0) — у каждого своё требование, и
+# невыполненное обязательство не становится меньше оттого, что о нём не знали.
+cp $SRC_ROOT/LICENSE $DEST/LICENSE.txt
+cp $SRC_ROOT/THIRD-PARTY-NOTICES.md $DEST/
+
 #### copy icon + wintun driver ####
 cp $SRC_ROOT/res/public/greenrhythm.png $DEST/greenrhythm.png
 cp $SRC_ROOT/res/public/wintun.dll $DEST/wintun.dll

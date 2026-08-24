@@ -117,6 +117,13 @@ iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/greenrhythm.icns"
 rm -rf "$ICONSET"
 test -f "$APP/Contents/Resources/greenrhythm.icns"
 
+#### лицензии ####
+# Рядом с исполняемым файлом, а не в Resources: человек, открывший бандл через
+# «Показать содержимое пакета», должен находить их там же, где программу.
+step "лицензии"
+cp "$SRC_ROOT/LICENSE" "$BIN/LICENSE.txt"
+cp "$SRC_ROOT/THIRD-PARTY-NOTICES.md" "$BIN/"
+
 #### шаблоны настроек ####
 cp "$SRC_ROOT/res/public/greenrhythm.png" "$BIN/greenrhythm.png"
 mkdir -p "$BIN/config/groups"
