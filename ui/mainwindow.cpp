@@ -17,6 +17,7 @@
 #include "ui/dialog_manage_routes.h"
 #include "ui/dialog_vpn_settings.h"
 #include "ui/dialog_hotkey.h"
+#include "ui/dialog_relay_activate.h"
 
 #include "3rdparty/fix_old_qt.h"
 #include "3rdparty/qrcodegen.hpp"
@@ -170,6 +171,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     autopilot_timer->setSingleShot(true);
     connect(autopilot_timer, &QTimer::timeout, this, [=] { autopilot_tick(); });
     autopilot_timer->start(20 * 1000);
+    connect(ui->menu_gr_relay, &QAction::triggered, this, [=] {
+        DialogRelayActivate d(this);
+        d.exec();
+    });
     connect(ui->menu_gr_buy, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
     connect(ui->menu_gr_telegram, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kTelegramUrl)); });
     connect(ui->menu_gr_about, &QAction::triggered, this, [=] { show_about_greenrhythm(); });

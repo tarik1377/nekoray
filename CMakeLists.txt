@@ -132,6 +132,9 @@ set(PROJECT_SOURCES
         main/DeviceCredentials.hpp
         main/SealedStore.hpp
         main/RelayActivation.cpp
+        ui/dialog_relay_activate.cpp
+        ui/dialog_relay_activate.h
+        ui/dialog_relay_activate.ui
         main/RelayActivationParse.cpp
         main/RelayActivation.hpp
 
@@ -339,3 +342,15 @@ add_executable(credentials_test EXCLUDE_FROM_ALL
 )
 target_include_directories(credentials_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(credentials_test PRIVATE Qt${QT_VERSION_MAJOR}::Core ${SEALED_STORE_LIBRARIES})
+
+# Снимок вёрстки диалога — чтобы на него можно было посмотреть, не запуская
+# клиент. Линкует только Widgets и сгенерированный uic-заголовок.
+# Заголовок берётся тот же, что собрал uic для приложения: два AUTOUIC на один
+# .ui дерутся за каталог autogen, а второй копии вёрстки нам не нужно — смысл
+# как раз в том, чтобы смотреть на ту же самую.
+add_executable(relay_dialog_preview EXCLUDE_FROM_ALL test/RelayDialogPreview.cpp)
+add_dependencies(relay_dialog_preview greenrhythm)
+target_include_directories(relay_dialog_preview PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_BINARY_DIR}/greenrhythm_autogen/include)
+target_link_libraries(relay_dialog_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
