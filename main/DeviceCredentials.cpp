@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
+#include <QSaveFile>
 #include <QUuid>
 
 namespace DeviceCredentials {
@@ -50,29 +51,46 @@ namespace DeviceCredentials {
             return Unknown;
         }
 
+        /**
+         * Записать блоб так, чтобы неудача НЕ СТОИЛА идентичности устройства.
+         *
+         * Здесь было «во временный, потом remove(kFile) + rename». Замысел
+         * верный, примитив — нет: QFile::rename отказывается писать поверх
+         * существующего файла, поэтому remove был не небрежностью, а
+         * необходимостью, и он оставлял окно, в котором нет НИ ОДНОГО файла.
+         *
+         * Окно открывается не только обрывом питания. Если временный файл
+         * держит открытым антивирус или индексатор — обычное состояние сразу
+         * после close(), — Qt уходит на запасной путь: копирует временный в
+         * целевой, не может удалить источник и удаляет ТОЛЬКО ЧТО СОЗДАННЫЙ
+         * приёмник, возвращая false. Ни одного сбоя не произошло, а device.dat
+         * пропал.
+         *
+         * Цена пропажи не «активируйтесь заново», а хуже: DeviceId() заводит
+         * НОВЫЙ идентификатор, сайт видит незнакомое устройство и отвечает 409
+         * «лимит устройств». Человек упирается в потолок тарифа на ровном месте.
+         *
+         * QSaveFile делает ровно то, чего не хватало: commit() заменяет файл
+         * атомарно (MoveFileEx с MOVEFILE_REPLACE_EXISTING на Windows, rename(2)
+         * на остальных), а при любой неудаче временный файл убирается и прежний
+         * device.dat остаётся целым. Прямые вызовы Win32 сюда класть нельзя —
+         * рядом живёт сборка под Linux.
+         */
         bool writeBlob() {
             const auto plain = QJsonDocument(g_blob).toJson(QJsonDocument::Compact);
             const auto sealed = SealedStore::Seal(plain);
             if (sealed.isEmpty()) return false;
 
-            // Пишем во временный и переименовываем. Иначе прерванная запись
-            // (батарея, выключение) оставляет обрезанный файл, и человек
-            // получает «активируйтесь заново» вместо рабочего доступа.
-            const QString tmp = kFile + ".tmp";
-            QFile::remove(tmp);
-            QFile f(tmp);
+            QSaveFile f(kFile);
             if (!f.open(QIODevice::WriteOnly)) return false;
             // 0600 до записи, а не после: между созданием и правкой прав файл
             // иначе успевает полежать читаемым для всех.
             f.setPermissions(QFile::ReadOwner | QFile::WriteOwner);
-            const bool ok = f.write(sealed) == sealed.size();
-            f.close();
-            if (!ok) {
-                QFile::remove(tmp);
+            if (f.write(sealed) != sealed.size()) {
+                f.cancelWriting();
                 return false;
             }
-            QFile::remove(kFile);
-            return QFile::rename(tmp, kFile);
+            return f.commit();
         }
     } // namespace
 
@@ -181,14 +199,18 @@ namespace DeviceCredentials {
         return writeBlob();
     }
 
-    void Remember(State state, const QString &detail) {
+    bool Remember(State state, const QString &detail) {
         Load();
         g_blob["state"] = stateName(state);
         g_blob["detail"] = detail;
-        writeBlob();
+        // Результат возвращается, а не выбрасывается. Само по себе незаписанное
+        // состояние стоит немного — в памяти оно верное, и человек видит его
+        // сегодня же. Дорого другое: неудача записи здесь означает, что и
+        // реквизиты сохранить не выйдет, и знать об этом лучше сразу.
+        return writeBlob();
     }
 
-    void Wipe() {
+    bool Wipe() {
         Load();
         // deviceId переживает стирание намеренно. Он занимает место по тарифу,
         // и новый после каждого «отключить» съедал бы человеку слоты — ровно
@@ -197,7 +219,11 @@ namespace DeviceCredentials {
         g_blob = QJsonObject();
         if (!id.isEmpty()) g_blob["deviceId"] = id;
         g_blob["state"] = stateName(SignedOut);
-        writeBlob();
+        // Результат возвращается, а не выбрасывается: это единственное место,
+        // где молчащая неудача ломает обещание, данное человеку ВСЛУХ. Ему
+        // сказали «ключи забыты», а они остались на диске — и он уйдёт с этим,
+        // не имея никакой причины проверять.
+        return writeBlob();
     }
 
 } // namespace DeviceCredentials

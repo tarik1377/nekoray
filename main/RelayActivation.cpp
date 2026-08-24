@@ -112,7 +112,7 @@ namespace RelayActivation {
         return out;
     }
 
-    void Forget() { DeviceCredentials::Wipe(); }
+    bool Forget() { return DeviceCredentials::Wipe(); }
 
     int EnsureProfile() {
         // Уже есть — возвращаем его. Ищем по типу, а не по имени: имя человек

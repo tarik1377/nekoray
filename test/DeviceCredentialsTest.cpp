@@ -128,9 +128,33 @@ int main(int argc, char *argv[]) {
         is("в файле нет даже имён полей", !raw.contains("endpoint") && !raw.contains("bucket"));
     }
 
+    // ---- ключ сессии не сносит уже выданные реквизиты ----
+    //
+    // Проверка на ОПАСНЫЙ АЛЬТЕРНАТИВНЫЙ СПОСОБ починить активацию. Дефект был в
+    // том, что Redeem звал Save(token, {}), а Save отвергает пустую
+    // конфигурацию, — и напрашивающаяся правка «разрешить Save пустую issued»
+    // выглядит проще, чем отдельный SaveToken. Она чинит первый шаг и ломает
+    // повторную активацию: обмен кода стирал бы рабочие реквизиты ещё до того,
+    // как выяснится, что новые получить не удалось.
+    {
+        const auto keptBucket = DeviceCredentials::Field("bucket");
+        const bool wasOn = DeviceCredentials::IsProvisioned();
+        DeviceCredentials::SaveToken("token-vtoroj-raz");
+
+        is("новый ключ сессии не трогает выданные реквизиты",
+           wasOn && DeviceCredentials::IsProvisioned());
+        is("и не трогает их содержимое", DeviceCredentials::Field("bucket") == keptBucket);
+        is("и не трогает состояние",
+           DeviceCredentials::CurrentState() == DeviceCredentials::Active);
+        is("а сам ключ при этом заменился",
+           DeviceCredentials::Token() == "token-vtoroj-raz");
+    }
+
     // ---- стирание ----
 
-    DeviceCredentials::Wipe();
+    // Результат возвращается наружу: человеку сказано вслух «ключи забыты», и
+    // молчащая неудача здесь — единственная ложь, которую он не заметит сам.
+    is("стирание отчитывается об успехе", DeviceCredentials::Wipe());
     is("после стирания реквизитов нет", !DeviceCredentials::IsProvisioned());
     is("поле пусто", DeviceCredentials::Field("bucket").isEmpty());
     is("токен пуст", DeviceCredentials::Token().isEmpty());
@@ -146,6 +170,67 @@ int main(int argc, char *argv[]) {
        DeviceCredentials::CurrentState() == DeviceCredentials::Expired);
     is("и объяснение вместе с ним", DeviceCredentials::StateDetail() == "Подписка закончилась");
     is("реквизиты при этом не появились", !DeviceCredentials::IsProvisioned());
+
+    // ---- неудачная запись НЕ ТРОГАЕТ то, что уже лежит на диске ----
+    //
+    // ГЛАВНАЯ ПРОВЕРКА НАБОРА ПОСЛЕ ПЕРЕХОДА НА QSaveFile.
+    //
+    // Прежняя запись шла через remove(device.dat) + rename(tmp) и оставляла
+    // окно, в котором на диске нет НИ ОДНОГО файла. Открывалось оно не только
+    // обрывом питания: достаточно, чтобы временный файл держал антивирус или
+    // индексатор, — и Qt, не сумев удалить источник, удаляла только что
+    // созданный приёмник. Ни одного сбоя не произошло, а device.dat пропал.
+    //
+    // Цена пропажи — не «активируйтесь заново». DeviceId() заводит НОВЫЙ
+    // идентификатор, сайт видит незнакомое устройство и отвечает «лимит
+    // устройств»: человек упирается в потолок тарифа на ровном месте.
+    //
+    // ЧТО ЭТА ПРОВЕРКА ДОКАЗЫВАЕТ, А ЧТО НЕТ — без прикрас. Она удерживает
+    // СВОЙСТВО: неудачная запись не трогает лежащее и отчитывается об отказе.
+    // Она НЕ воспроизводит прежнюю поломку: там посторонний держал временный
+    // файл, а не целевой, и повторить это уже нечем — предсказуемого имени
+    // рядом с device.dat больше не существует. Ровно поэтому ниже стоит вторая
+    // проверка: она следит за тем, чтобы такое имя не завелось снова.
+    //
+    // Проверяется ФАЙЛ, а не значение из памяти: блоб живёт в процессе и ответил
+    // бы верно даже на потерянном файле.
+#ifdef Q_OS_WIN
+    {
+        const QString file = QDir(tmp.path()).filePath("device.dat");
+        const auto readFile = [&] {
+            QFile f(file);
+            return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+        };
+
+        const auto before = readFile();
+        is("файл до опыта на месте", !before.isEmpty());
+
+        // dwShareMode = 0 — ни чтения, ни записи, ни удаления другим. Именно так
+        // держит файл проверяющая программа, и именно на этом прежняя запись
+        // теряла device.dat целиком.
+        HANDLE hold = CreateFileW(reinterpret_cast<const wchar_t *>(file.utf16()),
+                                  GENERIC_READ, 0, nullptr, OPEN_EXISTING,
+                                  FILE_ATTRIBUTE_NORMAL, nullptr);
+        is("посторонний держит файл", hold != INVALID_HANDLE_VALUE);
+
+        const bool wrote = DeviceCredentials::Remember(DeviceCredentials::Limit, "опыт");
+        if (hold != INVALID_HANDLE_VALUE) CloseHandle(hold);
+
+        is("отказ записи виден вызывающему", !wrote);
+        is("а прежний файл остался цел", readFile() == before);
+
+        // СТОРОЖ ПРОТИВ ВОЗВРАТА К ПРЕЖНЕМУ ПРИЁМУ.
+        //
+        // Поломка жила в связке «пишем в device.dat.tmp, потом заменяем»: имя
+        // предсказуемое, замена неатомарная, и неудача уносила оба файла.
+        // QSaveFile берёт случайное имя и убирает его за собой при любом
+        // исходе. Мусор рядом означает, что кто-то вернул ручную схему, — и
+        // тогда вернётся и потеря идентификатора.
+        const auto debris = QDir(tmp.path()).entryList(QDir::Files | QDir::Hidden);
+        is("после отказа рядом не осталось обломков",
+           debris.size() == 1 && debris.first() == "device.dat");
+    }
+#endif
 
 
     // ---- разбор ответов сайта ----
