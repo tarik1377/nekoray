@@ -53,9 +53,19 @@ namespace RelayActivation {
 
         // Сеть не ответила — это НЕ отказ в доступе. Состояние не трогаем.
         if (status == 0) {
+            // ТЕКСТ БИБЛИОТЕКИ ЧЕЛОВЕКУ НЕ ПОКАЗЫВАЕТСЯ. Здесь к сообщению
+            // приклеивался networkError, а это английская строка Qt вида
+            // «Host verdantvibe.ru not found» или «Operation canceled» — без
+            // единого действия и на чужом языке. Хуже: та же строка потом
+            // сохранялась и показывалась в редакторе профиля как СОСТОЯНИЕ
+            // ДОСТУПА, то есть человек через неделю видел там обрывок ошибки
+            // сети вместо ответа на вопрос «есть ли у меня доступ».
+            //
+            // Подробность нужна поддержке, а не человеку, — она уходит в журнал
+            // выше по стеку.
             return fail(DeviceCredentials::CurrentState(),
-                        networkError.isEmpty() ? QStringLiteral("Не удалось связаться с сайтом")
-                                               : QStringLiteral("Не удалось связаться с сайтом: ") + networkError);
+                        QStringLiteral("Не удалось связаться с сайтом. "
+                                       "Проверьте интернет и попробуйте ещё раз."));
         }
 
         const auto o = parse(body);
@@ -75,9 +85,14 @@ namespace RelayActivation {
                         QStringLiteral("Слишком много попыток. Подождите минуту и попробуйте снова."));
         }
         if (status < 200 || status >= 300) {
+            // Код ответа человеку не показывается: «502» ему не говорит ничего,
+            // ровно как и «402», ради избавления от которого этот разбор и
+            // писался. Число нужно поддержке и уходит в журнал.
             const auto said = saidBySite(o);
             return fail(DeviceCredentials::CurrentState(),
-                        said.isEmpty() ? QStringLiteral("Сайт ответил ошибкой %1").arg(status) : said);
+                        said.isEmpty() ? QStringLiteral("Сайт временно не отвечает. "
+                                                        "Попробуйте через несколько минут.")
+                                       : said);
         }
 
         const auto got = o.value("token").toString().trimmed();
@@ -105,8 +120,10 @@ namespace RelayActivation {
             // Сбой сети не доказывает, что доступ кончился: реквизиты остаются
             // на месте, состояние прежнее. Ровно этим 0 отличается от 402.
             return fail(DeviceCredentials::CurrentState(),
-                        networkError.isEmpty() ? QStringLiteral("Не удалось связаться с сайтом")
-                                               : QStringLiteral("Не удалось связаться с сайтом: ") + networkError);
+                        // Английский текст библиотеки человеку не показываем —
+                        // см. тот же случай в InterpretRedeem.
+                        QStringLiteral("Не удалось связаться с сайтом. "
+                                       "Проверьте интернет и попробуйте ещё раз."));
         }
 
         const auto o = parse(body);
@@ -156,7 +173,7 @@ namespace RelayActivation {
         if (status < 200 || status >= 300) {
             const auto said = saidBySite(o);
             return fail(DeviceCredentials::CurrentState(),
-                        said.isEmpty() ? QStringLiteral("Сайт ответил ошибкой %1").arg(status) : said);
+                        said.isEmpty() ? QStringLiteral("Сайт временно не отвечает. Попробуйте через несколько минут.") : said);
         }
 
         if (!DeviceCredentials::Complete(o)) {

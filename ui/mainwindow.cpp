@@ -1071,10 +1071,17 @@ void MainWindow::refresh_status(const QString &traffic_update) {
             pillColor = QStringLiteral("#3B82F6");
         }
         ui->label_conn_pill->setText(pillText);
+        // Пункт «Починить сеть Windows» на маке и в Linux СПРЯТАН, поэтому
+        // звать по имени в него можно только на Windows. Человек, открывший
+        // меню и не нашедший названного, решает, что у него сломано меню или не
+        // та версия, — и это хуже, чем не подсказать вовсе.
         ui->label_conn_pill->setToolTip(noTraffic
                                             ? tr("Соединение с сервером есть, но сайты не грузятся. "
                                                  "Частые причины: QUIC/DoH в браузере, DPI, посторонний "
-                                                 "перехватчик. Попробуйте «Починить сеть Windows» или «Диагностику».")
+                                                 "перехватчик. Попробуйте «Диагностику».")
+#ifdef Q_OS_WIN
+                                                  + tr(" Или «Починить сеть Windows».")
+#endif
                                             : QString());
         ui->label_conn_pill->setStyleSheet(QStringLiteral(
             "QLabel#label_conn_pill{border-radius:9px;padding:2px 10px;color:white;background:%1;}")
@@ -1884,8 +1891,14 @@ void MainWindow::run_diagnostics() {
                 verdict = tr("Сервер отвечает, но TLS не проходит — вероятна фильтрация (DPI). Попробуйте другой сервер или порт 443.");
             else if (tunnelTested && !tunnelOk)
                 verdict = tr("VPN подключён, но трафик через него не проходит. Частые причины: QUIC/DoH "
-                             "в браузере или посторонний перехватчик (Zapret/GoodbyeDPI/WARP). "
-                             "Нажмите «Починить сеть Windows» в меню «Зелёный Ритм».");
+                             "в браузере или посторонний перехватчик (Zapret/GoodbyeDPI/WARP).")
+#ifdef Q_OS_WIN
+                          // Только на Windows: вне её этого пункта в меню нет.
+                          + tr(" Нажмите «Починить сеть Windows» в меню «Зелёный Ритм».")
+#else
+                          + tr(" Проверьте, не запущен ли рядом другой VPN, и отключите его.")
+#endif
+                    ;
             else if (tunnelTested && tunnelOk)
                 verdict = tr("Всё работает — трафик идёт через VPN, внешний IP: %1.").arg(exitIp.isEmpty() ? "—" : exitIp);
             else
@@ -2033,15 +2046,51 @@ void MainWindow::disable_extra_adapters() {
                                        "Disable-NetAdapter -Confirm:$false }")
                             .arg(indexes.join(","));
 
-    WinCommander::runProcessElevated("powershell",
-                                     {"-NoProfile", "-NonInteractive", "-Command", script});
+    const auto rc = WinCommander::runProcessElevated(
+        "powershell", {"-NoProfile", "-NonInteractive", "-Command", script});
 
-    MW_show_log(tr("Отключены сетевые адаптеры: %1").arg(chosen.join(", ")));
-    QMessageBox::information(
-        this, tr("Сетевые адаптеры"),
-        tr("Отключено: %1.\n\nВключить обратно можно в «Сетевых подключениях» Windows "
-           "или командой Enable-NetAdapter.")
-            .arg(chosen.join(", ")));
+    /*
+     * ОТЧИТЫВАЕМСЯ ПО ФАКТУ, А НЕ ПО НАМЕРЕНИЮ.
+     *
+     * Здесь безусловно говорилось «Отключено: …». Человек, отказавшийся от
+     * запроса прав администратора, видел то же самое сообщение — и уходил
+     * уверенный, что чужой туннель погашен. Дальше он искал причину «не
+     * подключается» где угодно, только не там.
+     *
+     * Поэтому состояние перечитывается заново: называем только те адаптеры,
+     * которых в списке чужих туннелей больше НЕТ. Это дороже на один запрос,
+     * зато сказанное человеку соответствует тому, что на самом деле произошло.
+     */
+    QStringList still;
+    for (const auto &t: NekoGui_sys::DetectForeignTunnels()) {
+        if (chosen.contains(t.name)) still << t.name;
+    }
+
+    QStringList gone;
+    for (const auto &name: chosen) {
+        if (!still.contains(name)) gone << name;
+    }
+
+    if (gone.isEmpty()) {
+        MW_show_log(tr("Ни один адаптер не отключён."));
+        QMessageBox::warning(
+            this, tr("Сетевые адаптеры"),
+            rc != 0 ? tr("Ничего не отключено — запрос прав администратора не подтверждён.")
+                    : tr("Ничего не отключено. Возможно, адаптером управляет другая программа."));
+        return;
+    }
+
+    MW_show_log(tr("Отключены сетевые адаптеры: %1").arg(gone.join(", ")));
+
+    QString text = tr("Отключено: %1.\n\n"
+                      "Включить обратно можно в «Сетевых подключениях» Windows "
+                      "или командой Enable-NetAdapter.")
+                       .arg(gone.join(", "));
+    if (!still.isEmpty()) {
+        // Частичный исход — тоже исход, и молчать о нём нельзя.
+        text += tr("\n\nНе удалось отключить: %1.").arg(still.join(", "));
+    }
+    QMessageBox::information(this, tr("Сетевые адаптеры"), text);
 #endif
 }
 

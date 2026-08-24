@@ -155,13 +155,22 @@ DialogRelayActivate::DialogRelayActivate(QWidget *parent) : QDialog(parent), ui(
                         : tr("Не удалось стереть ключи — они остались на этом устройстве. "
                              "Попробуйте ещё раз."),
                    !gone);
-        showAction({}, {});
+        // Кнопку НЕ гасим: repaintState выше уже поставила «Взять код», и это
+        // ровно следующий шаг для того, кто только что отключился и захочет
+        // включить обратно. Прежде она здесь безусловно стиралась.
     });
 
     connect(ui->close, &QPushButton::clicked, this, &QDialog::accept);
     connect(ui->action, &QPushButton::clicked, this, [this] {
         if (!actionUrl.isEmpty()) QDesktopServices::openUrl(QUrl(actionUrl));
     });
+
+    // Строка результата и кнопка действия при открытии пусты. Без этого вызова
+    // кнопка оставалась ВИДИМОЙ и БЕЗ ТЕКСТА — пустая рамка рядом с пустой
+    // строкой: в вёрстке она не скрыта, а showAction её прячет только при
+    // пустом тексте, и до первого нажатия он туда не попадал ни разу.
+    showResult({}, false);
+    showAction({}, {});
 
     repaintState();
     ui->code->setFocus();
@@ -224,6 +233,34 @@ void DialogRelayActivate::repaintState() {
     // решает считать её разметкой, стоит там появиться угловой скобке.
     ui->state->setTextFormat(Qt::PlainText);
     ui->state->setText(stateLine());
+
+    /*
+     * ДЕЙСТВИЕ ВОССТАНАВЛИВАЕТСЯ ПО СОХРАНЁННОМУ СОСТОЯНИЮ.
+     *
+     * Кнопка появлялась только как ответ на свежий запрос. Человек, у которого
+     * подписка кончилась вчера, открывал окно, читал крупными буквами
+     * «Подписка закончилась» — и не находил, чем это лечится: кнопки
+     * «Продлить» не было, потому что никакого запроса он ещё не делал.
+     *
+     * Состояние мы храним, значит и действие к нему обязаны показать сразу.
+     */
+    switch (DeviceCredentials::CurrentState()) {
+        case DeviceCredentials::Expired:
+            showAction(tr("Продлить"), RelayActivation::ProfileUrl());
+            break;
+        case DeviceCredentials::SignedOut:
+        case DeviceCredentials::Unknown:
+            showAction(tr("Взять код"), RelayActivation::ProfileUrl());
+            break;
+        case DeviceCredentials::Limit:
+            // Отключать чужое устройство отсюда нечем — это делается в
+            // кабинете, туда и ведём.
+            showAction(tr("Управлять устройствами"), RelayActivation::ProfileUrl());
+            break;
+        default:
+            showAction({}, {});
+            break;
+    }
 
     const bool on = DeviceCredentials::IsProvisioned();
     ui->forget->setEnabled(on);
