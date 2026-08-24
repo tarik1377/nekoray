@@ -37,6 +37,7 @@ private:
     /** Куда ведёт кнопка действия, когда она видна. */
     QString actionUrl;
 
+    void dressUp();
     void repaintState();
     void setBusy(bool on);
     void showResult(const QString &text, bool bad);

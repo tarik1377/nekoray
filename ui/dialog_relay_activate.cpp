@@ -6,10 +6,20 @@
 #include "main/RelayActivation.hpp"
 
 #include <QDesktopServices>
+#include <QFontDatabase>
 #include <QMessageBox>
 #include <QUrl>
 
+#include <QGraphicsOpacityEffect>
+
 namespace {
+    /** Приглушить, не трогая цвет: он принадлежит теме, а тем несколько. */
+    void dim(QWidget *w, qreal amount) {
+        auto *fade = new QGraphicsOpacityEffect(w);
+        fade->setOpacity(amount);
+        w->setGraphicsEffect(fade);
+    }
+
     /**
      * Состояние — своими словами и с действием, а не кодом ответа.
      *
@@ -22,23 +32,24 @@ namespace {
         const auto detail = DeviceCredentials::StateDetail();
         switch (DeviceCredentials::CurrentState()) {
             case DeviceCredentials::Active:
-                return QObject::tr("Подключено к вашей подписке.");
+                return QObject::tr("Подключено к вашей подписке");
             case DeviceCredentials::Expired:
-                return detail.isEmpty() ? QObject::tr("Подписка закончилась.") : detail;
+                return detail.isEmpty() ? QObject::tr("Подписка закончилась") : detail;
             case DeviceCredentials::Limit:
-                return detail.isEmpty() ? QObject::tr("Достигнут лимит устройств по тарифу.") : detail;
+                return detail.isEmpty() ? QObject::tr("Достигнут лимит устройств по тарифу") : detail;
             case DeviceCredentials::Closed:
-                return detail.isEmpty() ? QObject::tr("Пока не открыто для вашего аккаунта.") : detail;
+                return detail.isEmpty() ? QObject::tr("Пока не открыто для вашего аккаунта") : detail;
             case DeviceCredentials::SignedOut:
             case DeviceCredentials::Unknown:
             default:
-                return QObject::tr("Не активировано на этом устройстве.");
+                return QObject::tr("Не активировано на этом устройстве");
         }
     }
 } // namespace
 
 DialogRelayActivate::DialogRelayActivate(QWidget *parent) : QDialog(parent), ui(new Ui::DialogRelayActivate) {
     ui->setupUi(this);
+    dressUp();
 
     // Код на сайте — восемь знаков в верхнем регистре. Приводим на лету, чтобы
     // человек, вставивший его строчными, не получил «код не подошёл» от того,
@@ -122,6 +133,55 @@ DialogRelayActivate::DialogRelayActivate(QWidget *parent) : QDialog(parent), ui(
 }
 
 DialogRelayActivate::~DialogRelayActivate() { delete ui; }
+
+/**
+ * Иерархия — размером и начертанием, а не цветом.
+ *
+ * У экрана три уровня: СОСТОЯНИЕ (что сейчас), КОД (что сделать) и всё
+ * остальное. В первой версии они весили одинаково, экран читался как анкета, и
+ * глазу не за что было зацепиться.
+ *
+ * Размеры считаются ОТ ШРИФТА ПРИЛОЖЕНИЯ, а не задаются числом: человек мог
+ * увеличить системный шрифт, и жёсткие пункты сломали бы ему всю разметку.
+ * Цвета не трогаются вовсе — их задаёт тема, а тем в приложении несколько.
+ * Приглушённое берётся из палитры (mid), она есть у любой темы.
+ */
+void DialogRelayActivate::dressUp() {
+    const auto base = font();
+
+    QFont big = base;
+    big.setPointSize(base.pointSize() + 3);
+    big.setBold(true);
+    ui->state->setFont(big);
+
+    QFont small = base;
+    small.setPointSize(qMax(base.pointSize() - 1, 7));
+    ui->hint->setFont(small);
+    ui->footnote->setFont(small);
+    // ПРИГЛУШЕНИЕ — ПРОЗРАЧНОСТЬЮ, А НЕ ЦВЕТОМ. Первая версия ставила
+    // color: palette(mid), и на тёмной теме это оказался почти чёрный: и
+    // подсказка, и сноска стали нечитаемы. Ровно та же ошибка, что была со
+    // ссылкой «Продлить», — палитра у каждой темы своя, и роль mid значит в
+    // них разное. Прозрачность отсчитывается от того цвета, который тема уже
+    // назначила тексту, поэтому работает и на тёмной, и на светлой.
+    dim(ui->hint, 0.72);
+    dim(ui->footnote, 0.62);
+
+    // Поле кода — герой экрана: восемь знаков, которые человек переписывает
+    // с сайта. Моноширинный с разрядкой, потому что читают его посимвольно и
+    // сверяют глазами; в обычном шрифте O и 0 в такой задаче не различить.
+    QFont mono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    mono.setPointSize(base.pointSize() + 9);
+    mono.setBold(true);
+    mono.setLetterSpacing(QFont::AbsoluteSpacing, 6);
+    ui->code->setFont(mono);
+
+    // Кнопка «получить код» — не действие экрана, а подсказка, куда идти.
+    // Плоской её делать нечем (тема рисует все QPushButton одинаково), поэтому
+    // хотя бы не даём ей соперничать размером с «Активировать».
+    QFont link = small;
+    ui->getCode->setFont(link);
+}
 
 void DialogRelayActivate::repaintState() {
     ui->state->setText(stateLine());

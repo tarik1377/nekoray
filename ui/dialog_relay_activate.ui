@@ -6,24 +6,29 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>460</width>
-    <height>300</height>
+    <width>440</width>
+    <height>340</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Резервное подключение</string>
   </property>
   <layout class="QVBoxLayout" name="root">
-   <item>
-    <widget class="QLabel" name="lead">
-     <property name="text">
-      <string>Работает там, где обычные серверы перестают проходить. Отдельной настройки не требует.</string>
-     </property>
-     <property name="wordWrap">
-      <bool>true</bool>
-     </property>
-    </widget>
-   </item>
+   <property name="spacing">
+    <number>14</number>
+   </property>
+   <property name="leftMargin">
+    <number>22</number>
+   </property>
+   <property name="topMargin">
+    <number>20</number>
+   </property>
+   <property name="rightMargin">
+    <number>22</number>
+   </property>
+   <property name="bottomMargin">
+    <number>18</number>
+   </property>
    <item>
     <widget class="QLabel" name="state">
      <property name="text">
@@ -32,25 +37,12 @@
      <property name="wordWrap">
       <bool>true</bool>
      </property>
-     <property name="textInteractionFlags">
-      <set>Qt::TextBrowserInteraction</set>
-     </property>
     </widget>
    </item>
    <item>
-    <widget class="QFrame" name="line">
-     <property name="frameShape">
-      <enum>QFrame::HLine</enum>
-     </property>
-     <property name="frameShadow">
-      <enum>QFrame::Sunken</enum>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QLabel" name="how">
+    <widget class="QLabel" name="hint">
      <property name="text">
-      <string>Возьмите код в личном кабинете и введите его здесь. Код одноразовый и живёт 5 минут.</string>
+      <string>Возьмите код в личном кабинете. Он одноразовый и живёт 5 минут.</string>
      </property>
      <property name="wordWrap">
       <bool>true</bool>
@@ -58,25 +50,38 @@
     </widget>
    </item>
    <item>
-    <layout class="QHBoxLayout" name="codeRow">
+    <widget class="QLineEdit" name="code">
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>52</height>
+      </size>
+     </property>
+     <property name="maxLength">
+      <number>8</number>
+     </property>
+     <property name="placeholderText">
+      <string>КОД</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="getRow">
      <item>
-      <widget class="QLineEdit" name="code">
-       <property name="minimumSize">
+      <spacer name="getGap">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
         <size>
-         <width>170</width>
-         <height>0</height>
+         <width>40</width>
+         <height>20</height>
         </size>
        </property>
-       <property name="maxLength">
-        <number>8</number>
-       </property>
-       <property name="placeholderText">
-        <string>Код из кабинета</string>
-       </property>
-       <property name="alignment">
-        <set>Qt::AlignCenter</set>
-       </property>
-      </widget>
+      </spacer>
      </item>
      <item>
       <widget class="QPushButton" name="getCode">
@@ -89,6 +94,9 @@
    </item>
    <item>
     <layout class="QHBoxLayout" name="resultRow">
+     <property name="spacing">
+      <number>10</number>
+     </property>
      <item>
       <widget class="QLabel" name="result">
        <property name="text">
@@ -104,9 +112,6 @@
        <property name="text">
         <string/>
        </property>
-       <property name="visible">
-        <bool>false</bool>
-       </property>
       </widget>
      </item>
     </layout>
@@ -119,10 +124,20 @@
      <property name="sizeHint" stdset="0">
       <size>
        <width>20</width>
-       <height>10</height>
+       <height>8</height>
       </size>
      </property>
     </spacer>
+   </item>
+   <item>
+    <widget class="QLabel" name="footnote">
+     <property name="text">
+      <string>Резервное подключение работает там, где обычные серверы перестают проходить. Отдельной настройки не требует.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
    </item>
    <item>
     <layout class="QHBoxLayout" name="buttons">

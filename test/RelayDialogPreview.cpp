@@ -14,6 +14,9 @@
 
 #include <QApplication>
 #include <QDialog>
+#include <QFile>
+#include <QFontDatabase>
+#include <QGraphicsOpacityEffect>
 #include <QPixmap>
 
 int main(int argc, char *argv[]) {
@@ -26,13 +29,44 @@ int main(int argc, char *argv[]) {
     Ui::DialogRelayActivate ui;
     ui.setupUi(&d);
 
+    // Тема приложения — чтобы смотреть на то, что увидит человек, а не на
+    // системную серость. Файл тот же, что грузит ThemeManager.
+    QFile qss(QStringLiteral(":/neko/theme/feiyangqingyun/qss/modern.css"));
+    if (!qss.open(QIODevice::ReadOnly)) {
+        qss.setFileName(QStringLiteral("../res/theme/feiyangqingyun/qss/modern.css"));
+        qss.open(QIODevice::ReadOnly);
+    }
+    if (qss.isOpen()) d.setStyleSheet(QString::fromUtf8(qss.readAll()));
+
+    // Та же типографика, что задаёт dressUp(): набор смотрит на вёрстку, но
+    // повторять её вручную нельзя — разъедется. Повторено ровно то, что можно
+    // повторить, не таща за собой весь диалог.
+    {
+        const auto base = d.font();
+        QFont big = base; big.setPointSize(base.pointSize() + 3); big.setBold(true);
+        ui.state->setFont(big);
+        QFont small = base; small.setPointSize(qMax(base.pointSize() - 1, 7));
+        ui.hint->setFont(small); ui.footnote->setFont(small); ui.getCode->setFont(small);
+        auto fade = [](QWidget *w, qreal a) {
+            auto *e = new QGraphicsOpacityEffect(w);
+            e->setOpacity(a);
+            w->setGraphicsEffect(e);
+        };
+        fade(ui.hint, 0.72);
+        fade(ui.footnote, 0.62);
+        QFont mono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+        mono.setPointSize(base.pointSize() + 9); mono.setBold(true);
+        mono.setLetterSpacing(QFont::AbsoluteSpacing, 6);
+        ui.code->setFont(mono);
+    }
+
     if (activated) {
-        ui.state->setText(QStringLiteral("Подключено к вашей подписке."));
+        ui.state->setText(QStringLiteral("Подключено к вашей подписке"));
         ui.activate->setText(QStringLiteral("Активировать заново"));
         ui.result->setText(QStringLiteral("Готово. Резервное подключение активировано."));
         ui.action->setVisible(false);
     } else {
-        ui.state->setText(QStringLiteral("Не активировано на этом устройстве."));
+        ui.state->setText(QStringLiteral("Не активировано"));
         ui.forget->setEnabled(false);
         ui.result->setTextFormat(Qt::RichText);
         ui.result->setText(QStringLiteral(
