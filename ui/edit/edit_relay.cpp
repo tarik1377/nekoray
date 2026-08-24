@@ -25,6 +25,11 @@ EditRelay::EditRelay(QWidget *parent) : QWidget(parent), ui(new Ui::EditRelay) {
 EditRelay::~EditRelay() { delete ui; }
 
 void EditRelay::repaintState() {
+    // Простой текст явно: ниже сюда попадает сохранённый ответ сайта, а формат
+    // по умолчанию — AutoText, и QLabel сам решит считать его разметкой, стоит
+    // там появиться угловой скобке. Съедено при этом будет ровно то, ради чего
+    // сообщение писали, — например, имя устройства, занявшего слот.
+    ui->access->setTextFormat(Qt::PlainText);
     if (DeviceCredentials::IsProvisioned()) {
         ui->access->setText(tr("Доступ активен."));
         ui->activate->setText(tr("Изменить…"));

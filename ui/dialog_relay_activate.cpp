@@ -85,29 +85,51 @@ DialogRelayActivate::DialogRelayActivate(QWidget *parent) : QDialog(parent), ui(
         // В отдельном потоке: оба запроса блокирующие, а замерший на десять
         // секунд диалог человек считает зависшим и закрывает — посреди обмена
         // одноразового кода, который после этого уже потрачен.
-        runOnNewThread([this, code] {
-            auto out = RelayActivation::Redeem(code);
-            if (out.ok) out = RelayActivation::Provision();
+        //
+        // Задание заводится ЗДЕСЬ, до старта потока, и живёт в куче: поток не
+        // должен держать указателя на диалог, который стоит на стеке
+        // вызывающего и закрывается кнопкой прямо во время обмена. Подробно —
+        // в шапке RelayActivateJob.
+        auto *job = new RelayActivateJob();
 
-            runOnUiThread([this, out] {
-                setBusy(false);
-                repaintState();
-                if (out.ok) {
-                    // Профиль заводится здесь же: активация без него ничего не
-                    // даёт — человек увидел бы «готово» и не нашёл, что нажать.
-                    const int id = RelayActivation::EnsureProfile();
-                    showResult(id >= 0
-                                   ? tr("Готово. Резервное подключение добавлено в список.")
-                                   : tr("Готово, но профиль завести не удалось — добавьте его вручную."),
-                               id < 0);
-                    showAction({}, {});
-                    ui->code->clear();
-                    if (id >= 0) profileAdded = true;
-                    return;
-                }
-                showResult(out.detail, true);
-                showAction(out.actionText, out.actionUrl);
-            }, this);
+        // Получателем указан диалог. Это и есть защита: связь с разрушенным
+        // получателем Qt рвёт в его деструкторе, под мьютексом, и отбрасывает
+        // уже поставленное событие. Проверять указатель самим бесполезно —
+        // объект может умереть между проверкой и обращением.
+        connect(job, &RelayActivateJob::done, this, [this, job] {
+            const auto out = job->out;
+            setBusy(false);
+            repaintState();
+            if (out.ok) {
+                // Профиль заводится здесь же: активация без него ничего не
+                // даёт — человек увидел бы «готово» и не нашёл, что нажать.
+                const int id = RelayActivation::EnsureProfile();
+                showResult(id >= 0
+                               ? tr("Готово. Резервное подключение добавлено в список.")
+                               : tr("Готово, но профиль завести не удалось — добавьте его вручную."),
+                           id < 0);
+                showAction({}, {});
+                ui->code->clear();
+                if (id >= 0) profileAdded = true;
+                return;
+            }
+            showResult(out.detail, true);
+            showAction(out.actionText, out.actionUrl);
+        });
+
+        // Порядок подписок значим: обе очереди складываются в одну и разбираются
+        // по порядку, поэтому обработчик выше отработает раньше самоудаления. И
+        // это единственная подписка, которая обязана сработать ВСЕГДА, — иначе
+        // закрытый диалог оставлял бы задание в памяти навсегда.
+        connect(job, &RelayActivateJob::done, job, &QObject::deleteLater);
+
+        runOnNewThread([job, code] {
+            job->out = RelayActivation::Redeem(code);
+            if (job->out.ok) job->out = RelayActivation::Provision();
+            // Сигнал из чужого потока — Qt сам поставит вызов в очередь того
+            // потока, где задание заведено. Если диалога уже нет, здесь просто
+            // никого не окажется на другом конце.
+            emit job->done();
         });
     });
 
@@ -124,9 +146,15 @@ DialogRelayActivate::DialogRelayActivate(QWidget *parent) : QDialog(parent), ui(
         ask.exec();
         if (ask.clickedButton() != go) return;
 
-        RelayActivation::Forget();
+        const bool gone = RelayActivation::Forget();
         repaintState();
-        showResult(tr("Отключено. Ключи этого устройства забыты."), false);
+        // Если стереть не вышло, сказать об этом обязательно: человек ушёл бы с
+        // уверенностью, что ключей на устройстве больше нет, и проверить это
+        // ему нечем.
+        showResult(gone ? tr("Отключено. Ключи этого устройства забыты.")
+                        : tr("Не удалось стереть ключи — они остались на этом устройстве. "
+                             "Попробуйте ещё раз."),
+                   !gone);
         showAction({}, {});
     });
 
@@ -191,6 +219,10 @@ void DialogRelayActivate::dressUp() {
 }
 
 void DialogRelayActivate::repaintState() {
+    // Явно простой текст: строка собирается в том числе из сохранённого ответа
+    // сайта (StateDetail), а формат по умолчанию — AutoText, то есть QLabel сам
+    // решает считать её разметкой, стоит там появиться угловой скобке.
+    ui->state->setTextFormat(Qt::PlainText);
     ui->state->setText(stateLine());
 
     const bool on = DeviceCredentials::IsProvisioned();
@@ -225,8 +257,25 @@ void DialogRelayActivate::showAction(const QString &text, const QString &url) {
     ui->action->setVisible(!text.isEmpty() && !url.isEmpty());
 }
 
+/**
+ * ТЕКСТ САЙТА НЕ ПОПАДАЕТ В РАЗБОР HTML — начертание задаётся шрифтом.
+ *
+ * Здесь стояло setTextFormat(Qt::RichText) и <b>%1</b> с подстановкой строки,
+ * пришедшей от сайта побайтно (поле error/message/detail). Начертание так
+ * получалось, но вместе с ним QLabel начинал читать содержимое как разметку.
+ *
+ * Ежедневный вред — не подмена, а ПОТЕРЯ ПОЛОВИНЫ ЗАКОННОГО СООБЩЕНИЯ. Ответ
+ * «слот занят <ноутбук на работе>, освободите его» человек читает как «слот
+ * занят , освободите его»: угловые скобки съедены как несуществующий тег.
+ * Именно ту часть, ради которой сообщение и писали, — какое устройство занимает
+ * место, — он не увидит никогда, и ни одна строка в журнале об этом не скажет.
+ *
+ * Экранирование починило бы это тоже, но лишним оказался сам переход на
+ * разметку: замысел, записанный ниже, — выделять отказ НАЧЕРТАНИЕМ, а
+ * начертание даёт шрифт. В PlainText вопрос экранирования просто не возникает.
+ */
 void DialogRelayActivate::showResult(const QString &text, bool bad) {
-    ui->result->setTextFormat(Qt::RichText);
+    ui->result->setTextFormat(Qt::PlainText);
     // ОТКАЗ ВЫДЕЛЯЕТСЯ НАЧЕРТАНИЕМ, А НЕ ЦВЕТОМ, и это не вкусовщина.
     //
     // Своего цвета для ошибки тема проекта не определяет (modern.css знает
@@ -236,5 +285,8 @@ void DialogRelayActivate::showResult(const QString &text, bool bad) {
     // серый, неотличимый от выключенного, и ссылка «Продлить» рядом читалась
     // как недоступная. Полужирный работает в обеих темах и ничего не обещает
     // про палитру.
-    ui->result->setText(bad ? QStringLiteral("<b>%1</b>").arg(text) : text);
+    QFont f = ui->result->font();
+    f.setBold(bad);
+    ui->result->setFont(f);
+    ui->result->setText(text);
 }
