@@ -237,8 +237,27 @@ private:
     int autopilot_stage = 0;
     qint64 autopilot_cooldown_until = 0;
     bool autopilot_probing = false;
+
+    // Отход на резервное подключение и дорога обратно.
+    //
+    // ЗАЧЕМ ОТДЕЛЬНАЯ МАШИНА СОСТОЯНИЙ, а не «попробовать вернуться на
+    // следующем тике». Без выдержки и без счётчика подряд удачных проверок
+    // клиент на дрожащем канале метался бы между основным сервером и резервом
+    // каждую минуту, обрывая соединения на каждом переключении. Резерв к тому
+    // же платный по трафику: лишние возвраты стоят денег.
+    int autopilot_fallback_from = -1;   // профиль, с которого ушли; -1 — не уходили
+    qint64 autopilot_fallback_since = 0;
+    qint64 autopilot_fallback_next_probe = 0;
+    int autopilot_fallback_ok = 0;      // сколько удачных проверок основного подряд
+    int autopilot_fallback_cycles = 0;  // сколько раз ушли за последний час
+    qint64 autopilot_fallback_first = 0; // когда начался этот час
+
     void autopilot_tick();
     void autopilot_recover();
+    /** Профиль резерва в списке, или nullptr. */
+    std::shared_ptr<NekoGui::ProxyEntity> autopilot_relay_profile() const;
+    /** Проверить прежний профиль, НЕ переключаясь на него. */
+    void autopilot_probe_home();
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
