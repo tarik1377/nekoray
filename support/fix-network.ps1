@@ -16,6 +16,11 @@
 .PARAMETER Aggressive
     Дополнительно сбросить Winsock и стек TCP/IP (требует перезагрузки).
 
+.PARAMETER DisableAdapters
+    Отключить посторонние TAP/TUN-адаптеры. ПО УМОЛЧАНИЮ ВЫКЛЮЧЕНО и включать
+    стоит, только посмотрев отчёт: под это описание попадает и домашний
+    WireGuard, и рабочий туннель. Без флага скрипт их только перечисляет.
+
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File fix-network.ps1
     powershell -ExecutionPolicy Bypass -File fix-network.ps1 -Fix
@@ -24,7 +29,8 @@
 [CmdletBinding()]
 param(
     [switch]$Fix,
-    [switch]$Aggressive
+    [switch]$Aggressive,
+    [switch]$DisableAdapters
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
@@ -204,25 +210,42 @@ if ($lines) {
 } else { Ok "hosts чист" }
 
 # --- 7. Виртуальные адаптеры --------------------------------------------------
-# Лишние TAP/TUN путают выбор маршрута и ломают игры и мессенджеры.
+# ТОЛЬКО ПЕРЕЧИСЛЯЕМ. Здесь стоял Disable-NetAdapter по описанию, и домашний
+# WireGuard со split-туннелем (AllowedIPs = 192.168.1.0/24) проходил все условия:
+# описание совпадает, не sing-tun, не железо, а защита $defIdx прикрывала только
+# полный чужой туннель. Скрипт молча выключал человеку доступ к дому.
+#
+# Отбор вынесен в функцию, чтобы его можно было проверить без сетевого железа
+# (см. support/Test-ForeignAdapters.ps1). Действие живёт за отдельным флагом
+# -DisableAdapters и по умолчанию не выполняется.
+. (Join-Path $PSScriptRoot 'ForeignAdapters.ps1')
+
 Section "Виртуальные сетевые адаптеры"
+$defIdx = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty InterfaceIndex)
 $virt = Get-NetAdapter | Where-Object {
     $_.Status -eq 'Up' -and $_.InterfaceDescription -match 'TAP|TUN|WARP|WireGuard|Wintun'
 }
 if ($virt) {
-    foreach ($v in $virt) { Warn "поднят: $($v.Name) - $($v.InterfaceDescription)" }
-    Write-Host "      (наш клиент использует sing-tun; остальные лучше отключить)"
-    if ($Fix) {
-        # Never touch real hardware, and never the adapter carrying the default route.
-        # Selecting on description alone and then acting by NAME is doubly unsafe: a
-        # physical NIC whose vendor string contains one of those tokens would be disabled,
-        # and -Name is a wildcard parameter while Windows really does name adapters
-        # "Подключение по локальной сети* 2".
-        $defIdx = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
-                Select-Object -ExpandProperty InterfaceIndex)
-        foreach ($v in ($virt | Where-Object {
-                    $_.InterfaceDescription -notmatch 'sing-tun' -and
-                    -not $_.HardwareInterface -and $_.ifIndex -notin $defIdx })) {
+    foreach ($v in $virt) {
+        # Multicast и link-local отсеиваются: они есть у каждого интерфейса и
+        # ничего не говорят о том, что это за туннель. Читателю нужны подсети.
+        $pfx = @(Get-NetRoute -InterfaceIndex $v.ifIndex -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty DestinationPrefix |
+                Where-Object { $_ -notmatch '/32$' -and $_ -notmatch '/128$' -and
+                               $_ -ne '224.0.0.0/4' -and $_ -ne 'ff00::/8' -and $_ -ne 'fe80::/64' } |
+                Sort-Object -Unique)
+        if ($v.InterfaceDescription -match 'sing-tun') {
+            Ok "наш туннель: $($v.Name) - $($v.InterfaceDescription)"
+            continue
+        }
+        $tail = if ($pfx) { " - маршруты: $($pfx -join ', ')" } else { "" }
+        Warn "поднят: $($v.Name) - $($v.InterfaceDescription)$tail"
+    }
+    Write-Host "      (посторонние туннели НЕ отключаются - среди них может быть"
+    Write-Host "       ваш туннель до дома или до работы. Смотрите маршруты выше.)"
+    if ($Fix -and $DisableAdapters) {
+        foreach ($v in (Select-ForeignAdapters $virt $defIdx)) {
             Act "отключаю адаптер $($v.Name) [$($v.InterfaceDescription)]"
             Disable-NetAdapter -InputObject $v -Confirm:$false
             if ((Get-NetAdapter -InterfaceIndex $v.ifIndex -ErrorAction SilentlyContinue).Status -ne 'Disabled') {
