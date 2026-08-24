@@ -122,7 +122,21 @@ else { Add "  не найдено" }
 $other = Get-NetAdapter | Where-Object {
     $_.Status -eq 'Up' -and $_.InterfaceDescription -match 'TAP|WireGuard|Wintun|WARP|Outline' -and $_.InterfaceDescription -notmatch 'sing-tun'
 }
-if ($other) { foreach ($a in $other) { Add ("  посторонний адаптер включён: " + $a.Name + " [" + $a.InterfaceDescription + "]") } }
+# Маршруты называются вместе с адаптером намеренно. По ним видно, ЧТО это за
+# туннель: 192.168.x или 10.x — домашний или рабочий, и трогать его нельзя.
+# Раньше «Починить сеть Windows» такие адаптеры выключала; теперь не выключает,
+# и отчёт обязан показывать, что они на месте, — иначе регресс вернётся
+# незамеченным, как и появился.
+if ($other) {
+    foreach ($a in $other) {
+        $pfx = @(Get-NetRoute -InterfaceIndex $a.ifIndex -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty DestinationPrefix |
+                Where-Object { $_ -notmatch '/32$' -and $_ -notmatch '/128$' } |
+                Sort-Object -Unique)
+        $tail = if ($pfx) { "  маршруты: " + ($pfx -join ', ') } else { "" }
+        Add ("  посторонний адаптер включён: " + $a.Name + " [" + $a.InterfaceDescription + "]" + $tail)
+    }
+}
 
 # --- 7. Решающий тест ------------------------------------------------------
 # Один и тот же адрес двумя путями. Если через прокси работает, а через систему

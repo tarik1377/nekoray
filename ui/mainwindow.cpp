@@ -1806,8 +1806,10 @@ void MainWindow::repair_windows_network() {
                        "Будут убраны:\n"
                        "• драйверы-перехватчики (WinDivert и подобные);\n"
                        "• их службы, задания и записи автозапуска;\n"
-                       "• посторонние VPN-адаптеры;\n"
-                       "• зависший прокси, мёртвый DNS, кэш DNS, Winsock и стек TCP/IP.\n\n"
+                       "• зависший прокси, мёртвый DNS и кэш DNS.\n\n"
+                       "Другие VPN НЕ отключаются: если рядом поднят туннель до дома "
+                       "или до работы, он продолжит работать. Найденные туннели будут "
+                       "просто перечислены в отчёте.\n\n"
                        "Ваши файлы, пароли и файл hosts НЕ затрагиваются.\n\n"
                        "Нужны права администратора и перезагрузка. Продолжить?"),
                     QMessageBox::NoButton, this);
@@ -1823,7 +1825,10 @@ void MainWindow::repair_windows_network() {
     //  - Its WinDivert driver keeps filtering TCP until a reboot even after the files
     //    are gone, which is why the reboot below is not optional.
     //  - Foreign TUN/TAP adapters (a stale outline-tap0 among them) keep their own DNS
-    //    and compete for routing; ours is excluded by name so we never disable it.
+    //    and compete for routing. Раньше их отключали; теперь только называют в
+    //    отчёте — почему, подробно у самого прохода ниже. Мёртвый резолвер такого
+    //    адаптера при этом всё равно чинится: его ловит отдельная проверка
+    //    loopback-DNS, и для неё адаптер выключать не нужно.
     //  - hosts is never touched: a real machine had legitimate work entries in it.
     // Two passes. Most of the work needs admin rights, but two things must run as the
     // logged-in customer, not the elevating admin: the per-user system proxy and the
@@ -1847,15 +1852,36 @@ void MainWindow::repair_windows_network() {
     //  - kill-switch WFP filters, the ndisrd driver and browser Secure-DNS are only reported,
     //    never touched: they explain "clean machine still broken" without us deleting an
     //    antivirus or a setting the user needs.
-    //  - the adapter pass can never touch real hardware. It used to select purely on the
-    //    description text and then act by NAME, which is two hazards at once: a physical
-    //    NIC whose description happens to carry one of the tokens would be disabled, and
-    //    Disable-NetAdapter -Name treats its argument as a WILDCARD — and Windows really
-    //    does name adapters "Подключение по локальной сети* 2". A report naming
-    //    "Ethernet 2" (which on the dev box is the physical Intel NIC) is what prompted
-    //    this. Now: virtual adapters only, never the one carrying the default route,
-    //    acted on by object rather than by name, and the log records the description and
-    //    whether the adapter actually ended up disabled instead of assuming it did.
+    //  - ЧУЖИЕ АДАПТЕРЫ БОЛЬШЕ НЕ ОТКЛЮЧАЮТСЯ, ТОЛЬКО НАЗЫВАЮТСЯ. Здесь стоял
+    //    Disable-NetAdapter по всему, чьё описание совпадало с 'TAP|TUN|WireGuard|
+    //    Wintun|WARP|Outline'. Защита была одна — не трогать несущего маршрут по
+    //    умолчанию, — и она прикрывала только ПОЛНЫЙ чужой туннель. Домашний
+    //    WireGuard с AllowedIPs = 192.168.1.0/24 проходил все условия и выключался:
+    //    описание совпадает, не sing-tun, не железо, 0.0.0.0/0 у него нет. Владелец
+    //    сообщил об этом словами «чтобы он не убивал второй интерфейс, который
+    //    поднимается туннелем до дома».
+    //
+    //    Убрано целиком, а не подправлен список слов: 'Wintun' совпадает с
+    //    WireGuard и без токена 'WireGuard', а 'TUN' совпадает подстрокой почти со
+    //    всем. Правка одного слова закрыла бы один случай и оставила мину.
+    //
+    //    Отключение и не было нужно для задачи этой функции. Она снимает
+    //    Zapret/GoodbyeDPI/WARP, и они вычищаются выше — по службам, драйверам,
+    //    процессам, заданиям и автозапуску. Адаптер, за которым не осталось живой
+    //    службы, трафик не перехватывает: он просто висит. То есть платили риском
+    //    убить чужую рабочую сеть за нулевой выигрыш, причём необратимо для
+    //    человека: включить адаптер обратно приложение не умеет.
+    //
+    //    Теперь такой адаптер попадает в отчёт вместе со своими маршрутами — тем
+    //    же приёмом, каким уже сообщается про WFP-фильтры и ndisrd. Оператор видит
+    //    достаточно, чтобы принять решение сам. Осознанное отключение живёт
+    //    отдельным пунктом меню, где список показывается с галочками.
+    //  - 'netsh winsock reset' ВЫПОЛНЯЕТСЯ НЕ ВСЕГДА. Он шёл безусловно, даже когда
+    //    весь проход не нашёл ничего: обнулял каталог LSP (а там бывают записи
+    //    корпоративного антивируса) и требовал перезагрузки в ответ на «у меня всё
+    //    чисто». Теперь только если сняли фильтрующий драйвер или нашли ndisrd —
+    //    то есть когда есть что чинить. Тот же довод, что и у адаптеров:
+    //    разрушительное действие без доказательства, что оно нужно.
     //  - 'netsh int ip reset' is skipped when a PHYSICAL adapter has a static IP (offices),
     //    so we do not wipe a fixed LAN address; Hyper-V/WSL virtual adapters do not count.
     //  - hosts is never touched: real customers had legitimate work entries in it.
@@ -1879,10 +1905,11 @@ if($u.Count){$u -join [Environment]::NewLine}
 param([string]$Report)
 $ErrorActionPreference='SilentlyContinue'
 $log=@()
+$lsp=$false
 $t='winws|windivert|zapret|goodbyedpi|byedpi|ciadpi|proxifyre|spoofdpi|powertunnel'
 foreach($s in Get-CimInstance Win32_Service | Where-Object {$_.PathName -match $t -or $_.Name -match $t -or $_.DisplayName -match $t}){$log+=('служба: '+$s.Name); sc.exe stop $s.Name|Out-Null; sc.exe config $s.Name start= disabled|Out-Null; sc.exe delete $s.Name|Out-Null}
-foreach($n in 'WinDivert','WinDivert1.4','WinDivert14'){if(Get-Service $n -EA SilentlyContinue){$log+=('драйвер: '+$n); sc.exe stop $n|Out-Null; sc.exe delete $n|Out-Null}}
-foreach($d in Get-CimInstance Win32_SystemDriver | Where-Object {$_.PathName -match 'divert|zapret|winws'}){$log+=('драйвер: '+$d.Name); sc.exe stop $d.Name|Out-Null; sc.exe delete $d.Name|Out-Null}
+foreach($n in 'WinDivert','WinDivert1.4','WinDivert14'){if(Get-Service $n -EA SilentlyContinue){$log+=('драйвер: '+$n); $lsp=$true; sc.exe stop $n|Out-Null; sc.exe delete $n|Out-Null}}
+foreach($d in Get-CimInstance Win32_SystemDriver | Where-Object {$_.PathName -match 'divert|zapret|winws'}){$log+=('драйвер: '+$d.Name); $lsp=$true; sc.exe stop $d.Name|Out-Null; sc.exe delete $d.Name|Out-Null}
 foreach($s in Get-Service | Where-Object {$_.Name -match 'warp|cloudflare|outline|amnezia' -or $_.DisplayName -match 'warp|cloudflare|outline|amnezia'}){$log+=('служба: '+$s.Name); Stop-Service $s.Name -Force; Set-Service $s.Name -StartupType Disabled}
 foreach($p in Get-Process | Where-Object {$_.ProcessName -match 'winws|goodbyedpi|zapret|byedpi|ciadpi|proxifyre|bdmanager|spoofdpi|powertunnel|warp-svc'}){$log+=('процесс: '+$p.ProcessName); Stop-Process -Id $p.Id -Force}
 foreach($tk in Get-ScheduledTask | Where-Object {($_.Actions.Execute -match $t) -or ($_.Actions.Arguments -match $t)}){$log+=('задание: '+$tk.TaskName); $tk | Unregister-ScheduledTask -Confirm:$false}
@@ -1892,17 +1919,18 @@ foreach($rk in $runkeys){if(Test-Path $rk){$ip=Get-ItemProperty $rk; foreach($n 
 $cs=[Environment]::GetFolderPath('CommonStartup')
 if($cs -and (Test-Path $cs)){foreach($f in Get-ChildItem $cs -File){$c=''; if($f.Extension -match '\.(bat|cmd|ps1)$'){$c=Get-Content $f.FullName -Raw} elseif($f.Extension -eq '.lnk'){try{$sh=New-Object -ComObject WScript.Shell; $l=$sh.CreateShortcut($f.FullName); $c=$l.TargetPath+' '+$l.Arguments}catch{}}; if($c -match $t){$log+=('автозапуск: '+$f.Name); Remove-Item $f.FullName -Force}}}
 $defIdx=@(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -EA SilentlyContinue | Sort-Object RouteMetric | Select-Object -ExpandProperty InterfaceIndex)
-foreach($a in Get-NetAdapter | Where-Object {$_.InterfaceDescription -match 'TAP|TUN|WireGuard|Wintun|WARP|Outline' -and $_.InterfaceDescription -notmatch 'sing-tun' -and $_.Status -ne 'Disabled' -and -not $_.HardwareInterface -and $_.ifIndex -notin $defIdx}){
-Disable-NetAdapter -InputObject $a -Confirm:$false
-if((Get-NetAdapter -InterfaceIndex $a.ifIndex -EA SilentlyContinue).Status -eq 'Disabled'){$log+=('адаптер отключён: '+$a.Name+' ['+$a.InterfaceDescription+']')}else{$log+=('НЕ удалось отключить адаптер: '+$a.Name+' ['+$a.InterfaceDescription+']')}}
+foreach($a in Get-NetAdapter | Where-Object {$_.InterfaceDescription -match 'TAP|TUN|WireGuard|Wintun|WARP|Outline' -and $_.InterfaceDescription -notmatch 'sing-tun' -and $_.Status -ne 'Disabled' -and -not $_.HardwareInterface}){
+$pfx=@(Get-NetRoute -InterfaceIndex $a.ifIndex -EA SilentlyContinue | Select-Object -ExpandProperty DestinationPrefix | Where-Object {$_ -notmatch '/32$' -and $_ -notmatch '/128$' -and $_ -ne '224.0.0.0/4' -and $_ -ne 'ff00::/8'} | Sort-Object -Unique)
+if($a.ifIndex -in $defIdx){$m=' — через него идёт весь трафик'}elseif($pfx){$m=' — маршруты: '+($pfx -join ', ')}else{$m=''}
+$log+=('сторонний туннель (НЕ тронут): '+$a.Name+' ['+$a.InterfaceDescription+']'+$m)}
 foreach($i in Get-DnsClientServerAddress | Where-Object {$_.ServerAddresses -match '^127\.|^::1$|^fd01:db8:1111'}){$dead=@($i.ServerAddresses | Where-Object {$_ -match '^127\.|^::1$|^fd01:db8:1111'} | Where-Object { -not (Resolve-DnsName -Name 'dns.msftncsi.com' -Server $_ -DnsOnly -QuickTimeout -EA SilentlyContinue) }); if($dead){$log+=('мёртвый DNS '+($dead -join ',')+' сброшен: '+$i.InterfaceAlias); Set-DnsClientServerAddress -InterfaceIndex $i.InterfaceIndex -ResetServerAddresses}}
 $wf=Join-Path $env:TEMP 'gr_wfp.xml'; netsh wfp show state file="$wf"|Out-Null
 if(Test-Path $wf){try{$w=[xml](Get-Content $wf -Raw); $nm=@($w.wfpstate.providers.item|ForEach-Object{$_.displayData.name})+@($w.wfpstate.subLayers.item|ForEach-Object{$_.displayData.name}); foreach($x in ($nm|Where-Object{$_}|Sort-Object -Unique)){if($x -notmatch 'Microsoft|Windows|MPSSVC|NetIo|FWPM|Teredo|IPsec|WSH|sing-?(box|tun)|Hyper-V|WNV|WSL|Built-in'){$log+=('сетевой фильтр (НЕ удалён): '+$x)}}}catch{}; Remove-Item $wf -Force}
-if(Get-CimInstance Win32_SystemDriver | Where-Object {$_.Name -eq 'ndisrd' -and $_.State -eq 'Running'}){$log+='драйвер ndisrd (ProxiFyre/WireSock, НЕ удалён)'}
+if(Get-CimInstance Win32_SystemDriver | Where-Object {$_.Name -eq 'ndisrd' -and $_.State -eq 'Running'}){$log+='драйвер ndisrd (ProxiFyre/WireSock, НЕ удалён)'; $lsp=$true}
 Set-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' ProxyEnable 0 -EA SilentlyContinue
 Remove-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' AutoConfigURL -EA SilentlyContinue
 netsh winhttp reset proxy|Out-Null
-netsh winsock reset|Out-Null
+if($lsp){netsh winsock reset|Out-Null; $log+='стек Winsock сброшен — нужна перезагрузка'}else{$log+='стек Winsock не сбрасывался — фильтрующих драйверов не найдено'}
 $phys=Get-NetAdapter -Physical | Where-Object {$_.Status -eq 'Up'} | Select-Object -ExpandProperty ifIndex
 $sp=Get-NetIPInterface -AddressFamily IPv4 | Where-Object {$_.Dhcp -eq 'Disabled' -and $_.ConnectionState -eq 'Connected' -and $phys -contains $_.InterfaceIndex}
 if($sp){$log+='статический IP — глубокий сброс IP пропущен'}else{netsh int ip reset|Out-Null; netsh int ipv6 reset|Out-Null}
