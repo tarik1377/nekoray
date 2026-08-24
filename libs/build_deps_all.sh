@@ -7,6 +7,22 @@ cd libs
 if [ -z $cmake ]; then
   cmake="cmake"
 fi
+
+# СОВМЕСТИМОСТЬ С CMAKE 4.
+#
+# Здесь собираются zxing-cpp 2.0.0, yaml-cpp 0.7.0 и protobuf 21.4 — проекты
+# нескольких лет от роду, и часть из них объявляет cmake_minimum_required ниже
+# 3.5. CMake 4 считает это не устареванием, а ОШИБКОЙ («Compatibility with CMake
+# < 3.5 has been removed») и обрывает конфигурацию.
+#
+# Ловится это не сразу: на Windows каталог libs/deps лежит в кэше CI, и пока кэш
+# цел, зависимости не пересобираются вовсе. Поломка проявится в тот день, когда
+# кэш промахнётся, — и будет выглядеть как «сборка вдруг перестала идти».
+#
+# CMAKE_POLICY_VERSION_MINIMUM заведён в CMake 3.31 ровно для такого случая. На
+# версиях старше это просто неизвестная переменная: CMake напишет, что она не
+# использована, и продолжит. То есть строка безопасна везде.
+POLICY_MIN="-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
 if [ -z $deps ]; then
   deps="deps"
 fi
@@ -35,7 +51,7 @@ cd zxing-*
 mkdir -p build
 cd build
 
-$cmake .. -GNinja -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF -DBUILD_BLACKBOX_TESTS=OFF -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX
+$cmake .. -GNinja $POLICY_MIN -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF -DBUILD_BLACKBOX_TESTS=OFF -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX
 ninja && ninja install
 
 cd ../..
@@ -48,7 +64,7 @@ cd yaml-*
 mkdir -p build
 cd build
 
-$cmake .. -GNinja -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX
+$cmake .. -GNinja $POLICY_MIN -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX
 ninja && ninja install
 
 cd ../..
@@ -61,7 +77,7 @@ git clone --recurse-submodules -b v21.4 --depth 1 --shallow-submodules https://g
 mkdir -p protobuf/build
 cd protobuf/build
 
-$cmake .. -GNinja \
+$cmake .. -GNinja $POLICY_MIN \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_SHARED_LIBS=OFF \
   -Dprotobuf_MSVC_STATIC_RUNTIME=OFF \

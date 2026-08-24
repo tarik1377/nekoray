@@ -1801,6 +1801,11 @@ void MainWindow::run_diagnostics() {
     dlg->show();
 
     runOnNewThread([this, host, port, up, proxyAddr, proxyPort, header, dlg] {
+        // Чужие туннели ищутся ЗДЕСЬ, в рабочем потоке: поиск запускает
+        // powershell и ждёт его, а в потоке интерфейса эти секунды выглядят
+        // как «программа не отвечает».
+        const QString foreign = foreign_tunnels_line();
+
         bool net, dns, tcp = false, tls = false;
         {
             QTcpSocket s;
@@ -1901,7 +1906,7 @@ void MainWindow::run_diagnostics() {
 
             // Support report — no secrets: server host:port is public and helps support,
             // but the subscription token / keys are never included.
-            QString report = header;
+            QString report = header + foreign;
             report += QStringLiteral("Internet: %1\nDNS: %2\n").arg(net ? "OK" : "FAIL", dns ? "OK" : "FAIL");
             if (!host.isEmpty()) {
                 report += QStringLiteral("Server %1:%2 TCP: %3\nTLS: %4\n")
@@ -1987,6 +1992,7 @@ void MainWindow::disable_extra_adapters() {
         auto *cb = new QCheckBox(label, &dlg);
         cb->setChecked(false); // ВСЕ СНЯТЫ. Отмеченное по умолчанию однажды нажмут не глядя.
         cb->setProperty("adapter", t.name);
+        cb->setProperty("ifIndex", t.ifIndex);
         boxes << cb;
         lay->addWidget(cb);
     }
@@ -2000,20 +2006,32 @@ void MainWindow::disable_extra_adapters() {
 
     if (dlg.exec() != QDialog::Accepted) return;
 
-    QStringList chosen;
+    QStringList chosen;   // для показа человеку
+    QStringList indexes;  // для команды
     for (auto *cb: boxes) {
-        if (cb->isChecked()) chosen << cb->property("adapter").toString();
+        if (!cb->isChecked()) continue;
+        chosen << cb->property("adapter").toString();
+        indexes << QString::number(cb->property("ifIndex").toInt());
     }
     if (chosen.isEmpty()) return;
 
-    // Имя адаптера приходит от системы, но в командную строку оно всё равно
-    // попадает через параметр PowerShell, а не склейкой: имена содержат пробелы
-    // и знаки, и склеенная строка однажды выключит не тот адаптер.
-    QStringList quoted;
-    for (const auto &name: chosen) quoted << "'" + QString(name).replace("'", "''") + "'";
-    const auto script = QStringLiteral("$names = @(%1); foreach ($n in $names) { "
-                                       "Disable-NetAdapter -Name $n -Confirm:$false }")
-                            .arg(quoted.join(","));
+    /*
+     * ВЫКЛЮЧАЕМ ПО НОМЕРУ ИНТЕРФЕЙСА, А НЕ ПО ИМЕНИ.
+     *
+     * Сначала здесь стояло `Disable-NetAdapter -Name $n`, и от подстановки
+     * строки защита была — кавычки удваивались. Но у -Name есть свойство, о
+     * котором легко забыть: он принимает ПОДСТАНОВОЧНЫЕ ЗНАКИ. Windows заводит
+     * адаптеры с именами вида «Local Area Connection* 2» и «Подключение по
+     * локальной сети* 2» (Wi-Fi Direct, WAN Miniport) — звёздочка стоит в самом
+     * имени. Отметив один такой, человек погасил бы ВСЕ подходящие под шаблон,
+     * включая физическую сетевую карту.
+     *
+     * Номер интерфейса шаблоном быть не может: это число.
+     */
+    const auto script = QStringLiteral("$idx = @(%1); foreach ($i in $idx) { "
+                                       "Get-NetAdapter -InterfaceIndex $i | "
+                                       "Disable-NetAdapter -Confirm:$false }")
+                            .arg(indexes.join(","));
 
     WinCommander::runProcessElevated("powershell",
                                      {"-NoProfile", "-NonInteractive", "-Command", script});
@@ -3204,14 +3222,25 @@ QString MainWindow::diagnostics_header() const {
              .arg(NekoGui::dataStore->spmode_vpn ? "TUN " : "",
                   NekoGui::dataStore->spmode_system_proxy ? "SystemProxy" : (NekoGui::dataStore->spmode_vpn ? "" : "Proxy-only"));
 
-    // ЧУЖИЕ ТУННЕЛИ — В ОТЧЁТ. Заметная доля обращений вида «включил ваш клиент,
-    // и перестала открываться рабочая сеть» объясняется именно этим, а без
-    // строки в отчёте поддержка узнаёт об этом на третьем письме.
-    const auto foreign = NekoGui_sys::DetectForeignTunnels();
-    if (!foreign.isEmpty()) {
-        h += NekoGui_sys::DescribeForeignTunnels(foreign) + "\n";
-    }
     return h;
+}
+
+/**
+ * Строка о чужих туннелях для отчёта. ЗВАТЬ ТОЛЬКО ИЗ РАБОЧЕГО ПОТОКА.
+ *
+ * Вынесено из diagnostics_header намеренно. Та считается в потоке интерфейса —
+ * в том числе перед показом окна прогресса, — а поиск чужих туннелей запускает
+ * powershell и ждёт его. На обычной машине это единицы секунд, и всё это время
+ * окно не перерисовывается: Windows успевает повесить на него «Не отвечает».
+ *
+ * Смысл строки прежний: заметная доля обращений вида «включил ваш клиент, и
+ * перестала открываться рабочая сеть» объясняется именно чужим туннелем, а без
+ * неё поддержка узнаёт об этом на третьем письме.
+ */
+QString MainWindow::foreign_tunnels_line() {
+    const auto found = NekoGui_sys::DetectForeignTunnels();
+    if (found.isEmpty()) return {};
+    return NekoGui_sys::DescribeForeignTunnels(found) + "\n";
 }
 
 #define ADD_TO_CURRENT_ROUTE(a, b)                                                                   \

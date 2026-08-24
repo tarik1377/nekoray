@@ -35,33 +35,88 @@ namespace NekoGui_sys {
             return QString::fromLocal8Bit(p.readAllStandardOutput());
         }
 
+        /**
+         * Служебный ли это маршрут.
+         *
+         * Такие есть у КАЖДОГО интерфейса и ничего не говорят о том, что через
+         * него ходит трафик: широковещательный /32, групповая рассылка,
+         * link-local. Без этого отсева в «сторонние туннели» попадает всё
+         * подряд, а человеку показывается, что через интерфейс якобы идут
+         * маршруты. Ровно такой же отсев уже стоит в support/fix-network.ps1 —
+         * здесь его просто забыли повторить.
+         */
+        bool isHousekeepingRoute(const QString &prefix) {
+            return prefix.endsWith("/32") || prefix.endsWith("/128") ||
+                   prefix == "224.0.0.0/4" || prefix == "ff00::/8" ||
+                   prefix.startsWith("fe80::");
+        }
+
 #ifdef Q_OS_WIN
+        /**
+         * Виртуальный коммутатор, а не туннель.
+         *
+         * Hyper-V, WSL2 и Docker Desktop заводят адаптеры vEthernet (...), и они
+         * подходят под «не физический». Предложить человеку выключить их —
+         * значит предложить выключить WSL и Docker; это ровно та же ошибка, из-за
+         * которой раньше гас домашний WireGuard, только в другую сторону.
+         */
+        bool isVirtualSwitch(const QString &description, const QString &name) {
+            return description.contains("Hyper-V Virtual Ethernet", Qt::CaseInsensitive) ||
+                   description.contains("Virtual Ethernet Adapter", Qt::CaseInsensitive) ||
+                   name.startsWith("vEthernet", Qt::CaseInsensitive);
+        }
+
         QList<ForeignTunnel> detectWindows() {
-            // Одним вызовом: каждый запуск PowerShell стоит около секунды, и
-            // три вызова подряд человек заметит как задержку при старте.
+            /*
+             * ОДИН Get-NetAdapter НА ВСЁ, а не по вызову на каждый маршрут.
+             *
+             * Здесь стоял Get-NetAdapter внутри ForEach-Object по маршрутам: на
+             * обычной машине это сотня запусков командлета, и замер показал 6.6
+             * секунды. Вызывается всё это из потока интерфейса, то есть окно на
+             * эти секунды переставало перерисовываться, и Windows успевала
+             * повесить на него «Не отвечает».
+             *
+             * Теперь адаптеры читаются один раз в таблицу по ifIndex, а маршруты
+             * присоединяются к ней. Плюс ifIndex выносится наружу: выключать
+             * адаптер по имени нельзя — см. ForeignTunnel::ifIndex.
+             */
             const auto out = ask("powershell",
                                  {"-NoProfile", "-NonInteractive", "-Command",
+                                  "$ad = @{}; "
+                                  "Get-NetAdapter -ErrorAction SilentlyContinue | "
+                                  "ForEach-Object { $ad[[string]$_.ifIndex] = $_ }; "
                                   "Get-NetRoute -AddressFamily IPv4 -ErrorAction SilentlyContinue | "
                                   "ForEach-Object { "
-                                  "$a = Get-NetAdapter -InterfaceIndex $_.InterfaceIndex "
-                                  "-ErrorAction SilentlyContinue; "
+                                  "$a = $ad[[string]$_.InterfaceIndex]; "
                                   "if ($a -and -not $a.HardwareInterface) { "
-                                  "\"$($a.Name)`t$($_.DestinationPrefix)\" } }"},
+                                  "$a.ifIndex.ToString() + [char]9 + $a.Name + [char]9 + "
+                                  "$a.InterfaceDescription + [char]9 + $_.DestinationPrefix } }"},
                                  15000);
-            QMap<QString, ForeignTunnel> byName;
+
+            QMap<int, ForeignTunnel> byIndex;
             for (const auto &line: out.split('\n')) {
                 const auto parts = line.trimmed().split('\t');
-                if (parts.size() < 2) continue;
-                const auto name = parts[0].trimmed();
-                const auto prefix = parts[1].trimmed();
-                if (name.isEmpty() || isOurs(name)) continue;
+                if (parts.size() < 4) continue;
 
-                auto &t = byName[name];
+                bool ok = false;
+                const int idx = parts[0].trimmed().toInt(&ok);
+                if (!ok) continue;
+                const auto name = parts[1].trimmed();
+                const auto description = parts[2].trimmed();
+                const auto prefix = parts[3].trimmed();
+
+                if (name.isEmpty() || isOurs(name) || isOurs(description)) continue;
+                if (isVirtualSwitch(description, name)) continue;
+
+                auto &t = byIndex[idx];
+                t.ifIndex = idx;
                 t.name = name;
-                if (!prefix.isEmpty() && !t.prefixes.contains(prefix)) t.prefixes << prefix;
+                t.description = description;
                 if (isHalfTheInternet(prefix)) t.ownsHalfTheInternet = true;
+                if (prefix.isEmpty() || isHousekeepingRoute(prefix)) continue;
+                if (!t.prefixes.contains(prefix)) t.prefixes << prefix;
             }
-            return byName.values();
+            return byIndex.values();
         }
 #endif
 
@@ -93,7 +148,9 @@ namespace NekoGui_sys {
                 const auto dest = cols[0];
                 auto &t = byName[iface];
                 t.name = iface;
-                if (!t.prefixes.contains(dest)) t.prefixes << dest;
+                // Служебные маршруты есть у каждого интерфейса и о трафике
+                // ничего не говорят — тот же отсев, что и на Windows.
+                if (!isHousekeepingRoute(dest) && !t.prefixes.contains(dest)) t.prefixes << dest;
                 // На маке половина пространства записывается так же.
                 if (isHalfTheInternet(dest) || dest == "0/1" || dest == "128.0/1")
                     t.ownsHalfTheInternet = true;

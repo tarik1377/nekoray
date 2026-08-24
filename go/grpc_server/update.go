@@ -200,8 +200,27 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 			return ret, nil
 		}
 
+		/*
+		 * СКАЧИВАНИЕ ИДЁТ КЛИЕНТОМ БЕЗ ОБЩЕГО ТАЙМАУТА, и это не мелочь.
+		 *
+		 * neko_common.CreateProxyHttpClient отдаёт клиент с Timeout = 30 секунд,
+		 * и этот таймаут в Go покрывает не соединение, а ВЕСЬ ответ, включая
+		 * чтение тела. Пакет весит около шестидесяти мегабайт, то есть тем же
+		 * клиентом он докачался бы только при устойчивых двух мегабайтах в
+		 * секунду — и это через туннель. На любом более медленном канале io.Copy
+		 * обрывается, файл удаляется, и человек получает не «медленно», а сырую
+		 * английскую строку про context deadline exceeded.
+		 *
+		 * Копия клиента с обнулённым Timeout: транспорт (а с ним и маршрут через
+		 * туннель) остаётся прежним, снимается только потолок на весь ответ.
+		 * Ограничение сверху при этом не исчезает — им остаётся ctx, который
+		 * отменяется вместе с запросом от интерфейса.
+		 */
+		download := *client
+		download.Timeout = 0
+
 		req, _ := http.NewRequestWithContext(ctx, "GET", update_download_url, nil)
-		resp, err := client.Do(req)
+		resp, err := download.Do(req)
 		if err != nil {
 			ret.Error = err.Error()
 			return ret, nil

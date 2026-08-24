@@ -25,13 +25,6 @@ jobs:
         include:
           - cross_os: windows
             cross_arch: amd64
-          # Кросс-сборка darwin делается ОТСЮДА, с ubuntu-раннера: CGO_ENABLED=0,
-          # и никакой Xcode для этого не нужен. Проверено сборкой обеих
-          # архитектур на посторонней машине.
-          - cross_os: darwin
-            cross_arch: arm64
-          - cross_os: darwin
-            cross_arch: amd64
           - cross_os: public_res
             cross_arch: public_res
       fail-fast: false
@@ -86,6 +79,52 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: GreenRhythm-${{ github.sha }}-${{ matrix.cross_os }}-${{ matrix.cross_arch }}
+          path: artifacts.tgz
+
+  # КРОСС-СБОРКА GO ПОД DARWIN — ОТДЕЛЬНЫМ JOB'ОМ, И ЭТО НЕ КОСМЕТИКА.
+  #
+  # Сначала эти две строки стояли в матрице build-go, а build-go есть в needs у
+  # publish. Матрица с fail-fast: false не спасает: она лишь не отменяет соседние
+  # леги, но сам job всё равно считается провалившимся, и всё зависимое
+  # пропускается. То есть любая будущая поломка под darwin — не собравшийся
+  # sing-box, недоступный libneko, смена образа — тихо заблокировала бы ВЫПУСК
+  # ПОД WINDOWS. Ровно то, чего мы обещали не допустить.
+  #
+  # Кросс-сборка идёт с ubuntu-раннера: CGO_ENABLED=0, Xcode не нужен. Проверено
+  # сборкой обеих архитектур на посторонней машине.
+  build-go-macos:
+    strategy:
+      matrix:
+        cross_arch: [arm64, amd64]
+      fail-fast: false
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "^1.24"
+
+      - name: Clone libneko dependency
+        run: git clone --depth 1 https://github.com/MatsuriDayo/libneko.git ../libneko
+
+      - name: Build Go
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || '' }}
+        run: |
+          GOOS=darwin GOARCH=${{ matrix.cross_arch }} ./libs/build_go.sh
+
+      - name: Tar artifacts
+        run: tar czvf artifacts.tgz ./deployment
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GreenRhythm-${{ github.sha }}-darwin-${{ matrix.cross_arch }}
           path: artifacts.tgz
 
   build-windows:
@@ -190,13 +229,15 @@ jobs:
         include:
           - arch: arm64
             runner: macos-latest
+          # macos-13 GitHub отключил 4 декабря 2025 — job на нём не получал бы
+          # раннера вовсе и падал бы, не выполнив ни шага.
           - arch: amd64
-            runner: macos-13
+            runner: macos-15-intel
       fail-fast: false
     runs-on: ${{ matrix.runner }}
-    # Ждёт Go-сборку: без её артефактов бандл собирать не из чего. На publish это
-    # не влияет — тот на build-macos не смотрит вовсе.
-    needs: build-go
+    # Ждёт СВОЮ Go-сборку, а не общий build-go: тот в needs у publish, и связывать
+    # с ним мак значило бы вернуть ту самую блокировку выпуска под Windows.
+    needs: build-go-macos
     continue-on-error: true
     steps:
       - name: Checkout
@@ -212,6 +253,26 @@ jobs:
 
       - name: Install ninja
         run: brew install ninja
+
+      # ЗАВИСИМОСТИ СОБИРАЮТСЯ И ЗДЕСЬ. Без этого шага конфигурация умирает на
+      # самой первой команде cmake: cmake/myproto.cmake требует Protobuf, а
+      # дальше идут yaml-cpp и ZXing — все три ищутся в libs/deps/built, который
+      # в репозиторий не закоммичен (libs/.gitignore). У Windows такой шаг есть,
+      # у мака его не было вовсе, то есть .dmg не появился бы ни разу.
+      #
+      # Отключить их нельзя: NKR_NO_EXTERNAL заодно выключает gRPC, а на нём
+      # держится связь с ядром.
+      - name: Cache Dependencies
+        id: cache-deps
+        uses: actions/cache@v4
+        with:
+          path: libs/deps
+          key: MacDeps-${{ matrix.arch }}-${{ hashFiles('libs/build_deps_*.sh') }}-Qt6.7
+
+      - name: Build Dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        shell: bash
+        run: ./libs/build_deps_all.sh
 
       - name: Set version from tag
         if: github.event.inputs.tag != ''
