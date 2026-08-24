@@ -347,6 +347,17 @@ add_executable(credentials_test EXCLUDE_FROM_ALL
 target_include_directories(credentials_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(credentials_test PRIVATE Qt${QT_VERSION_MAJOR}::Core ${SEALED_STORE_LIBRARIES})
 
+# Сборка файла автонастройки прокси для macOS. Цель собирается и запускается на
+# ЛЮБОЙ платформе намеренно: сам PacBuilder платформенного кода не содержит, а
+# проверить его на маке из-под Windows нечем. Ошибка здесь не отказывает — она
+# молча уводит часть трафика не туда, поэтому оставлять её без проверки нельзя.
+add_executable(pac_test EXCLUDE_FROM_ALL
+        test/PacBuilderTest.cpp
+        sys/macos/PacBuilder.cpp
+)
+target_include_directories(pac_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(pac_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+
 # Снимок вёрстки диалога — чтобы на него можно было посмотреть, не запуская
 # клиент. Линкует только Widgets и сгенерированный uic-заголовок.
 # Заголовок берётся тот же, что собрал uic для приложения: два AUTOUIC на один
