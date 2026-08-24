@@ -87,6 +87,19 @@ Extract the archive. Run `greenrhythm.exe` **as Administrator** (required for TU
 
 Go to **Settings** → **TUN Mode** → Enable. All system traffic will be routed automatically.
 
+### macOS
+
+The macOS build is **not signed**, so the system will refuse to open it on the
+first run — right-click → **Open**, then **Open** again. This is expected for
+anything not from the App Store, not a sign of a virus.
+
+Drag the app to **Applications** first: launched straight from Downloads, macOS
+runs a read-only copy and the app cannot remember servers or sign-in.
+
+Full instructions, both traffic modes and their trade-offs, and what happens
+when you already have a home VPN running: **[docs/Run_macOS.md](docs/Run_macOS.md)**
+(на русском).
+
 ---
 
 ## Default Configuration

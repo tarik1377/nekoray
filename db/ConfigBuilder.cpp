@@ -800,8 +800,15 @@ namespace NekoGui {
         // geopath
         auto geoip = FindCoreAsset("geoip.db");
         auto geosite = FindCoreAsset("geosite.db");
-        if (geoip.isEmpty()) status->result->error = +"geoip.db not found";
-        if (geosite.isEmpty()) status->result->error = +"geosite.db not found";
+        // ЧЕЛОВЕКУ — ЧЕЛОВЕЧЕСКОЕ. Здесь стояло «geoip.db not found», и это
+        // ровно то, что он видел вместо подключения: имя файла, о котором он
+        // ничего не знает, без единого слова о том, что делать. Причина всегда
+        // одна — сборка пришла неполной, — и лечится она переустановкой.
+        if (geoip.isEmpty() || geosite.isEmpty()) {
+            status->result->error =
+                QObject::tr("Не хватает файлов с базой сетевых адресов — сборка пришла неполной. "
+                            "Переустановите приложение, скачав его заново.");
+        }
 
         // final add routing rule
         auto routingRules = QString2QJsonObject(dataStore->routing->custom)["rules"].toArray();
