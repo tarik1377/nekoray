@@ -5,6 +5,8 @@
 #include "main/NekoGui.hpp"
 #include "ui/mainwindow_interface.h"
 
+#include "sys/ForeignTunnels.hpp"
+
 #include <QMessageBox>
 
 DialogVPNSettings::DialogVPNSettings(QWidget *parent) : QDialog(parent), ui(new Ui::DialogVPNSettings) {
@@ -42,6 +44,56 @@ DialogVPNSettings::DialogVPNSettings(QWidget *parent) : QDialog(parent), ui(new 
     //
     D_LOAD_STRING_PLAIN(vpn_rule_cidr)
     D_LOAD_STRING_PLAIN(vpn_rule_process)
+    D_LOAD_STRING_PLAIN(vpn_route_exclude_extra)
+
+    /*
+     * Кнопка ПОКАЗЫВАЕТ найденное, а не применяет его.
+     *
+     * Подставлять автоматически нельзя, и это не осторожность ради
+     * осторожности: полнотуннельный чужой VPN владеет половиной адресного
+     * пространства (0.0.0.0/1 и 128.0.0.0/1), и «нашёл — исключил» выключило бы
+     * обход для половины интернета одним нажатием. Домашний же VPN с
+     * разделённым туннелем даёт короткий список, который человек узнаёт с
+     * первого взгляда.
+     *
+     * Поэтому найденное дописывается в конец поля, и человек видит, что именно
+     * добавилось, до того как нажмёт «Сохранить».
+     */
+    connect(ui->fill_from_detected, &QPushButton::clicked, this, [this] {
+        const auto found = NekoGui_sys::DetectForeignTunnels();
+        if (found.isEmpty()) {
+            QMessageBox::information(this, software_name,
+                                     tr("Сторонних туннелей не найдено."));
+            return;
+        }
+
+        QStringList add;
+        QStringList wholeInternet;
+        for (const auto &t: found) {
+            if (t.ownsHalfTheInternet) {
+                wholeInternet << t.name;
+                continue; // его сети не предлагаем — см. выше
+            }
+            for (const auto &p: t.prefixes) {
+                if (!p.trimmed().isEmpty()) add << p.trimmed();
+            }
+        }
+        add.removeDuplicates();
+
+        if (!wholeInternet.isEmpty()) {
+            QMessageBox::warning(
+                this, software_name,
+                tr("Через %1 идёт весь трафик. Два полных туннеля на одной машине "
+                   "несовместимы: его сети не подставлены, и включать наш туннель "
+                   "вместе с ним не стоит.")
+                    .arg(wholeInternet.join(", ")));
+        }
+        if (add.isEmpty()) return;
+
+        auto text = ui->vpn_route_exclude_extra->toPlainText();
+        if (!text.isEmpty() && !text.endsWith('\n')) text += "\n";
+        ui->vpn_route_exclude_extra->setPlainText(text + add.join("\n") + "\n");
+    });
     //
     connect(ui->whitelist_mode, &QCheckBox::stateChanged, this, [=](int state) {
         if (state == Qt::Checked) {
@@ -75,6 +127,7 @@ void DialogVPNSettings::accept() {
     //
     D_SAVE_STRING_PLAIN(vpn_rule_cidr)
     D_SAVE_STRING_PLAIN(vpn_rule_process)
+    D_SAVE_STRING_PLAIN(vpn_route_exclude_extra)
     //
     QStringList msg{"UpdateDataStore"};
     if (isInternalChanged) {

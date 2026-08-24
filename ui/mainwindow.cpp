@@ -24,6 +24,7 @@
 #include "3rdparty/qrcodegen.hpp"
 #include "3rdparty/VT100Parser.hpp"
 #include "3rdparty/qv2ray/v2/components/proxy/QvProxyConfigurator.hpp"
+#include "sys/ForeignTunnels.hpp"
 
 #ifdef Q_OS_MACOS
 #include "sys/macos/MacProxyController.hpp"
@@ -3111,6 +3112,14 @@ QString MainWindow::diagnostics_header() const {
     h += QStringLiteral("Mode: %1%2\n")
              .arg(NekoGui::dataStore->spmode_vpn ? "TUN " : "",
                   NekoGui::dataStore->spmode_system_proxy ? "SystemProxy" : (NekoGui::dataStore->spmode_vpn ? "" : "Proxy-only"));
+
+    // ЧУЖИЕ ТУННЕЛИ — В ОТЧЁТ. Заметная доля обращений вида «включил ваш клиент,
+    // и перестала открываться рабочая сеть» объясняется именно этим, а без
+    // строки в отчёте поддержка узнаёт об этом на третьем письме.
+    const auto foreign = NekoGui_sys::DetectForeignTunnels();
+    if (!foreign.isEmpty()) {
+        h += NekoGui_sys::DescribeForeignTunnels(foreign) + "\n";
+    }
     return h;
 }
 

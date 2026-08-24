@@ -161,6 +161,28 @@ This needs to be run NekoBox with administrator privileges.</string>
       </widget>
      </item>
      <item>
+      <widget class="QGroupBox" name="gb_route_exclude">
+       <property name="title">
+        <string>Не заводить в туннель (маршруты ОС)</string>
+       </property>
+       <property name="toolTip">
+        <string>Сети, которые останутся доступны в обход туннеля: домашний VPN, рабочая сеть, NAS. Это таблица маршрутов системы, а не правило внутри туннеля.</string>
+       </property>
+       <layout class="QVBoxLayout" name="verticalLayout_5">
+        <item>
+         <widget class="QPlainTextEdit" name="vpn_route_exclude_extra"/>
+        </item>
+        <item>
+         <widget class="QPushButton" name="fill_from_detected">
+          <property name="text">
+           <string>Подставить из обнаруженных</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </item>
+     <item>
       <widget class="QGroupBox" name="gb_process_name">
        <property name="title">
         <string>Bypass Process Name</string>

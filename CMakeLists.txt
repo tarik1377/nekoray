@@ -176,6 +176,7 @@ set(PROJECT_SOURCES
 
         sys/ExternalProcess.cpp
         sys/AutoRun.cpp
+        sys/ForeignTunnels.cpp
 
         ui/ThemeManager.cpp
         ui/Icon.cpp

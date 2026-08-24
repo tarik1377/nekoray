@@ -522,9 +522,16 @@ namespace NekoGui {
             // когда он включает наш клиент, и «перестал видеть свой NAS» он
             // свяжет с чем угодно, только не с этим. fc00::/7 и fe80::/10 —
             // то же самое для IPv6, которого в прежнем списке не было вовсе.
-            inboundObj["route_exclude_address"] = QJsonArray{
+            auto excludes = QJsonArray{
                 "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16",
                 "100.64.0.0/10", "fc00::/7", "fe80::/10"};
+            // Дописанное человеком идёт СВЕРХ встроенного, а не вместо: список
+            // выше защищает домашнюю сеть, и позволить его случайно затереть
+            // одной строчкой в настройках значило бы отдать эту защиту опечатке.
+            for (const auto &extra: SplitLinesSkipSharp(dataStore->vpn_route_exclude_extra)) {
+                if (!extra.trimmed().isEmpty()) excludes += extra.trimmed();
+            }
+            inboundObj["route_exclude_address"] = excludes;
             if (dataStore->routing->sniffing_mode != SniffingMode::DISABLE) {
                 inboundObj["sniff"] = true;
                 inboundObj["sniff_override_destination"] = dataStore->routing->sniffing_mode == SniffingMode::FOR_DESTINATION;
@@ -871,6 +878,16 @@ namespace NekoGui {
             cidr_rule = "," + QJsonObject2QString(rule, false);
         }
 
+        // Исключения маршрутов, дописанные человеком. Идут СВЕРХ встроенного
+        // списка в шаблоне — затирать защиту домашней сети одной строчкой в
+        // настройках нельзя. Запятая ведущая: список в шаблоне уже непустой.
+        QString route_exclude_extra;
+        for (const auto &extra: SplitLinesSkipSharp(dataStore->vpn_route_exclude_extra)) {
+            const auto one = extra.trimmed();
+            if (one.isEmpty()) continue;
+            route_exclude_extra += ",\"" + one + "\"";
+        }
+
         // TODO bypass ext core process path?
 
         // auth
@@ -883,6 +900,7 @@ namespace NekoGui {
         auto configFn = ":/neko/vpn/sing-box-vpn.json";
         if (QFile::exists("vpn/sing-box-vpn.json")) configFn = "vpn/sing-box-vpn.json";
         auto config = ReadFileText(configFn)
+                          .replace("//%ROUTE_EXCLUDE_EXTRA%", route_exclude_extra)
                           .replace("//%IPV6_ADDRESS%", dataStore->vpn_ipv6 ? R"("inet6_address": "fdfe:dcba:9876::1/126",)" : "")
                           .replace("//%SOCKS_USER_PASS%", socks_user_pass)
                           .replace("//%PROCESS_NAME_RULE%", process_name_rule)

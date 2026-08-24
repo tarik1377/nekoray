@@ -72,6 +72,7 @@
                 "100.64.0.0/10",
                 "fc00::/7",
                 "fe80::/10"
+                //%ROUTE_EXCLUDE_EXTRA%
             ],
             "mtu": %MTU%,
             "auto_route": true,
