@@ -255,11 +255,22 @@ jobs:
         with:
           submodules: "recursive"
 
+      # МОДУЛИ НЕ ПЕРЕЧИСЛЯЮТСЯ, и это не упрощение. Здесь стояло
+      # modules: "qtsvg", и установка падала: в Qt 6 qtsvg НЕ является
+      # устанавливаемым модулем — он входит в базовый набор. Установщик на
+      # несуществующее имя отвечает отказом, и шаг валился целиком.
+      #
+      # Проверено самим aqtinstall, а не догадкой:
+      #   aqt list-qt mac desktop --modules 6.7.3 clang_64   → qtsvg в списке НЕТ
+      #   aqt list-qt mac desktop --archives 6.7.3 clang_64  → qtsvg, qtbase,
+      #     qttools, qttranslations, qtdeclarative — ЕСТЬ
+      # То есть всё, что требует CMakeLists (Widgets, Network, Svg,
+      # LinguistTools), приезжает и без единого модуля.
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
           version: "6.7.*"
-          modules: "qtsvg"
+          cache: true
 
       - name: Install ninja
         run: brew install ninja
