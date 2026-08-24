@@ -240,17 +240,23 @@ int main(int argc, char *argv[]) {
         is("и почту для показа", ok.detail == "a@b.c");
     }
 
-    // ---- ВРЕМЕННАЯ ПРОВЕРКА (удалить) ----
-    // Повторяет ровно то, что делает RelayActivation::Redeem():59 после
-    // удачного обмена кода: Save(token, QJsonObject()).
+    // ---- ключ сессии живёт отдельно от конфигурации ----
+    //
+    // ПОЧЕМУ ЭТО ОТДЕЛЬНАЯ ПРОВЕРКА. Активация идёт двумя шагами: код меняется
+    // на ключ, ключом запрашиваются реквизиты. Между шагами ключ уже надо иметь
+    // на руках — код одноразовый и второй раз не сработает.
+    //
+    // Сначала Redeem сохранял его через Save(token, {}), а Save отвергает
+    // неполную конфигурацию и не пишет НИЧЕГО. Ключ молча терялся, Provision()
+    // отвечал «не активировано», и выглядело это как неверный код. Активация
+    // была сломана целиком, и заметить это без разбора было нечем.
     {
         DeviceCredentials::Wipe();
-        const bool saved = DeviceCredentials::Save("tok-redeem", QJsonObject());
-        is("ВРЕМЕННО: Save(token, {}) сообщает об успехе", saved);
-        is("ВРЕМЕННО: токен после шага Redeem читается",
-           DeviceCredentials::Token() == "tok-redeem");
-        is("ВРЕМЕННО: Provision() увидел бы непустой токен",
-           !DeviceCredentials::Token().isEmpty());
+        is("ключ сохраняется без конфигурации", DeviceCredentials::SaveToken("tok-redeem"));
+        is("и читается обратно", DeviceCredentials::Token() == "tok-redeem");
+        is("но реквизитами это ещё не является", !DeviceCredentials::IsProvisioned());
+        is("пустой ключ не сохраняется", !DeviceCredentials::SaveToken(""));
+        is("и прежний при этом цел", DeviceCredentials::Token() == "tok-redeem");
     }
 
     say("");

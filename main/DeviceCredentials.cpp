@@ -150,6 +150,18 @@ namespace DeviceCredentials {
         return g_blob.value("issued").toObject().value(name).toString();
     }
 
+    bool SaveToken(const QString &token) {
+        Load();
+        if (token.isEmpty()) return false;
+        // deviceId читается ДО правки блоба — он мог ещё не существовать, и
+        // DeviceId() его заведёт и запишет; своя же запись ниже иначе затёрла
+        // бы только что выданный идентификатор.
+        const auto id = DeviceId();
+        g_blob["deviceId"] = id;
+        g_blob["token"] = token;
+        return writeBlob();
+    }
+
     bool Save(const QString &token, const QJsonObject &issued) {
         Load();
         if (!Complete(issued)) return false;
