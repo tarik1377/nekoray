@@ -108,7 +108,22 @@ if (NKR_NO_QHOTKEY)
 else ()
     set(QHOTKEY_INSTALL OFF)
     set(BUILD_SHARED_LIBS OFF)
+
+    # QHotkey — ПОДМОДУЛЬ на upstream, и его CMakeLists начинается с
+    # cmake_minimum_required(VERSION 3.1). CMake 4 считает это не устаревшим, а
+    # ОШИБКОЙ: «Compatibility with CMake < 3.5 has been removed». Конфигурация
+    # падает целиком, и падает она на чужом файле, который мы не вправе править
+    # отсюда — у подмодуля отслеживается только указатель на коммит.
+    #
+    # CMAKE_POLICY_VERSION_MINIMUM — штатный выход, заведённый в CMake 3.31
+    # ровно для этого случая. На CMake старше он просто неизвестная переменная и
+    # не делает ничего, поэтому строка безопасна на всех версиях.
+    #
+    # Ставится ТОЛЬКО вокруг подмодуля и снимается сразу после: глобально она
+    # ослабила бы проверку политик всему проекту, а нам нужен один чужой файл.
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
     add_subdirectory(3rdparty/QHotkey)
+    unset(CMAKE_POLICY_VERSION_MINIMUM)
     list(APPEND NKR_EXTERNAL_TARGETS qhotkey)
 endif ()
 
