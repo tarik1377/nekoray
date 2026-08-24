@@ -11,8 +11,8 @@ namespace NekoGui_sys {
         QStringList arguments;
         QStringList env;
 
-        /** Не печатать окружение в журнал — см. ExternalBuildResult::env_secret. */
-        bool env_secret = false;
+        /** Чем заменить аргументы в журнале — см. ExternalBuildResult::args_display. */
+        QString args_display;
 
         /** Что делать с выводом процесса — см. ExternalBuildResult::log_policy. */
         int log_policy = 0;

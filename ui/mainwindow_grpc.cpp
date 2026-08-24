@@ -28,8 +28,8 @@ std::list<std::shared_ptr<NekoGui_sys::ExternalProcess>> CreateExtCFromExtR(cons
         extC->tag = extR->tag;
         extC->program = extR->program;
         extC->arguments = extR->arguments;
-        extC->env_secret = extR->env_secret;
         extC->log_policy = extR->log_policy;
+        extC->args_display = extR->args_display;
 
         // ОКРУЖЕНИЕ ДОПОЛНЯЕТСЯ, А НЕ ЗАМЕЩАЕТСЯ.
         //

@@ -85,6 +85,7 @@ namespace NekoGui_fmt {
         if (!disable_log) result.arguments += "--log";
         result.arguments += "--listen=socks://127.0.0.1:" + Int2String(socks_port);
         result.arguments += "--proxy=" + proxy_url.toString(QUrl::FullyEncoded);
+
         if (domain_address != connect_address)
             result.arguments += "--host-resolver-rules=MAP " + domain_address + " " + connect_address;
         if (insecure_concurrency > 0) result.arguments += "--insecure-concurrency=" + Int2String(insecure_concurrency);
@@ -93,6 +94,35 @@ namespace NekoGui_fmt {
             WriteTempFile("naive_" + GetRandomString(10) + ".crt", certificate.toUtf8());
             result.env += "SSL_CERT_FILE=" + TempFile;
         }
+
+        /*
+         * ПАРОЛЬ НЕ ИМЕЕТ ПРАВА ПОПАСТЬ В ЖУРНАЛ.
+         *
+         * Формат naive требует пароль внутри --proxy=, и убрать его оттуда
+         * нельзя — профиль перестанет подключаться. QUrl::FullyEncoded кодирует,
+         * но не удаляет: обычный пароль виден в журнале как есть. Поэтому
+         * собирается ВТОРОЕ представление, только для показа — RemovePassword
+         * снимает пароль и оставляет имя пользователя, схему, хост и порт, то
+         * есть всё, по чему поддержка отличает один профиль от другого.
+         *
+         * Собирается в конце и по префиксу, а не срезом на месте добавления:
+         * ниже к списку дописываются ещё аргументы, и снимок, взятый раньше,
+         * молча потерял бы их — в журнале профиль выглядел бы иначе, чем
+         * запустился, что хуже, чем не иметь такой строки вовсе.
+         *
+         * Собирается здесь, а не в месте печати: там аргументы уже неразличимая
+         * строка, и понять, в каком живёт пароль, можно только зная формат ядра.
+         *
+         * Командная строка самого процесса при этом остаётся видна любому
+         * процессу того же пользователя — это верно и до правки и лечится не
+         * здесь. Журнал отличается тем, что уезжает по почте в поддержку.
+         */
+        auto shown = result.arguments;
+        for (auto &a: shown) {
+            if (!a.startsWith("--proxy=")) continue;
+            a = "--proxy=" + proxy_url.toString(QUrl::FullyEncoded | QUrl::RemovePassword);
+        }
+        result.args_display = shown.join(" ");
 
         auto config_export = QStringList{result.program};
         config_export += result.arguments;
@@ -344,7 +374,6 @@ namespace NekoGui_fmt {
             "http_proxy", "https_proxy", "all_proxy", "no_proxy",
         };
 
-        result.env_secret = true; // окружение в журнал не печатать
         result.log_policy = 1;    // из вывода в журнал идут только разобранные вехи
 
         // Показывать нечего и нельзя: «Экспорт конфига» открыт из контекстного
