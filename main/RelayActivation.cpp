@@ -1,6 +1,7 @@
 #include "RelayActivation.hpp"
 #include "HTTPRequestHelper.hpp"
 #include "NekoGui.hpp"
+#include "db/Database.hpp"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -103,5 +104,20 @@ namespace RelayActivation {
     }
 
     void Forget() { DeviceCredentials::Wipe(); }
+
+    int EnsureProfile() {
+        // Уже есть — возвращаем его. Ищем по типу, а не по имени: имя человек
+        // мог переименовать, и поиск по нему завёл бы второй профиль.
+        for (const auto &[id, ent]: NekoGui::profileManager->profiles) {
+            if (ent != nullptr && ent->type == "relay") return id;
+        }
+
+        auto ent = NekoGui::ProfileManager::NewProxyEntity("relay");
+        // Кладём в ту группу, которую человек сейчас смотрит: искать новый
+        // профиль в чужой группе — то же самое, что не завести его вовсе.
+        auto group = NekoGui::profileManager->CurrentGroup();
+        if (!NekoGui::profileManager->AddProfile(ent, group == nullptr ? -1 : group->id)) return -1;
+        return ent->id;
+    }
 
 } // namespace RelayActivation

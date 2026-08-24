@@ -7,6 +7,7 @@
 #include "ui/edit/edit_vmess.h"
 #include "ui/edit/edit_trojan_vless.h"
 #include "ui/edit/edit_naive.h"
+#include "ui/edit/edit_relay.h"
 #include "ui/edit/edit_quic.h"
 #include "ui/edit/edit_custom.h"
 
@@ -120,6 +121,10 @@ DialogEditProfile::DialogEditProfile(const QString &_type, int profileOrGroupId,
         ui->type->addItem(tr("Custom (%1 config)").arg(software_core_name), "internal-full");
         ui->type->addItem(tr("Custom (Extra Core)"), "custom");
         LOAD_TYPE("chain")
+        // «relay» в этот список НЕ добавлен намеренно: профиль резервного
+        // подключения заводится не выбором протокола, а через «Зелёный Ритм →
+        // Резервное подключение…», потому что до него нужна активация. Пункт в
+        // списке протоколов создавал бы профиль, который сразу не работает.
 
         // type changed
         connect(ui->type, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this, [=](int index) {
@@ -171,6 +176,10 @@ void DialogEditProfile::typeSelected(const QString &newType) {
         auto _innerWidget = new EditNaive(this);
         innerWidget = _innerWidget;
         innerEditor = _innerWidget;
+    } else if (type == "relay") {
+        auto _innerWidget = new EditRelay(this);
+        innerWidget = _innerWidget;
+        innerEditor = _innerWidget;
     } else if (type == "hysteria2" || type == "tuic") {
         auto _innerWidget = new EditQUIC(this);
         innerWidget = _innerWidget;
@@ -197,7 +206,10 @@ void DialogEditProfile::typeSelected(const QString &newType) {
     }
 
     // hide some widget
-    auto showAddressPort = type != "chain" && customType != "internal" && customType != "internal-full";
+    // У резерва адреса нет — как у цепочки. Пустые поля «Адрес» и «Порт» человек
+    // читает как «сюда надо что-то вписать», а вписывать нечего.
+    auto showAddressPort = type != "chain" && type != "relay" &&
+                           customType != "internal" && customType != "internal-full";
     ui->address->setVisible(showAddressPort);
     ui->address_l->setVisible(showAddressPort);
     ui->port->setVisible(showAddressPort);

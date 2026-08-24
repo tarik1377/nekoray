@@ -26,6 +26,9 @@ class DialogRelayActivate : public QDialog {
 public:
     explicit DialogRelayActivate(QWidget *parent = nullptr);
 
+    /** Появился ли новый профиль — вызывающему надо перерисовать список. */
+    [[nodiscard]] bool ProfileAdded() const { return profileAdded; }
+
     ~DialogRelayActivate() override;
 
 private:
@@ -33,6 +36,14 @@ private:
 
     /** Идёт ли сейчас запрос — чтобы второе нажатие не завело второй. */
     bool busy = false;
+
+    /**
+     * Завели ли профиль за время этого диалога.
+     *
+     * Нужно вызывающему: список профилей сам себя не перерисовывает, и без
+     * этого новая строка появилась бы только после перезапуска.
+     */
+    bool profileAdded = false;
 
     /** Куда ведёт кнопка действия, когда она видна. */
     QString actionUrl;

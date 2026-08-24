@@ -93,9 +93,16 @@ DialogRelayActivate::DialogRelayActivate(QWidget *parent) : QDialog(parent), ui(
                 setBusy(false);
                 repaintState();
                 if (out.ok) {
-                    showResult(tr("Готово. Резервное подключение активировано."), false);
+                    // Профиль заводится здесь же: активация без него ничего не
+                    // даёт — человек увидел бы «готово» и не нашёл, что нажать.
+                    const int id = RelayActivation::EnsureProfile();
+                    showResult(id >= 0
+                                   ? tr("Готово. Резервное подключение добавлено в список.")
+                                   : tr("Готово, но профиль завести не удалось — добавьте его вручную."),
+                               id < 0);
                     showAction({}, {});
                     ui->code->clear();
+                    if (id >= 0) profileAdded = true;
                     return;
                 }
                 showResult(out.detail, true);

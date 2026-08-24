@@ -8,3 +8,4 @@
 #include "NaiveBean.hpp"
 #include "QUICBean.hpp"
 #include "CustomBean.hpp"
+#include "RelayBean.hpp"

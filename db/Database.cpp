@@ -191,6 +191,8 @@ namespace NekoGui {
             bean = new NekoGui_fmt::QUICBean(NekoGui_fmt::QUICBean::proxy_TUIC);
         } else if (type == "custom") {
             bean = new NekoGui_fmt::CustomBean();
+        } else if (type == "relay") {
+            bean = new NekoGui_fmt::RelayBean();
         } else {
             bean = new NekoGui_fmt::AbstractBean(-114514);
         }

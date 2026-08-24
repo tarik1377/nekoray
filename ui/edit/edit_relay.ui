@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>EditRelay</class>
+ <widget class="QWidget" name="EditRelay">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>420</width>
+    <height>200</height>
+   </rect>
+  </property>
+  <layout class="QFormLayout" name="form">
+   <item row="0" column="0">
+    <widget class="QLabel" name="accessLabel">
+     <property name="text">
+      <string>Доступ</string>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <layout class="QHBoxLayout" name="accessRow">
+     <item>
+      <widget class="QLabel" name="access">
+       <property name="text">
+        <string/>
+       </property>
+       <property name="wordWrap">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="activate">
+       <property name="text">
+        <string>Активировать…</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="bypassLabel">
+     <property name="text">
+      <string>Российские сайты</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QCheckBox" name="bypass_ru">
+     <property name="text">
+      <string>напрямую, мимо резервного подключения</string>
+     </property>
+     <property name="toolTip">
+      <string>Экономит трафик подписки: то, что и так открывается, идёт обычным путём.</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="dnsLabel">
+     <property name="text">
+      <string>DNS</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QLineEdit" name="dns_servers">
+     <property name="placeholderText">
+      <string>по умолчанию</string>
+     </property>
+     <property name="toolTip">
+      <string>Через запятую. Пусто — выбираются сами.</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="portLabel">
+     <property name="text">
+      <string>Локальный порт</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QLineEdit" name="socks_port">
+     <property name="placeholderText">
+      <string>выбрать свободный</string>
+     </property>
+     <property name="toolTip">
+      <string>Нужен, только если рядом стоит программа, которой порт прописан руками. Ноль или пусто — выберется сам.</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

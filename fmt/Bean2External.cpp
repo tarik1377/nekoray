@@ -1,5 +1,6 @@
 #include "db/ProxyEntity.hpp"
 #include "fmt/includes.h"
+#include "main/DeviceCredentials.hpp"
 
 #include <QFile>
 #include <QDir>
@@ -259,6 +260,96 @@ namespace NekoGui_fmt {
             result.config_export = config;
         }
 
+        return result;
+    }
+
+    // ======================= Резервное подключение =======================
+
+    QString RelayBean::DisplayName() {
+        // Имя по умолчанию, а не пустая строка: DisplayName у предка при пустом
+        // name отдаёт адрес, а адреса у резерва нет — в списке получилась бы
+        // безымянная строка.
+        if (name.isEmpty()) return QObject::tr("Резервное подключение");
+        return name;
+    }
+
+    /**
+     * Всегда внешний процесс, всегда direct.
+     *
+     * ПОЧЕМУ 2 (direct), А НЕ 1 (mapping). Mapping поднимает direct-inbound,
+     * который перенаправляет на serverAddress:serverPort, и заставляет внешнее
+     * ядро идти в 127.0.0.1:mapping_port. У резерва нет ОДНОГО фиксированного
+     * сервера: адресов много и они меняются по ходу работы. Натянуть mapping
+     * не на что.
+     *
+     * ПОЧЕМУ ЭТО НЕ ЛОМАЕТ TUN. thisExternalStat == 2 ставит need_keep_vpn_off,
+     * но тот блокирует включение VPN только при vpn_internal_tun == false, то
+     * есть во внешнем режиме tun2socks. Умолчание — внутренний TUN, и там
+     * работает getAutoBypassExternalProcessPaths: путь процесса попадает в
+     * правило process_name → bypass, и собственный трафик движка не
+     * заворачивается в туннель, который он же и держит. Петля здесь выглядела
+     * бы как «подключилось и намертво встало».
+     *
+     * В цепочке (не первым профилем) резерв невозможен: он не принимает
+     * входящее соединение от другого узла цепи, он сам — вход.
+     */
+    int RelayBean::NeedExternal(bool isFirstProfile) {
+        return isFirstProfile ? 2 : -1;
+    }
+
+    ExternalBuildResult RelayBean::BuildExternal(int mapping_port, int socks_port, int external_stat) {
+        ExternalBuildResult result{NekoGui::dataStore->extraCore->Get(kRelayCoreId)};
+
+        if (result.program.isEmpty()) {
+            // Отличаем «нет файла» от «файл есть, но не пускают»: второе — это
+            // почти всегда антивирус, и текст об этом уже написан для xray.
+            result.error = QObject::tr(
+                "Компонент резервного подключения не найден. Восстановите файл из архива "
+                "или добавьте программу в исключения антивируса.");
+            return result;
+        }
+        if (!DeviceCredentials::IsProvisioned()) {
+            result.error = QObject::tr(
+                "Резервное подключение не активировано. Откройте «Зелёный Ритм → "
+                "Резервное подключение…» и введите код из личного кабинета.");
+            return result;
+        }
+
+        const int port = this->socks_port > 0 ? this->socks_port : socks_port;
+
+        // ТОЛЬКО 127.0.0.1. У SOCKS5 движка нет проверки пароля, и настройка
+        // «разрешить из локальной сети» на внешние ядра не распространяется —
+        // подставленный сюда 0.0.0.0 сделал бы открытый прокси в сети.
+        result.arguments = QStringList{"-mode", "client", "-listen", "127.0.0.1:" + Int2String(port)};
+
+        // Реквизиты уходят ОКРУЖЕНИЕМ, а не аргументами: аргументы видны в
+        // диспетчере задач любому пользователю машины.
+        QStringList env{
+            "S3_ENDPOINT=" + DeviceCredentials::Field("endpoint"),
+            "S3_BUCKET=" + DeviceCredentials::Field("bucket"),
+            "S3_KEY=" + DeviceCredentials::Field("key"),
+            "S3_SECRET=" + DeviceCredentials::Field("secret"),
+            "TUN_PSK=" + DeviceCredentials::Field("psk"),
+            "DEVICE_TAG=" + DeviceCredentials::Field("tag"),
+            QStringLiteral("RELAY_BYPASS_RU=") + (bypass_ru ? "1" : "0"),
+        };
+        if (!dns_servers.trimmed().isEmpty()) env << "DNS_SERVERS=" + dns_servers.trimmed();
+        result.env = env;
+
+        // Прокси из окружения вычищается: движок сам ходит наружу, и
+        // унаследованный HTTPS_PROXY отправил бы его через прокси — в худшем
+        // случае через наш же туннель, то есть в петлю.
+        result.env_unset = QStringList{
+            "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+            "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+        };
+
+        result.env_secret = true; // окружение в журнал не печатать
+        result.log_policy = 1;    // из вывода в журнал идут только разобранные вехи
+
+        // Показывать нечего и нельзя: «Экспорт конфига» открыт из контекстного
+        // меню списка, и там оказались бы ключи.
+        result.config_export = "";
         return result;
     }
 

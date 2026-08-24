@@ -174,6 +174,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->menu_gr_relay, &QAction::triggered, this, [=] {
         DialogRelayActivate d(this);
         d.exec();
+        // Список сам себя не перерисовывает: без этого заведённый профиль
+        // появился бы только после перезапуска, и человек решил бы, что
+        // активация не сработала.
+        if (d.ProfileAdded()) refresh_proxy_list();
     });
     connect(ui->menu_gr_buy, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
     connect(ui->menu_gr_telegram, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kTelegramUrl)); });

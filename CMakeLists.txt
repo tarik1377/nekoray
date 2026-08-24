@@ -165,6 +165,7 @@ set(PROJECT_SOURCES
         fmt/Bean2Link.cpp
         fmt/Link2Bean.cpp
         fmt/ChainBean.hpp # translate
+        fmt/RelayBean.hpp # translate
 
         sub/GroupUpdater.cpp
 
@@ -204,6 +205,9 @@ set(PROJECT_SOURCES
 
         ui/edit/edit_naive.h
         ui/edit/edit_naive.cpp
+        ui/edit/edit_relay.cpp
+        ui/edit/edit_relay.h
+        ui/edit/edit_relay.ui
         ui/edit/edit_naive.ui
 
         ui/edit/edit_quic.h
