@@ -128,6 +128,9 @@ set(PROJECT_SOURCES
         main/HTTPRequestHelper.cpp
         main/RelayTrace.cpp
         main/RelayTrace.hpp
+        main/DeviceCredentials.cpp
+        main/DeviceCredentials.hpp
+        main/SealedStore.hpp
 
         3rdparty/base64.cpp
         3rdparty/qrcodegen.cpp
@@ -321,3 +324,14 @@ add_executable(relaytrace_test EXCLUDE_FROM_ALL
 )
 target_include_directories(relaytrace_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(relaytrace_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+
+# Хранилище реквизитов: запечатка платформенная, поэтому набор линкует ту же
+# реализацию, что и приложение, а не заглушку. Иначе проверка «на диске нет
+# читаемых ключей» проверяла бы не то, что поедет людям.
+add_executable(credentials_test EXCLUDE_FROM_ALL
+        test/DeviceCredentialsTest.cpp
+        main/DeviceCredentials.cpp
+        ${SEALED_STORE_SOURCE}
+)
+target_include_directories(credentials_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(credentials_test PRIVATE Qt${QT_VERSION_MAJOR}::Core ${SEALED_STORE_LIBRARIES})

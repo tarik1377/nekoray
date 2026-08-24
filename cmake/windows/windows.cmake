@@ -1,5 +1,9 @@
-set(PLATFORM_SOURCES 3rdparty/WinCommander.cpp sys/windows/guihelper.cpp sys/windows/MiniDump.cpp)
-set(PLATFORM_LIBRARIES wininet wsock32 ws2_32 user32 rasapi32 iphlpapi)
+set(PLATFORM_SOURCES 3rdparty/WinCommander.cpp sys/windows/guihelper.cpp sys/windows/MiniDump.cpp sys/windows/SealedStore_win.cpp)
+# crypt32 — DPAPI для запечатки реквизитов доступа (main/SealedStore.hpp)
+# Отдельными переменными: тестовой цели нужна только запечатка, без GUI-частей.
+set(SEALED_STORE_SOURCE sys/windows/SealedStore_win.cpp)
+set(SEALED_STORE_LIBRARIES crypt32)
+set(PLATFORM_LIBRARIES wininet wsock32 ws2_32 user32 rasapi32 iphlpapi crypt32)
 
 include(cmake/windows/generate_product_version.cmake)
 generate_product_version(

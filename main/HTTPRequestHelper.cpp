@@ -75,6 +75,73 @@ namespace NekoGui_network {
         return result;
     }
 
+    NekoHTTPResponse NetworkRequestHelper::HttpPost(const QUrl &url, const QByteArray &body,
+                                                    const QList<QPair<QByteArray, QByteArray>> &headers,
+                                                    bool bypassProxy) {
+        QNetworkRequest request;
+        QNetworkAccessManager accessManager;
+        request.setUrl(url);
+
+        // Прокси ставится ровно так же, как в HttpGet, — кроме случая, когда
+        // вызывающий сказал идти мимо. Расходиться этим двум путям нельзя:
+        // подписка, идущая через туннель, и активация, идущая мимо, должны
+        // отличаться одним признаком, а не двумя разными реализациями.
+        if (!bypassProxy && NekoGui::dataStore->sub_use_proxy) {
+            QNetworkProxy p;
+            p.setType(QNetworkProxy::HttpProxy);
+            p.setHostName("127.0.0.1");
+            p.setPort(NekoGui::dataStore->inbound_socks_port);
+            if (NekoGui::dataStore->inbound_auth->NeedAuth()) {
+                p.setUser(NekoGui::dataStore->inbound_auth->username);
+                p.setPassword(NekoGui::dataStore->inbound_auth->password);
+            }
+            accessManager.setProxy(p);
+            if (NekoGui::dataStore->started_id < 0) {
+                return NekoHTTPResponse{QObject::tr("Request with proxy but no profile started.")};
+            }
+        } else if (bypassProxy) {
+            // Явно, а не «по умолчанию»: у QNetworkAccessManager есть ещё и
+            // системный прокси, и на машине с настроенным корпоративным прокси
+            // запрос ушёл бы туда молча.
+            accessManager.setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
+        }
+
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 9, 0))
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+#endif
+        request.setHeader(QNetworkRequest::KnownHeaders::UserAgentHeader, NekoGui::dataStore->GetUserAgent());
+        request.setHeader(QNetworkRequest::KnownHeaders::ContentTypeHeader, "application/json");
+        for (const auto &h: headers) request.setRawHeader(h.first, h.second);
+
+        // sub_insecure сюда НЕ распространяется. Он существует ради чужих
+        // подписок с самоподписанными сертификатами; активация ходит на наш
+        // домен, и ослабить проверку здесь значило бы отдать токен тому, кто
+        // сумел встать посередине.
+        auto _reply = accessManager.post(request, body);
+
+        auto abortTimer = new QTimer;
+        abortTimer->setSingleShot(true);
+        abortTimer->setInterval(10000);
+        QObject::connect(abortTimer, &QTimer::timeout, _reply, &QNetworkReply::abort);
+        abortTimer->start();
+        {
+            QEventLoop loop;
+            QObject::connect(_reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+            loop.exec();
+        }
+        abortTimer->stop();
+        abortTimer->deleteLater();
+
+        // Тело читается ДАЖЕ при ошибке: сайт отвечает 402 и 409 с внятным
+        // объяснением внутри, и выбросить его значило бы показать человеку
+        // «ошибка сети» там, где написано «продлите подписку».
+        auto result = NekoHTTPResponse{_reply->error() == QNetworkReply::NetworkError::NoError ? "" : _reply->errorString(),
+                                       _reply->readAll(), _reply->rawHeaderPairs()};
+        result.status = _reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        _reply->deleteLater();
+        return result;
+    }
+
     QString NetworkRequestHelper::GetHeader(const QList<QPair<QByteArray, QByteArray>> &header, const QString &name) {
         for (const auto &p: header) {
             if (QString(p.first).toLower() == name.toLower()) return p.second;
