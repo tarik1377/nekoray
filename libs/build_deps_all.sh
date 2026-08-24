@@ -23,6 +23,21 @@ fi
 # версиях старше это просто неизвестная переменная: CMake напишет, что она не
 # использована, и продолжит. То есть строка безопасна везде.
 POLICY_MIN="-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+
+# ЦЕЛЕВАЯ ВЕРСИЯ MACOS — ТА ЖЕ, ЧТО У ПРИЛОЖЕНИЯ.
+#
+# Без этого зависимости собираются под версию сборочной машины (раннеры — macOS
+# 15), а приложение объявляет 12.0. Компоновщик про это предупреждает — «object
+# file was built for newer macOS version than being linked», — но собирает, и
+# получается бинарь, который ОБЕЩАЕТ работать на 12 и на ней падает. Обещание,
+# которого никто не проверял, хуже честного ограничения.
+#
+# Значение обязано совпадать с cmake/macos/macos.cmake и LSMinimumSystemVersion.
+# На остальных платформах переменная пуста и ни на что не влияет.
+MACOS_TARGET=""
+if [ "$(uname -s)" = "Darwin" ]; then
+  MACOS_TARGET="-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0"
+fi
 if [ -z $deps ]; then
   deps="deps"
 fi
@@ -51,7 +66,7 @@ cd zxing-*
 mkdir -p build
 cd build
 
-$cmake .. -GNinja $POLICY_MIN -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF -DBUILD_BLACKBOX_TESTS=OFF -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX
+$cmake .. -GNinja $POLICY_MIN $MACOS_TARGET -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF -DBUILD_BLACKBOX_TESTS=OFF -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX
 ninja && ninja install
 
 cd ../..
@@ -64,7 +79,7 @@ cd yaml-*
 mkdir -p build
 cd build
 
-$cmake .. -GNinja $POLICY_MIN -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX
+$cmake .. -GNinja $POLICY_MIN $MACOS_TARGET -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX
 ninja && ninja install
 
 cd ../..
@@ -77,7 +92,7 @@ git clone --recurse-submodules -b v21.4 --depth 1 --shallow-submodules https://g
 mkdir -p protobuf/build
 cd protobuf/build
 
-$cmake .. -GNinja $POLICY_MIN \
+$cmake .. -GNinja $POLICY_MIN $MACOS_TARGET \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_SHARED_LIBS=OFF \
   -Dprotobuf_MSVC_STATIC_RUNTIME=OFF \

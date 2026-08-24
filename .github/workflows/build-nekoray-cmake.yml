@@ -237,8 +237,18 @@ jobs:
     strategy:
       matrix:
         include:
+          # ОБРАЗ ЗАКРЕПЛЁН, А НЕ «latest», и это не перестраховка.
+          #
+          # На macos-latest приехал Xcode 26, а в его SDK больше нет фреймворка
+          # AGL. Qt 6.7 при этом в своём же FindWrapOpenGL.cmake ищет AGL и, НЕ
+          # НАЙДЯ, всё равно подставляет «-framework AGL» — линковка падает
+          # целиком. Это баг Qt, который в наших исходниках не исправить.
+          #
+          # macos-15 несёт тот же Xcode 16.4, на котором ветка Intel собирается
+          # без единой ошибки. Обновлять образ — отдельное решение, вместе с
+          # версией Qt, а не молча в тот день, когда GitHub переставит «latest».
           - arch: arm64
-            runner: macos-latest
+            runner: macos-15
           # macos-13 GitHub отключил 4 декабря 2025 — job на нём не получал бы
           # раннера вовсе и падал бы, не выполнив ни шага.
           - arch: amd64
@@ -406,8 +416,11 @@ jobs:
           NKR_MACOS_ARCH: ${{ matrix.arch }}
           RELEASE_TAG: ${{ github.event.inputs.tag || '' }}
         run: |
+          set -o pipefail
           find download-artifact -name artifacts.tgz | xargs -n1 tar xvzf
-          ./libs/deploy_macos.sh
+          # Вывод сохраняется: без журнала отказ выкладки виден только как имя
+          # шага, а причина не доезжает никуда — первый прогон это и показал.
+          ./libs/deploy_macos.sh 2>&1 | tee macos-deploy.log
 
       # Образ обязан существовать. continue-on-error защищает выпуск под
       # Windows и не должен заодно прятать факт, что мака в релизе нет: без
@@ -438,7 +451,7 @@ jobs:
           # ограниченное число, и первый же прогон это показал: весь запас
           # съел хвост успешного журнала конфигурации, а настоящая причина —
           # падение набора проверок — не поместилась вовсе.
-          for f in macos-cmake.log macos-build.log macos-tests-build.log                    macos-test-relaytrace.log macos-test-credentials.log macos-test-pac.log; do
+          for f in macos-cmake.log macos-build.log macos-tests-build.log                    macos-test-relaytrace.log macos-test-credentials.log macos-test-pac.log                    macos-deploy.log; do
             [ -f "$f" ] || continue
             hits=$(grep -nE "error:|Error|FAILED|fatal|ПЛОХО|undefined|No such file" "$f" | head -8 || true)
             if [ -n "$hits" ]; then
@@ -448,8 +461,13 @@ jobs:
               done
             fi
           done
-          # Хвост — только у того журнала, чей шаг упал последним, и коротко.
-          last=$(ls -t macos-*.log 2>/dev/null | head -1)
+          # Хвост — у последнего ПО ПОРЯДКУ ШАГОВ журнала, который существует.
+          # Раньше брался самый свежий по времени, и это давало не тот файл:
+          # успешный набор проверок пишется позже, чем падает сборка.
+          last=""
+          for f in macos-cmake.log macos-build.log macos-tests-build.log                    macos-test-relaytrace.log macos-test-credentials.log                    macos-test-pac.log macos-deploy.log; do
+            [ -f "$f" ] && last="$f"
+          done
           if [ -n "$last" ]; then
             echo "::error::===== хвост $last ====="
             tail -8 "$last" | while IFS= read -r line; do
