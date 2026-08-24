@@ -9,7 +9,9 @@ import (
 	"grpc_server/gen"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"runtime"
 	"strconv"
 	"strings"
@@ -18,8 +20,125 @@ import (
 	"github.com/matsuridayo/libneko/neko_common"
 )
 
+/*
+ * ОТКУДА КЛИЕНТ УЗНАЁТ О ВЕРСИЯХ.
+ *
+ * Раньше — из релизов на GitHub. Теперь из своего манифеста на verdantvibe.ru.
+ * Причина простая и не про красоту: GitHub у заметной части наших людей просто
+ * не открывается, и «проверить обновление» у них молча не работало никогда.
+ *
+ * Формат ответа — тот же, что читает приложение под Android, плюс платформа и
+ * размер: см. src/server/controller/appRelease.js на сайте.
+ */
+
+/** Куда клиент вообще имеет право пойти за пакетом. Одно место, один хост. */
+const manifestHost = "verdantvibe.ru"
+
 var update_download_url string
-var update_checksum_url string
+
+/** sha256 из манифеста. Пустая строка означает «проверять нечем» — это отказ. */
+var update_expected_sha string
+
+/**
+ * Наш ли это адрес.
+ *
+ * Проверяется РАЗБОРОМ, а не префиксом строки. Проверка вида
+ * strings.HasPrefix(u, "https://verdantvibe.ru") пропускает
+ * https://verdantvibe.ru.evil.tld — и пропускает молча, потому что выглядит
+ * ровно так же, как правильная.
+ */
+func isOurUrl(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	return u.Scheme == "https" && u.Hostname() == manifestHost
+}
+
+/** Похоже ли это на sha256. Шестьдесят четыре шестнадцатеричных, не меньше. */
+func looksLikeSha256(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(s)
+	return err == nil
+}
+
+/** Строка платформы в манифесте. Пусто — сборка не для того, что мы раздаём. */
+func manifestPlatform() string {
+	switch {
+	case runtime.GOOS == "windows" && runtime.GOARCH == "amd64":
+		return "windows-x64"
+	case runtime.GOOS == "linux" && runtime.GOARCH == "amd64":
+		return "linux-x64"
+	case runtime.GOOS == "darwin":
+		return "macos-" + runtime.GOARCH
+	}
+	return ""
+}
+
+/** Ответ /api/app/version/<platform>. Поля — как их отдаёт сайт. */
+type releaseManifest struct {
+	VersionCode int    `json:"versionCode"`
+	Version     string `json:"version"`
+	Url         string `json:"url"`
+	Sha256      string `json:"sha256"`
+	SizeBytes   int64  `json:"sizeBytes"`
+	Notes       string `json:"notes"`
+	Mandatory   bool   `json:"mandatory"`
+	Platform    string `json:"platform"`
+}
+
+/**
+ * Забрать и ПРОВЕРИТЬ манифест.
+ *
+ * Отказ здесь всегда возвращается ошибкой, а не «обновлений нет». Разница не
+ * косметическая: «обновлений нет» человек принимает за ответ и уходит, а
+ * означать это может что угодно — от сломанного DNS до подменённого ответа.
+ */
+func fetchManifest(ctx context.Context, client *http.Client, platform string) (*releaseManifest, error) {
+	if platform == "" {
+		return nil, errors.New("Not official support platform")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET",
+		"https://"+manifestHost+"/api/app/version/"+platform, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// 204 — платформа известна, но выпусков под неё ещё нет. Это единственный
+	// случай, когда «обновлений нет» — правда.
+	if resp.StatusCode == http.StatusNoContent {
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("сайт ответил " + strconv.Itoa(resp.StatusCode))
+	}
+
+	var m releaseManifest
+	// Предел на размер: манифест — сотня байт, и читать без границы то, что
+	// пришло из сети, незачем ни при каких обстоятельствах.
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&m); err != nil {
+		return nil, err
+	}
+
+	// ПРОВЕРКИ ДО ПОКАЗА ЧЕЛОВЕКУ, а не перед скачиванием. Предложение обновиться
+	// — это уже обещание; предлагать то, что заведомо не пройдёт проверку, значит
+	// подвести человека дважды.
+	if !isOurUrl(m.Url) {
+		return nil, errors.New("ссылка на пакет ведёт не на наш сайт — обновление отменено")
+	}
+	if !looksLikeSha256(m.Sha256) {
+		return nil, errors.New("контрольная сумма в манифесте не читается — обновление отменено")
+	}
+	return &m, nil
+}
 
 func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.UpdateResp, error) {
 	ret := &gen.UpdateResp{}
@@ -30,80 +149,54 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		ctx, cancel := context.WithTimeout(ctx, time.Second*10)
 		defer cancel()
 
-		req, _ := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/repos/tarik1377/nekoray/releases", nil)
-		resp, err := client.Do(req)
+		m, err := fetchManifest(ctx, client, manifestPlatform())
 		if err != nil {
+			// Именно ошибка, а не «вы актуальны». Несостоявшаяся проверка и
+			// отсутствие новой версии — разные вещи, и путать их нельзя: во
+			// втором случае человек спокойно уходит, в первом ему надо знать.
 			ret.Error = err.Error()
 			return ret, nil
 		}
-		defer resp.Body.Close()
-
-		v := []struct {
-			TagName string `json:"tag_name"`
-			HtmlUrl string `json:"html_url"`
-			Assets  []struct {
-				Name               string `json:"name"`
-				BrowserDownloadUrl string `json:"browser_download_url"`
-			} `json:"assets"`
-			Prerelease bool   `json:"prerelease"`
-			Body       string `json:"body"`
-		}{}
-		err = json.NewDecoder(resp.Body).Decode(&v)
-		if err != nil {
-			ret.Error = err.Error()
-			return ret, nil
+		if m == nil {
+			return ret, nil // Выпусков под эту платформу пока нет
 		}
 
-		nowVer := neko_common.Version_neko
-
-		var search string
-		if runtime.GOOS == "windows" && runtime.GOARCH == "amd64" {
-			search = "windows-x64"
-		} else if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
-			search = "linux-x64"
-		} else if runtime.GOOS == "darwin" {
-			search = "macos-" + runtime.GOARCH
-		} else {
-			ret.Error = "Not official support platform"
-			return ret, nil
+		// shouldUpdate НЕ ТРОГАЕТСЯ: она обкатана, знает про застрявшие сборки с
+		// версией вида 4.0.1-2024-12-12 и вытаскивает их. Манифест отдаёт версию
+		// без «v», а parseVer этот префикс всё равно снимает.
+		if !shouldUpdate(m.Version, neko_common.Version_neko) {
+			return ret, nil // Уже свежая
 		}
 
-		for _, release := range v {
-			if release.Prerelease && !in.CheckPreRelease {
-				continue
-			}
-			// First acceptable release is the newest (GitHub returns newest-first).
-			// Offer it only if it is strictly newer than what we run now.
-			if !shouldUpdate(release.TagName, nowVer) {
-				return ret, nil // Already up to date
-			}
-			var mainURL, mainName, checksumURL string
-			for _, asset := range release.Assets {
-				if !strings.Contains(asset.Name, search) {
-					continue
-				}
-				if strings.HasSuffix(asset.Name, ".sha256") {
-					checksumURL = asset.BrowserDownloadUrl
-				} else if mainURL == "" {
-					mainURL = asset.BrowserDownloadUrl
-					mainName = asset.Name
-				}
-			}
-			if mainURL != "" {
-				update_download_url = mainURL
-				update_checksum_url = checksumURL
-				ret.AssetsName = mainName
-				ret.DownloadUrl = mainURL
-				ret.ReleaseUrl = release.HtmlUrl
-				ret.ReleaseNote = release.Body
-				ret.IsPreRelease = release.Prerelease
-				return ret, nil // Update available
-			}
-			return ret, nil // Newest release has no matching asset; nothing to offer
+		update_download_url = m.Url
+		update_expected_sha = m.Sha256
+
+		// Имя берётся из адреса, а не придумывается: оно показывается человеку и
+		// должно совпадать с тем, что он увидит в папке загрузок.
+		if u, err := url.Parse(m.Url); err == nil {
+			ret.AssetsName = path.Base(u.Path)
 		}
+		ret.DownloadUrl = m.Url
+		ret.ReleaseUrl = "https://" + manifestHost + "/apps"
+		ret.ReleaseNote = m.Notes
+		// Предварительных выпусков в нашей раздаче нет: манифест отдаёт ровно
+		// одну текущую сборку на платформу. Признак остаётся ложным всегда, и
+		// галка «проверять предварительные» на этот путь больше не влияет.
+		ret.IsPreRelease = false
+		return ret, nil
 	} else { // Download update
-		if update_download_url == "" {
+		if update_download_url == "" || update_expected_sha == "" {
+			// Оба условия — одно и то же состояние: проверка не проходила или не
+			// прошла. Скачивать при этом нечего и не с чем сверять.
 			ret.Error = "No update URL"
+			return ret, nil
+		}
+		// Повторная проверка адреса перед походом. Между проверкой и скачиванием
+		// проходит время и одно человеческое действие, а переменная — пакетная:
+		// стоить эта строчка ничего не стоит, а закрывает целый класс «как оно
+		// туда попало».
+		if !isOurUrl(update_download_url) {
+			ret.Error = "ссылка на пакет ведёт не на наш сайт — обновление отменено"
 			return ret, nil
 		}
 
@@ -114,8 +207,13 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 			return ret, nil
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			ret.Error = "сайт ответил " + strconv.Itoa(resp.StatusCode)
+			return ret, nil
+		}
 
-		// Save as greenrhythm.zip (updater looks for this)
+		// Кладётся как greenrhythm.zip — этого имени ждёт распаковщик, и другого
+		// формата он не понимает.
 		const zipPath = "../greenrhythm.zip"
 		f, err := os.OpenFile(zipPath, os.O_TRUNC|os.O_CREATE|os.O_RDWR, 0644)
 		if err != nil {
@@ -124,62 +222,44 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		}
 		defer f.Close()
 
-		// Hash while downloading so integrity can be checked before the updater runs.
+		// Сумма считается на лету: файл под шестьдесят мегабайт, и читать его
+		// вторым проходом ради того же числа незачем.
 		h := sha256.New()
 		_, err = io.Copy(io.MultiWriter(f, h), resp.Body)
 		if err != nil {
+			f.Close()
+			os.Remove(zipPath)
 			ret.Error = err.Error()
 			return ret, nil
 		}
 		f.Sync()
 
-		// Verify against the release-published SHA-256. If the release published a
-		// checksum, we MUST fetch and match it — a fetch/parse failure is treated as a
-		// verification failure (abort), not a silent skip. (Signature with an offline
-		// key remains the stronger follow-up against a fully compromised release.)
-		if update_checksum_url != "" {
-			expected, err := fetchExpectedSha(ctx, client, update_checksum_url)
-			if err != nil || expected == "" {
-				f.Close()
-				os.Remove(zipPath)
-				ret.Error = "could not verify update checksum — aborting"
-				return ret, nil
-			}
-			got := hex.EncodeToString(h.Sum(nil))
-			if !strings.EqualFold(got, expected) {
-				f.Close()
-				os.Remove(zipPath)
-				ret.Error = "update package checksum mismatch — aborting"
-				return ret, nil
-			}
+		/*
+		 * ПРОВЕРКА СУММЫ ОБЯЗАТЕЛЬНА, А НЕ «ЕСЛИ НАШЛАСЬ».
+		 *
+		 * Прежде сумма лежала отдельным файлом рядом с релизом, и её отсутствие
+		 * означало «проверять нечем» — то есть установку без проверки. Теперь
+		 * она приходит в самом манифесте и без неё сюда не доходят вовсе:
+		 * несостоявшаяся проверка равна проваленной.
+		 *
+		 * Честно про предел: сумма едет по тому же TLS и с того же сайта, что и
+		 * файл. Она ловит битую закачку и подмену по дороге, но не сайт,
+		 * которым завладели. Настоящее лечение — подпись офлайновым ключом,
+		 * открытая часть которого лежит в клиенте; называть sha256 подписью
+		 * нечестно, и здесь она ею не называется.
+		 */
+		got := hex.EncodeToString(h.Sum(nil))
+		if !strings.EqualFold(got, update_expected_sha) {
+			// Файл убирается сразу. Оставленный, он дождётся распаковщика,
+			// который проверок не делает вовсе.
+			f.Close()
+			os.Remove(zipPath)
+			ret.Error = "контрольная сумма пакета не сошлась — обновление отменено"
+			return ret, nil
 		}
 	}
 
 	return ret, nil
-}
-
-// fetchExpectedSha downloads a sha256sum file and returns the hex digest (the first
-// whitespace-separated field). Returns an error on any failure so the caller can
-// abort rather than silently skip verification when a checksum was published.
-func fetchExpectedSha(ctx context.Context, client *http.Client, url string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return "", err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
-	if err != nil {
-		return "", err
-	}
-	fields := strings.Fields(string(b))
-	if len(fields) == 0 {
-		return "", errors.New("empty checksum file")
-	}
-	return fields[0], nil
 }
 
 // parseVer parses a clean GreenRhythm tag "vX.Y.Z" into numeric parts.
