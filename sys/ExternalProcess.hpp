@@ -11,6 +11,12 @@ namespace NekoGui_sys {
         QStringList arguments;
         QStringList env;
 
+        /** Не печатать окружение в журнал — см. ExternalBuildResult::env_secret. */
+        bool env_secret = false;
+
+        /** Что делать с выводом процесса — см. ExternalBuildResult::log_policy. */
+        int log_policy = 0;
+
         bool managed = true; // MW_dialog_message
 
         ExternalProcess();
@@ -23,6 +29,9 @@ namespace NekoGui_sys {
         void Kill();
 
     protected:
+        /** Вывод под политикой log_policy=1 — только разобранные вехи. */
+        void ShowFilteredLog(const QByteArray &raw);
+
         bool started = false;
         bool killed = false;
         bool crashed = false;

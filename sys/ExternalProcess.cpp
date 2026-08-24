@@ -1,5 +1,6 @@
 #include "ExternalProcess.hpp"
 #include "main/NekoGui.hpp"
+#include "main/RelayTrace.hpp"
 
 #include <QTimer>
 #include <QDir>
@@ -17,6 +18,26 @@ namespace NekoGui_sys {
         // qDebug() << "[Debug] ~ExternalProcess()" << this << running_ext;
     }
 
+    /**
+     * Вывод процесса, которому нельзя говорить своими словами.
+     *
+     * Разбирается ПОСТРОЧНО и по одной причине: труба отдаёт куски произвольной
+     * длины, и веха может приехать склеенной с посторонней строкой. Пропустив
+     * такой кусок целиком, мы бы вынесли в журнал ровно то, ради недопущения
+     * чего всё и затевалось.
+     *
+     * Строка, которая не разобралась, отбрасывается молча. Показать её «на
+     * всякий случай» нельзя: непонятая строка — это в точности тот случай,
+     * когда неизвестно, что в ней написано.
+     */
+    void ExternalProcess::ShowFilteredLog(const QByteArray &raw) {
+        const auto text = QString::fromUtf8(raw);
+        for (const auto &line: text.split('\n')) {
+            const auto said = RelayTrace::Line(line);
+            if (!said.isEmpty()) MW_show_log_ext(tag, said);
+        }
+    }
+
     void ExternalProcess::Start() {
         if (started) return;
         started = true;
@@ -25,10 +46,19 @@ namespace NekoGui_sys {
             connect(this, &QProcess::readyReadStandardOutput, this, [&]() {
                 auto log = readAllStandardOutput();
                 if (logCounter.fetchAndAddRelaxed(log.count("\n")) > NekoGui::dataStore->max_log_line) return;
+                if (log_policy == 1) {
+                    ShowFilteredLog(log);
+                    return;
+                }
                 MW_show_log_ext_vt100(log);
             });
             connect(this, &QProcess::readyReadStandardError, this, [&]() {
-                MW_show_log_ext_vt100(readAllStandardError().trimmed());
+                auto log = readAllStandardError().trimmed();
+                if (log_policy == 1) {
+                    ShowFilteredLog(log);
+                    return;
+                }
+                MW_show_log_ext_vt100(log);
             });
             connect(this, &QProcess::errorOccurred, this, [&](QProcess::ProcessError error) {
                 if (!killed) {
@@ -49,7 +79,15 @@ namespace NekoGui_sys {
                     }
                 }
             });
-            MW_show_log_ext(tag, "External core starting: " + env.join(" ") + " " + program + " " + arguments.join(" "));
+            // Окружение печатается ЦЕЛИКОМ, со значениями, а журнал уходит в
+            // файл и оттуда в поддержку. Для процесса, которому передают ключи,
+            // это прямая утечка, и скрыть одни значения мало: имена переменных
+            // сами рассказывают, из чего сложено подключение. Поэтому у такого
+            // процесса называется только их число.
+            const auto shownEnv = env_secret
+                                      ? QString("env: %1 var(s)").arg(env.size())
+                                      : env.join(" ");
+            MW_show_log_ext(tag, "External core starting: " + shownEnv + " " + program + " " + arguments.join(" "));
         }
 
         QProcess::setEnvironment(env);

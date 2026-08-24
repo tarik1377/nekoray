@@ -126,6 +126,8 @@ set(PROJECT_SOURCES
         main/NekoGui.cpp
         main/NekoGui_Utils.cpp
         main/HTTPRequestHelper.cpp
+        main/RelayTrace.cpp
+        main/RelayTrace.hpp
 
         3rdparty/base64.cpp
         3rdparty/qrcodegen.cpp
@@ -303,3 +305,19 @@ target_link_libraries(greenrhythm PRIVATE
 if (QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(greenrhythm)
 endif ()
+
+# --- Проверки ---------------------------------------------------------------
+# Отдельная цель, а не часть greenrhythm: набор линкуется с Qt6::Core, а не с
+# Widgets, собирается за секунды и в выпуск не попадает. Собирать и запускать:
+#     ninja relaytrace_test && ./relaytrace_test
+#
+# Здесь проверяется разбор вывода резервного подключения — то место, где
+# незамеченная правка выносит в журнал устройство канала. Всё остальное в этом
+# проекте проверяется руками, и это отдельный разговор; заводить обвес целиком
+# ради одной правки было бы не по делу, а вот оставить эту без проверки нельзя.
+add_executable(relaytrace_test EXCLUDE_FROM_ALL
+        test/RelayTraceTest.cpp
+        main/RelayTrace.cpp
+)
+target_include_directories(relaytrace_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(relaytrace_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)

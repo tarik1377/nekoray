@@ -28,7 +28,45 @@ std::list<std::shared_ptr<NekoGui_sys::ExternalProcess>> CreateExtCFromExtR(cons
         extC->tag = extR->tag;
         extC->program = extR->program;
         extC->arguments = extR->arguments;
-        extC->env = extR->env;
+        extC->env_secret = extR->env_secret;
+        extC->log_policy = extR->log_policy;
+
+        // ОКРУЖЕНИЕ ДОПОЛНЯЕТСЯ, А НЕ ЗАМЕЩАЕТСЯ.
+        //
+        // Здесь стояло extC->env = extR->env, и это выбрасывало системное
+        // окружение, которое конструктор ExternalProcess только что положил.
+        // QProcess трактует непустой список как «ровно это и ничего больше»,
+        // поэтому naive с сертификатом стартовал на Windows с окружением из
+        // ОДНОЙ переменной SSL_CERT_FILE — без SystemRoot, PATH и TEMP.
+        // Работало это по случайности: программе, которой ничего из системного
+        // окружения не нужно, оно и не понадобилось.
+        //
+        // Слияние, а не дописывание: сначала убираем то, что процесс просил
+        // убрать (env_unset), потом дописываем своё. При совпадении имени
+        // побеждает последнее — QProcessEnvironment::fromStringList вставляет
+        // по порядку, — то есть наше значение перекрывает системное, как и
+        // задумано.
+        auto env = extC->env;
+        if (!extR->env_unset.isEmpty()) {
+            QStringList kept;
+            for (const auto &line: env) {
+                const auto name = line.left(line.indexOf('='));
+                bool drop = false;
+                for (const auto &unset: extR->env_unset) {
+                    // Имена переменных на Windows регистронезависимы, а
+                    // http_proxy и HTTP_PROXY читаются разными библиотеками.
+                    if (name.compare(unset, Qt::CaseInsensitive) == 0) {
+                        drop = true;
+                        break;
+                    }
+                }
+                if (!drop) kept << line;
+            }
+            env = kept;
+        }
+        env << extR->env;
+        extC->env = env;
+
         l.emplace_back(extC);
         //
         if (start) extC->Start();
