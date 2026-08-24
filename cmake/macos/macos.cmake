@@ -8,13 +8,14 @@
 
 set(PLATFORM_SOURCES
         sys/macos/SealedStore_macos.cpp
+        sys/XorSeal.cpp
         sys/macos/MacProxyController.cpp
         sys/macos/PacServer.cpp
         sys/macos/PacBuilder.cpp
 )
 
 # Отдельными переменными: тестовой цели нужна только запечатка, без GUI-частей.
-set(SEALED_STORE_SOURCE sys/macos/SealedStore_macos.cpp)
+set(SEALED_STORE_SOURCE sys/macos/SealedStore_macos.cpp sys/XorSeal.cpp)
 set(SEALED_STORE_LIBRARIES)
 
 # НАСТРОЙКИ ЛЕЖАТ РЯДОМ С ПОЛЬЗОВАТЕЛЕМ, А НЕ ВНУТРИ .app — ОБЯЗАТЕЛЬНО.

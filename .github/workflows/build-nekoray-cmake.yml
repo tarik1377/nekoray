@@ -326,18 +326,18 @@ jobs:
 
       - name: Test — разбор вывода резерва
         shell: bash
-        run: cd build/testrun && ./relaytrace_test
+        run: cd build/testrun && ./relaytrace_test 2>&1 | tee ../../macos-test-relaytrace.log
 
       # На маке запечатка своя (от идентификатора машины), и набор проверяет
       # именно её: «на диске нет читаемых ключей» на разных платформах держится
       # на разном коде.
       - name: Test — хранилище реквизитов
         shell: bash
-        run: cd build/testrun && ./credentials_test
+        run: cd build/testrun && ./credentials_test 2>&1 | tee ../../macos-test-credentials.log
 
       - name: Test — сборка файла автонастройки
         shell: bash
-        run: cd build/testrun && ./pac_test
+        run: cd build/testrun && ./pac_test 2>&1 | tee ../../macos-test-pac.log
 
       - name: Test — исполнение файла автонастройки
         shell: bash
@@ -434,13 +434,28 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          for f in macos-cmake.log macos-build.log macos-tests-build.log; do
+          # СНАЧАЛА СТРОКИ ОШИБОК, ПОТОМ ХВОСТ. Аннотаций на шаг отдаётся
+          # ограниченное число, и первый же прогон это показал: весь запас
+          # съел хвост успешного журнала конфигурации, а настоящая причина —
+          # падение набора проверок — не поместилась вовсе.
+          for f in macos-cmake.log macos-build.log macos-tests-build.log                    macos-test-relaytrace.log macos-test-credentials.log macos-test-pac.log; do
             [ -f "$f" ] || continue
-            echo "::error::===== $f (последние строки) ====="
-            tail -25 "$f" | while IFS= read -r line; do
+            hits=$(grep -nE "error:|Error|FAILED|fatal|ПЛОХО|undefined|No such file" "$f" | head -8 || true)
+            if [ -n "$hits" ]; then
+              echo "::error::===== $f ====="
+              echo "$hits" | while IFS= read -r line; do
+                echo "::error::$line"
+              done
+            fi
+          done
+          # Хвост — только у того журнала, чей шаг упал последним, и коротко.
+          last=$(ls -t macos-*.log 2>/dev/null | head -1)
+          if [ -n "$last" ]; then
+            echo "::error::===== хвост $last ====="
+            tail -8 "$last" | while IFS= read -r line; do
               echo "::error::$line"
             done
-          done
+          fi
           echo "::error::===== окружение ====="
           echo "::error::system: $(sw_vers -productVersion 2>/dev/null) arch: $(uname -m)"
           echo "::error::cmake: $(cmake --version 2>/dev/null | head -1)"
