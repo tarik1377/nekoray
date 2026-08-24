@@ -891,9 +891,16 @@ void MainWindow::neko_set_spmode_system_proxy(bool enable, bool save) {
 }
 
 void MainWindow::neko_set_spmode_vpn(bool enable, bool save) {
+    // Настройка «туннель внутри ядра» спрашивается ВМЕСТЕ с платформой. На маке
+    // такого режима нет вовсе (см. PlatformSupportsInternalTun), и без этой
+    // проверки включение уходило в ветку запроса прав, которая знает только про
+    // Linux и Windows, — то есть проваливалось в отказ молча, без диалога и без
+    // строки в журнале. Человек видел, что галка отщёлкнулась сама.
+    const bool internalTun = NekoGui::UseInternalTun();
+
     if (enable != NekoGui::dataStore->spmode_vpn) {
         if (enable) {
-            if (NekoGui::dataStore->vpn_internal_tun) {
+            if (internalTun) {
                 bool requestPermission = !NekoGui::IsAdmin();
                 if (requestPermission) {
 #ifdef Q_OS_LINUX
@@ -931,7 +938,7 @@ void MainWindow::neko_set_spmode_vpn(bool enable, bool save) {
                 }
             }
         } else {
-            if (NekoGui::dataStore->vpn_internal_tun) {
+            if (internalTun) {
                 // current core is sing-box
             } else {
                 if (!StopVPNProcess()) {
@@ -952,7 +959,7 @@ void MainWindow::neko_set_spmode_vpn(bool enable, bool save) {
     NekoGui::dataStore->spmode_vpn = enable;
     refresh_status();
 
-    if (NekoGui::dataStore->vpn_internal_tun && NekoGui::dataStore->started_id >= 0) neko_start(NekoGui::dataStore->started_id);
+    if (internalTun && NekoGui::dataStore->started_id >= 0) neko_start(NekoGui::dataStore->started_id);
 }
 
 void MainWindow::refresh_status(const QString &traffic_update) {
@@ -3401,8 +3408,29 @@ bool MainWindow::StartVPNProcess() {
     //
     vpn_process->setProcessChannelMode(QProcess::ForwardedChannels);
 #ifdef Q_OS_MACOS
+    /*
+     * ПУТЬ НА МАКЕ СОДЕРЖИТ ПРОБЕЛ, и здесь он проходит через ДВА разбора.
+     *
+     * Каталог настроек — ~/Library/Application Support/…; скрипт пишется туда.
+     * Строка ниже сначала читается как литерал AppleScript, потом её содержимое
+     * отдаётся оболочке. Собранная без кавычек, она превращалась в
+     * `bash /Users/x/Library/Application` — то есть туннель не запускался
+     * никогда, а человек видел только, что галка отщёлкнулась сама.
+     *
+     * Поэтому уровней кавычек два, и порядок важен: сначала путь берётся в
+     * одинарные кавычки для оболочки (внутри них она не трогает ни пробелы, ни
+     * доллары), затем получившееся экранируется как литерал AppleScript.
+     *
+     * Сырые литералы здесь не для красоты: замена одинарной кавычки — это
+     * последовательность из четырёх символов, и записанная обычным литералом со
+     * слэшами она уже однажды свернулась в три при первой же правке. Ошибка
+     * такого рода не видна глазом и всплывает на одном пути из тысячи.
+     */
+    const auto shellQuoted = "'" + QString(scriptPath).replace("'", R"('\'')") + "'";
+    auto asLiteral = QString("bash " + shellQuoted);
+    asLiteral.replace("\\", "\\\\").replace("\"", "\\\"");
     vpn_process->start("osascript", {"-e", QStringLiteral("do shell script \"%1\" with administrator privileges")
-                                               .arg("bash " + scriptPath)});
+                                               .arg(asLiteral)});
 #else
     vpn_process->start("pkexec", {"bash", scriptPath});
 #endif

@@ -21,12 +21,28 @@ namespace NekoGui {
         return paths;
     }
 
+    /**
+     * Имя сетевого интерфейса туннеля.
+     *
+     * НА MACOS — ПУСТАЯ СТРОКА, и это не «не сделали», а единственный рабочий
+     * вариант. Здесь стояло «utun9», и на маке имя утилитарного интерфейса — не
+     * ярлык, а НОМЕР блока управления в ядре: попросив utun9, мы требуем именно
+     * девятый, и если он занят — а его занимают iCloud Private Relay и любой
+     * другой VPN, — sing-tun падает с EBUSY. Для человека это «включил туннель,
+     * он сразу выключился», причём воспроизводится через раз, в зависимости от
+     * того, что он запускал до нас.
+     *
+     * Пустая строка означает «дай любой свободный», и его выдаёт ядро.
+     *
+     * На Windows имя остаётся прежним: там оно и есть ярлык, по нему туннель
+     * узнают скрипты диагностики и правила фаервола, и менять его нельзя.
+     */
     QString genTunName() {
-        auto tun_name = "neko-tun";
 #ifdef Q_OS_MACOS
-        tun_name = "utun9";
+        return {};
+#else
+        return "neko-tun";
 #endif
-        return tun_name;
     }
 
     void MergeJson(QJsonObject &dst, const QJsonObject &src) {
@@ -479,11 +495,15 @@ namespace NekoGui {
         }
 
         // tun-in
-        if (dataStore->vpn_internal_tun && dataStore->spmode_vpn && !status->forTest) {
+        if (UseInternalTun() && dataStore->spmode_vpn && !status->forTest) {
             QJsonObject inboundObj;
             inboundObj["tag"] = "tun-in";
             inboundObj["type"] = "tun";
-            inboundObj["interface_name"] = genTunName();
+            // Поле не ставится вовсе, если имени нет: пустая строка в конфиге и
+            // отсутствие поля — разные вещи, и sing-tun на пустую ругается.
+            if (const auto tunName = genTunName(); !tunName.isEmpty()) {
+                inboundObj["interface_name"] = tunName;
+            }
             inboundObj["auto_route"] = true;
             inboundObj["endpoint_independent_nat"] = true;
             inboundObj["mtu"] = dataStore->vpn_mtu;
@@ -495,7 +515,16 @@ namespace NekoGui {
             // cross-subnet probes (e.g. Windows Delivery Optimization :7680) don't get
             // captured and time out. TUN's own 172.19.0.1/28 is set via inet4_address above,
             // so excluding 172.16/12 is safe.
-            inboundObj["route_exclude_address"] = QJsonArray{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"};
+            //
+            // К ним же добавлены 100.64.0.0/10 и адреса IPv6 того же смысла.
+            // 100.64/10 — это CGNAT, и по нему живёт Tailscale: без исключения
+            // домашняя сеть человека уезжает в наш туннель ровно в тот момент,
+            // когда он включает наш клиент, и «перестал видеть свой NAS» он
+            // свяжет с чем угодно, только не с этим. fc00::/7 и fe80::/10 —
+            // то же самое для IPv6, которого в прежнем списке не было вовсе.
+            inboundObj["route_exclude_address"] = QJsonArray{
+                "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16",
+                "100.64.0.0/10", "fc00::/7", "fe80::/10"};
             if (dataStore->routing->sniffing_mode != SniffingMode::DISABLE) {
                 inboundObj["sniff"] = true;
                 inboundObj["sniff_override_destination"] = dataStore->routing->sniffing_mode == SniffingMode::FOR_DESTINATION;
@@ -634,7 +663,7 @@ namespace NekoGui {
             };
 
         // Fakedns
-        if (dataStore->fake_dns && dataStore->vpn_internal_tun && dataStore->spmode_vpn && !status->forTest) {
+        if (dataStore->fake_dns && UseInternalTun() && dataStore->spmode_vpn && !status->forTest) {
             dnsServers += QJsonObject{
                 {"tag", "dns-fake"},
                 {"address", "fakeip"},
@@ -676,7 +705,7 @@ namespace NekoGui {
         }
 
         // fakedns rule
-        if (dataStore->fake_dns && dataStore->vpn_internal_tun && dataStore->spmode_vpn && !status->forTest) {
+        if (dataStore->fake_dns && UseInternalTun() && dataStore->spmode_vpn && !status->forTest) {
             dnsRules += QJsonObject{
                 {"inbound", "tun-in"},
                 {"server", "dns-fake"},
@@ -734,7 +763,7 @@ namespace NekoGui {
         };
 
         // tun user rule
-        if (dataStore->vpn_internal_tun && dataStore->spmode_vpn && !status->forTest) {
+        if (UseInternalTun() && dataStore->spmode_vpn && !status->forTest) {
             auto match_out = dataStore->vpn_rule_white ? "proxy" : "bypass";
 
             QString process_name_rule = dataStore->vpn_rule_process.trimmed();
@@ -860,7 +889,13 @@ namespace NekoGui {
                           .replace("//%CIDR_RULE%", cidr_rule)
                           .replace("%MTU%", Int2String(dataStore->vpn_mtu))
                           .replace("%STACK%", Preset::SingBox::VpnImplementation.value(dataStore->vpn_implementation))
-                          .replace("%TUN_NAME%", genTunName())
+                          // Имя интерфейса — строкой целиком, а не значением:
+                          // на macOS его нет, и «"interface_name": ""» sing-tun
+                          // не примет. Отсутствующее поле и пустое поле — разные
+                          // вещи, и здесь нужна именно первая.
+                          .replace("//%TUN_NAME%", genTunName().isEmpty()
+                                                       ? ""
+                                                       : R"("interface_name": ")" + genTunName() + R"(",)")
                           .replace("%STRICT_ROUTE%", dataStore->vpn_strict_route ? "true" : "false")
                           .replace("%FINAL_OUT%", no_match_out)
                           .replace("%DNS_ADDRESS%", BOX_UNDERLYING_DNS)

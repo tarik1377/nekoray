@@ -664,4 +664,16 @@ namespace NekoGui {
         return admin;
     };
 
+    bool PlatformSupportsInternalTun() {
+#ifdef Q_OS_MACOS
+        return false;
+#else
+        return true;
+#endif
+    }
+
+    bool UseInternalTun() {
+        return dataStore->vpn_internal_tun && PlatformSupportsInternalTun();
+    }
+
 } // namespace NekoGui
