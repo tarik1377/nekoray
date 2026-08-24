@@ -141,6 +141,45 @@ namespace NekoGui_sys::MacProxy {
         return out;
     }
 
+    QStringList Report() {
+        QStringList out;
+        const auto services = NetworkServices();
+        if (services.isEmpty()) {
+            out << QObject::tr("Не удалось прочитать список сетевых служб.");
+            return out;
+        }
+
+        for (const auto &s: services) {
+            const auto o = readService(s);
+            const auto url = o["autoUrl"].toString();
+            const bool on = o["autoOn"].toBool();
+
+            if (!on || url.isEmpty()) {
+                out << QObject::tr("%1: автонастройка выключена").arg(s);
+                continue;
+            }
+            // Наш адрес всегда местный: сервер поднят на 127.0.0.1. Чужой
+            // корпоративный прокси так не выглядит.
+            const bool ours = url.startsWith("http://127.0.0.1:");
+            out << (ours ? QObject::tr("%1: включена НАША автонастройка").arg(s)
+                         : QObject::tr("%1: включена ЧУЖАЯ автонастройка — не трогаем").arg(s));
+        }
+        return out;
+    }
+
+    bool OursIsLeftBehind() {
+        // Снимок на диске означает, что мы включали прокси и не выключили, —
+        // то есть прошлый запуск кончился падением или убийством процесса.
+        if (QFile::exists(backupPath())) return true;
+
+        for (const auto &s: NetworkServices()) {
+            const auto o = readService(s);
+            if (!o["autoOn"].toBool()) continue;
+            if (o["autoUrl"].toString().startsWith("http://127.0.0.1:")) return true;
+        }
+        return false;
+    }
+
     bool Enable(const QString &pacUrl) {
         if (pacUrl.isEmpty()) return false;
 

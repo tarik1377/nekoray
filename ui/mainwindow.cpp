@@ -182,20 +182,41 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->menu_gr_connect, &QAction::triggered, this, [=] { smart_connect_greenrhythm(); });
     connect(ui->menu_gr_qr, &QAction::triggered, this, [=] { show_subscription_qr(); });
     connect(ui->menu_gr_diag, &QAction::triggered, this, [=] { run_diagnostics(); });
-    connect(ui->menu_gr_fixnet, &QAction::triggered, this, [=] { repair_windows_network(); });
+    // ОДИН ПУНКТ МЕНЮ, РАЗНАЯ НАЧИНКА. Прятать его вне Windows было ошибкой:
+    // нужда «включил, а сеть не работает» есть на всех платформах, и человек,
+    // не нашедший в меню того, что видел на скриншотах, решает, что у него не
+    // та версия. Совпадать должно меню; отличаться — то, что за ним стоит.
+    connect(ui->menu_gr_fixnet, &QAction::triggered, this, [=] {
+#ifdef Q_OS_MACOS
+        repair_macos_network();
+#else
+        repair_windows_network();
+#endif
+    });
+#ifdef Q_OS_MACOS
+    // На маке чинится не «сеть Windows», и называться пункт должен по делу.
+    ui->menu_gr_fixnet->setText(tr("Починить сеть"));
+    ui->menu_gr_fixnet->setToolTip(tr("Вернуть системные настройки, сбросить кэш имён "
+                                      "и показать сторонние туннели"));
+#endif
     connect(ui->menu_gr_adapters, &QAction::triggered, this, [=] { disable_extra_adapters(); });
+#ifdef Q_OS_MACOS
+    // Тот же пункт, но на маке он показывает, а не выключает: интерфейсы utun
+    // держит поднявшая их программа, и гасить их снаружи бессмысленно.
+    ui->menu_gr_adapters->setText(tr("Сторонние туннели…"));
+    ui->menu_gr_adapters->setToolTip(tr("Показать чужие туннели и их маршруты. Ничего не выключается."));
+#endif
     connect(ui->menu_gr_howto, &QAction::triggered, this, [=] { show_macos_modes(false); });
 #ifndef Q_OS_MACOS
     // Пункт про выбор режима нужен там, где выбор есть. На Windows туннель
     // перехватывает всё и объяснять нечего.
     ui->menu_gr_howto->setVisible(false);
 #endif
-#ifndef Q_OS_WIN
+#if !defined(Q_OS_WIN) && !defined(Q_OS_MACOS)
+    // Остаётся Linux: там ни того, ни другого пока не сделано, и показывать
+    // пункт, за которым ничего нет, хуже, чем не показывать. Прятать, а не
+    // гасить: серый пункт обещает условие, при котором он заработает.
     ui->menu_gr_adapters->setVisible(false);
-    // «Починить сеть Windows» вне Windows не просто бесполезен — он весь состоит
-    // из netsh, Get-NetAdapter и списка службы Zapret. Прятать, а не гасить:
-    // серый пункт обещает условие, при котором он заработает, и человек будет
-    // его искать.
     ui->menu_gr_fixnet->setVisible(false);
 #endif
     ui->menu_gr_autopilot->setChecked(NekoGui::dataStore->connection_autopilot);
@@ -2022,9 +2043,51 @@ void MainWindow::run_diagnostics() {
 // on a real machine it held the user's own work entries (corporate hosts, docker),
 // and wiping those would break something we were never asked to touch.
 void MainWindow::disable_extra_adapters() {
-#ifndef Q_OS_WIN
+#if defined(Q_OS_MACOS)
+    /*
+     * НА МАКЕ ТОТ ЖЕ ПУНКТ ПОКАЗЫВАЕТ, А НЕ ВЫКЛЮЧАЕТ.
+     *
+     * Сначала пункт здесь просто прятался, и это было неверно: вопрос «что за
+     * туннели у меня подняты и не мешают ли они» одинаков на обеих платформах,
+     * а меню без него выглядит урезанным.
+     *
+     * Выключения нет намеренно, а не по недоделке. Интерфейсы utun заводит и
+     * держит та программа, которая их подняла; «выключить» его снаружи означает
+     * оставить владельца в состоянии, которого он не ожидает, — а через минуту
+     * тот поднимет его заново. Правильное действие — выйти из той программы, и
+     * ровно это здесь и написано.
+     */
+    const auto found = NekoGui_sys::DetectForeignTunnels();
+    if (found.isEmpty()) {
+        QMessageBox::information(this, tr("Сторонние туннели"),
+                                 tr("Сторонних туннелей не найдено."));
+        return;
+    }
+
+    QStringList lines;
+    for (const auto &t: found) {
+        QString one = t.name;
+        if (t.ownsHalfTheInternet) {
+            one += tr("  —  через него идёт ВЕСЬ трафик; с нашим туннелем он ужиться не сможет");
+        } else if (!t.prefixes.isEmpty()) {
+            auto shown = t.prefixes.mid(0, 4);
+            if (t.prefixes.size() > 4) shown << QStringLiteral("…");
+            one += tr("  —  маршруты: ") + shown.join(", ");
+        }
+        lines << one;
+    }
+
+    QMessageBox::information(
+        this, tr("Сторонние туннели"),
+        tr("Найдено:\n\n%1\n\n"
+           "Мы их не трогаем. Выключить туннель можно только в той программе, "
+           "которая его подняла.\n\n"
+           "Если он вам нужен, перечислите его сети в «Не заводить в туннель» — "
+           "тогда они останутся доступны в обход канала.")
+            .arg(lines.join("\n")));
+#elif !defined(Q_OS_WIN)
     QMessageBox::information(this, tr("Сетевые адаптеры"),
-                             tr("Эта функция доступна только в Windows."));
+                             tr("Эта функция пока доступна только в Windows и macOS."));
 #else
     /*
      * ЭТОТ ПУНКТ ЗАМЕНЯЕТ ТО, ЧТО РАНЬШЕ ДЕЛАЛОСЬ БЕЗ СПРОСА.
@@ -2156,6 +2219,82 @@ void MainWindow::disable_extra_adapters() {
         text += tr("\n\nНе удалось отключить: %1.").arg(still.join(", "));
     }
     QMessageBox::information(this, tr("Сетевые адаптеры"), text);
+#endif
+}
+
+/**
+ * «Починить сеть» на macOS — свой набор действий, а не отсутствующий пункт.
+ *
+ * ПОЧЕМУ ПУНКТ ОСТАЁТСЯ. Windows-версия чистит следы Zapret, GoodbyeDPI и WARP;
+ * на маке таких программ нет, и первым решением было просто спрятать пункт. Это
+ * оказалось неверно: НУЖДА-то остаётся — «включил, а браузер не работает», — и
+ * человек, не найдя в меню того, что видел на скриншотах, решает, что у него
+ * не та версия. Меню должно совпадать; отличаться может начинка.
+ *
+ * ЧТО ДЕЛАЕТСЯ ЗДЕСЬ, и все три пункта — про реальные обращения:
+ *   1. Возвращаются системные настройки прокси, если мы их оставили. Прошлый
+ *      запуск мог кончиться падением, и тогда в системе до сих пор стоит наш
+ *      адрес автонастройки, ведущий на порт, которого больше нет: браузер молча
+ *      перестаёт открывать что-либо.
+ *   2. Сбрасывается кэш имён — после смены маршрутов система нередко держит
+ *      старые ответы, и «сайт не открывается» переживает выключение туннеля.
+ *   3. Показываются чужие туннели и чужой прокси. ПОКАЗЫВАЮТСЯ, а не трогаются:
+ *      выключить их можно только в той программе, которая их подняла.
+ *
+ * Чужой прокси не трогается ни при каких условиях. Ровно на этом обжёгся
+ * вендорный QvProxyConfigurator: он гасит прокси на всех службах, не помня, что
+ * там было, — и стирает человеку его корпоративную настройку без возврата.
+ */
+void MainWindow::repair_macos_network() {
+#ifdef Q_OS_MACOS
+    const bool ours = NekoGui_sys::MacProxy::OursIsLeftBehind();
+
+    QMessageBox ask(QMessageBox::Question, tr("Починить сеть"),
+                    tr("Будет сделано:\n\n"
+                       "• системные настройки прокси вернутся к тому, что было до нас;\n"
+                       "• сбросится кэш имён (DNS);\n"
+                       "• найденные сторонние туннели будут показаны — и НЕ тронуты.\n\n"
+                       "Чужой прокси, если он настроен не нами, не трогается.\n\n"
+                       "Для сброса кэша имён система спросит пароль. Продолжить?"),
+                    QMessageBox::NoButton, this);
+    auto *go = ask.addButton(tr("Починить"), QMessageBox::AcceptRole);
+    ask.addButton(tr("Отмена"), QMessageBox::RejectRole);
+    ask.exec();
+    if (ask.clickedButton() != go) return;
+
+    QStringList report;
+
+    if (ours) {
+        report << (NekoGui_sys::MacProxy::Disable()
+                       ? tr("Настройки прокси возвращены к прежним.")
+                       : tr("Вернуть настройки прокси не удалось — возможно, ими управляет организация."));
+    } else {
+        report << tr("Наших настроек прокси в системе не осталось — возвращать нечего.");
+    }
+
+    // Один вызов под правами: два отдельных означали бы два запроса пароля.
+    QProcess flush;
+    flush.start("osascript",
+                {"-e", QStringLiteral("do shell script \"dscacheutil -flushcache; "
+                                      "killall -HUP mDNSResponder\" with administrator privileges")});
+    flush.waitForFinished(30000);
+    report << (flush.exitCode() == 0 ? tr("Кэш имён сброшен.")
+                                     : tr("Кэш имён не сброшен — запрос прав не подтверждён."));
+
+    report << QString();
+    report << tr("Состояние системных настроек:");
+    report << NekoGui_sys::MacProxy::Report();
+
+    const auto foreign = NekoGui_sys::DetectForeignTunnels();
+    report << QString();
+    report << (foreign.isEmpty()
+                   ? tr("Сторонних туннелей не найдено.")
+                   : NekoGui_sys::DescribeForeignTunnels(foreign));
+    if (!foreign.isEmpty()) {
+        report << tr("Выключить их можно только в той программе, которая их подняла.");
+    }
+
+    QMessageBox::information(this, tr("Починить сеть"), report.join("\n"));
 #endif
 }
 
