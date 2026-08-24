@@ -240,6 +240,19 @@ int main(int argc, char *argv[]) {
         is("и почту для показа", ok.detail == "a@b.c");
     }
 
+    // ---- ВРЕМЕННАЯ ПРОВЕРКА (удалить) ----
+    // Повторяет ровно то, что делает RelayActivation::Redeem():59 после
+    // удачного обмена кода: Save(token, QJsonObject()).
+    {
+        DeviceCredentials::Wipe();
+        const bool saved = DeviceCredentials::Save("tok-redeem", QJsonObject());
+        is("ВРЕМЕННО: Save(token, {}) сообщает об успехе", saved);
+        is("ВРЕМЕННО: токен после шага Redeem читается",
+           DeviceCredentials::Token() == "tok-redeem");
+        is("ВРЕМЕННО: Provision() увидел бы непустой токен",
+           !DeviceCredentials::Token().isEmpty());
+    }
+
     say("");
     say(QString("проверок: %1, провалов: %2").arg(checks).arg(fails));
     std::fflush(stdout);
