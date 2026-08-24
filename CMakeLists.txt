@@ -157,6 +157,9 @@ set(PROJECT_SOURCES
         ui/dialog_relay_activate.ui
         main/RelayActivationParse.cpp
         main/RelayActivation.hpp
+        main/RelayComponent.cpp
+        main/RelayComponentParse.cpp
+        main/RelayComponent.hpp
 
         3rdparty/base64.cpp
         3rdparty/qrcodegen.cpp
@@ -396,6 +399,15 @@ add_executable(credentials_test EXCLUDE_FROM_ALL
 )
 target_include_directories(credentials_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(credentials_test PRIVATE Qt${QT_VERSION_MAJOR}::Core ${SEALED_STORE_LIBRARIES})
+
+# Разбор ответов о компоненте резерва. Без сети: цена ошибки здесь не в отказе,
+# а в неверном совете — см. шапку набора.
+add_executable(relay_component_test EXCLUDE_FROM_ALL
+        test/RelayComponentTest.cpp
+        main/RelayComponentParse.cpp
+)
+target_link_libraries(relay_component_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+target_include_directories(relay_component_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Сборка файла автонастройки прокси для macOS. Цель собирается и запускается на
 # ЛЮБОЙ платформе намеренно: сам PacBuilder платформенного кода не содержит, а

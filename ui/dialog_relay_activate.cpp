@@ -4,6 +4,7 @@
 #include "main/DeviceCredentials.hpp"
 #include "main/NekoGui_Utils.hpp"
 #include "main/RelayActivation.hpp"
+#include "main/RelayComponent.hpp"
 
 #include <QDesktopServices>
 #include <QFontDatabase>
@@ -71,7 +72,23 @@ DialogRelayActivate::DialogRelayActivate(QWidget *parent) : QDialog(parent), ui(
     connect(ui->activate, &QPushButton::clicked, this, [this] {
         if (busy) return;
         const auto code = ui->code->text().trimmed();
-        if (code.isEmpty()) {
+
+        /*
+         * ДОЗАГРУЗКА БЕЗ КОДА — не удобство, а единственный путь для тех, кто
+         * активировался раньше.
+         *
+         * Реквизиты у них уже выданы и лежат на диске, а компонента нет: его
+         * тогда не существовало. Кода у них тоже нет — тот был одноразовый и
+         * потрачен. Если требовать код здесь, человеку придётся идти в кабинет
+         * за новым ради файла, который положен ему и так.
+         *
+         * То же самое спасает и после сорвавшейся закачки: реквизиты уже
+         * сохранены, значит повторный обмен кода не нужен, нужен только файл.
+         */
+        const bool topUp = code.isEmpty() && DeviceCredentials::IsProvisioned() &&
+                           !RelayComponent::IsInstalled();
+
+        if (code.isEmpty() && !topUp) {
             showResult(tr("Введите код из личного кабинета."), true);
             showAction(tr("Взять код"), RelayActivation::ProfileUrl());
             ui->code->setFocus();
@@ -79,7 +96,7 @@ DialogRelayActivate::DialogRelayActivate(QWidget *parent) : QDialog(parent), ui(
         }
 
         setBusy(true);
-        showResult(tr("Проверяем код…"), false);
+        showResult(topUp ? tr("Загружаем компонент…") : tr("Проверяем код…"), false);
         showAction({}, {});
 
         // В отдельном потоке: оба запроса блокирующие, а замерший на десять
@@ -104,13 +121,26 @@ DialogRelayActivate::DialogRelayActivate(QWidget *parent) : QDialog(parent), ui(
                 // Профиль заводится здесь же: активация без него ничего не
                 // даёт — человек увидел бы «готово» и не нашёл, что нажать.
                 const int id = RelayActivation::EnsureProfile();
-                showResult(id >= 0
-                               ? tr("Готово. Резервное подключение добавлено в список.")
-                               : tr("Готово, но профиль завести не удалось — добавьте его вручную."),
-                           id < 0);
-                showAction({}, {});
-                ui->code->clear();
                 if (id >= 0) profileAdded = true;
+                ui->code->clear();
+                showAction({}, {});
+
+                if (id < 0) {
+                    showResult(tr("Готово, но профиль завести не удалось — добавьте его вручную."), true);
+                    return;
+                }
+                // Компонент — часть готовности, а не отдельная новость. Без
+                // него профиль в списке есть, а подключиться нечем, и человек
+                // узнает об этом только нажав «Подключиться». Поэтому исход
+                // закачки говорится ЗДЕСЬ, вместе с остальным.
+                if (job->comp.ok) {
+                    showResult(tr("Готово. Резервное подключение добавлено в список."), false);
+                    return;
+                }
+                showResult(tr("Подписка подтверждена, профиль добавлен.") + "\n" +
+                               job->comp.detail + "\n" +
+                               tr("Нажмите «Загрузить компонент», чтобы повторить."),
+                           true);
                 return;
             }
             showResult(out.detail, true);
@@ -123,9 +153,27 @@ DialogRelayActivate::DialogRelayActivate(QWidget *parent) : QDialog(parent), ui(
         // закрытый диалог оставлял бы задание в памяти навсегда.
         connect(job, &RelayActivateJob::done, job, &QObject::deleteLater);
 
-        runOnNewThread([job, code] {
-            job->out = RelayActivation::Redeem(code);
-            if (job->out.ok) job->out = RelayActivation::Provision();
+        // Счётчик закачки. Подписка на диалог — по той же причине, что и done:
+        // закрытое окно перестаёт получать, а не получает мусор.
+        connect(job, &RelayActivateJob::progress, this, [this](qint64 got, qint64 total) {
+            if (total <= 0) return;
+            showResult(tr("Загрузка компонента: %1%").arg(got * 100 / total), false);
+        });
+
+        runOnNewThread([job, code, topUp] {
+            // При дозагрузке обмен кода пропускается: код одноразовый и уже
+            // потрачен, а реквизиты на диске. Реквизиты всё равно обновляются —
+            // подписка могла кончиться с прошлого раза, и узнать это лучше
+            // здесь, чем при попытке подключиться.
+            job->out = topUp ? RelayActivation::Provision() : RelayActivation::Redeem(code);
+            if (job->out.ok && !topUp) job->out = RelayActivation::Provision();
+            // Компонент — только после выданных реквизитов: сайт отдаёт его по
+            // той же подписке, и без токена запрос обязан получить отказ.
+            if (job->out.ok) {
+                job->comp = RelayComponent::Install([job](qint64 got, qint64 total) {
+                    emit job->progress(got, total);
+                });
+            }
             // Сигнал из чужого потока — Qt сам поставит вызов в очередь того
             // потока, где задание заведено. Если диалога уже нет, здесь просто
             // никого не окажется на другом конце.
@@ -267,7 +315,15 @@ void DialogRelayActivate::repaintState() {
     // Ввод кода не прячется у активированного: перенести устройство на другой
     // аккаунт — обычное дело, и заставлять ради этого сначала «отключить»
     // значит требовать двух шагов там, где хватает одного.
-    ui->activate->setText(on ? tr("Активировать заново") : tr("Активировать"));
+
+    // Пока компонента нет, кнопка ГОВОРИТ о нём. Иначе единственная надпись —
+    // «Активировать заново», и человек, у которого сорвалась закачка, читает её
+    // как предложение начать всё сначала: искать новый код в кабинете ради
+    // файла, который ему уже положен.
+    const bool needsComponent = on && !RelayComponent::IsInstalled();
+    ui->activate->setText(needsComponent  ? tr("Загрузить компонент")
+                          : on            ? tr("Активировать заново")
+                                          : tr("Активировать"));
 }
 
 void DialogRelayActivate::setBusy(bool on) {

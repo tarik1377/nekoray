@@ -5,6 +5,7 @@
 #include <QEventLoop>
 #include <QMetaEnum>
 #include <QTimer>
+#include <QIODevice>
 
 #include "main/NekoGui.hpp"
 
@@ -138,6 +139,95 @@ namespace NekoGui_network {
         auto result = NekoHTTPResponse{_reply->error() == QNetworkReply::NetworkError::NoError ? "" : _reply->errorString(),
                                        _reply->readAll(), _reply->rawHeaderPairs()};
         result.status = _reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        _reply->deleteLater();
+        return result;
+    }
+
+    NekoHTTPResponse NetworkRequestHelper::HttpDownload(const QUrl &url, QIODevice *sink, qint64 maxBytes,
+                                                        const QList<QPair<QByteArray, QByteArray>> &headers,
+                                                        const std::function<void(qint64, qint64)> &progress) {
+        if (sink == nullptr || !sink->isWritable()) {
+            return NekoHTTPResponse{QObject::tr("Nowhere to write the download")};
+        }
+
+        QNetworkRequest request;
+        QNetworkAccessManager accessManager;
+        request.setUrl(url);
+        // Мимо прокси — всегда, и явно. Причина в шапке объявления; явно
+        // потому, что иначе запрос молча уйдёт в системный прокси машины.
+        accessManager.setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
+
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 9, 0))
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+#endif
+        request.setHeader(QNetworkRequest::KnownHeaders::UserAgentHeader, NekoGui::dataStore->GetUserAgent());
+        for (const auto &h: headers) request.setRawHeader(h.first, h.second);
+        // sub_insecure сюда не распространяется — по той же причине, что и в
+        // HttpPost: это наш домен, и ослабление проверки здесь означало бы
+        // принять исполняемый файл от того, кто встал посередине.
+
+        auto _reply = accessManager.get(request);
+
+        // Срок молчания, а не общий срок. Таймер перезаводится на каждом
+        // пришедшем куске: рвётся только тишина, а медленная линия дожидается.
+        auto idleTimer = new QTimer;
+        idleTimer->setSingleShot(true);
+        idleTimer->setInterval(20000);
+        QObject::connect(idleTimer, &QTimer::timeout, _reply, &QNetworkReply::abort);
+        idleTimer->start();
+
+        qint64 written = 0;
+        bool overflow = false;
+        bool writeFailed = false;
+
+        QObject::connect(_reply, &QNetworkReply::readyRead, _reply, [&] {
+            idleTimer->start();
+            const auto chunk = _reply->readAll();
+            if (chunk.isEmpty()) return;
+            // Потолок проверяется ДО записи. Проверка после означала бы, что
+            // лишнее уже на диске.
+            if (written + chunk.size() > maxBytes) {
+                overflow = true;
+                _reply->abort();
+                return;
+            }
+            if (sink->write(chunk) != chunk.size()) {
+                writeFailed = true;
+                _reply->abort();
+                return;
+            }
+            written += chunk.size();
+        });
+
+        if (progress) {
+            QObject::connect(_reply, &QNetworkReply::downloadProgress, _reply,
+                             [&](qint64 got, qint64 total) { progress(got, total); });
+        }
+
+        {
+            QEventLoop loop;
+            QObject::connect(_reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+            loop.exec();
+        }
+        idleTimer->stop();
+        idleTimer->deleteLater();
+
+        NekoHTTPResponse result;
+        result.status = _reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        // Порядок разбора важен: свои причины называются раньше сетевой.
+        // Прерванный нами запрос выставляет OperationCanceledError, и без этого
+        // «файл длиннее обещанного» доехало бы до человека как «сеть подвела» —
+        // то есть как повод повторить попытку, которая обязана провалиться так же.
+        if (overflow) {
+            result.error = QObject::tr("The file is longer than announced");
+        } else if (writeFailed) {
+            result.error = QObject::tr("Could not write to disk");
+        } else if (_reply->error() != QNetworkReply::NetworkError::NoError) {
+            result.error = _reply->errorString();
+        }
+        // При отказе тело НЕ отдаётся: у отказа оно короткое и осмысленное
+        // (JSON сайта), но оно уже утекло в приёмник, и класть его сюда второй
+        // раз незачем. Вызывающий смотрит на код и на приёмник.
         _reply->deleteLater();
         return result;
     }
