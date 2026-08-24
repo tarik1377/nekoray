@@ -305,26 +305,43 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.event.inputs.tag || '' }}
         run: |
+          set -o pipefail
           mkdir build
           cd build
-          cmake -GNinja -DQT_VERSION_MAJOR=6 -DCMAKE_BUILD_TYPE=Release ..
-          ninja -j3
+          cmake -GNinja -DQT_VERSION_MAJOR=6 -DCMAKE_BUILD_TYPE=Release .. 2>&1 | tee ../macos-cmake.log
+          ninja -j3 2>&1 | tee ../macos-build.log
 
-      - name: Run test suites
+      # ШАГИ РАЗВЕДЕНЫ ПОИМЁННО. Один общий шаг сообщал только «Run test suites
+      # -> failure», и по этому нельзя понять, что именно случилось: не собрался
+      # набор, упала проверка или не нашёлся node. Имя шага видно в API прогона,
+      # а вот журнал — нет: он требует прав на репозиторий.
+      - name: Build test suites
         shell: bash
         run: |
+          set -o pipefail
           cd build
-          ninja relaytrace_test credentials_test pac_test
+          ninja relaytrace_test credentials_test pac_test 2>&1 | tee ../macos-tests-build.log
           mkdir -p testrun
           cp relaytrace_test credentials_test pac_test testrun/
-          cd testrun
-          ./relaytrace_test
-          # На маке запечатка своя (IOPlatformUUID), и набор проверяет именно
-          # её: «на диске нет читаемых ключей» на разных платформах держится на
-          # разном коде.
-          ./credentials_test
-          ./pac_test
-          node ../../support/Test-Pac.js pac-sample.pac
+
+      - name: Test — разбор вывода резерва
+        shell: bash
+        run: cd build/testrun && ./relaytrace_test
+
+      # На маке запечатка своя (от идентификатора машины), и набор проверяет
+      # именно её: «на диске нет читаемых ключей» на разных платформах держится
+      # на разном коде.
+      - name: Test — хранилище реквизитов
+        shell: bash
+        run: cd build/testrun && ./credentials_test
+
+      - name: Test — сборка файла автонастройки
+        shell: bash
+        run: cd build/testrun && ./pac_test
+
+      - name: Test — исполнение файла автонастройки
+        shell: bash
+        run: cd build/testrun && node ../../support/Test-Pac.js pac-sample.pac
 
       - name: Download Go artifacts
         uses: actions/download-artifact@v4
@@ -359,6 +376,30 @@ jobs:
           mv /tmp/xrayout/xray "deployment/xray-macos-${{ matrix.arch }}"
           chmod +x "deployment/xray-macos-${{ matrix.arch }}"
 
+      # ГЕОБАЗЫ И НАБОРЫ ПРАВИЛ. Без geoip.db и geosite.db приложение НЕ
+      # СОБИРАЕТ КОНФИГУРАЦИЮ ВООБЩЕ: db/ConfigBuilder.cpp проверяет их наличие
+      # до всего остального, и человек на любой профиль получает окно с отказом
+      # вместо подключения. То есть без этого шага macOS-сборка бесполезна
+      # целиком, а выглядит рабочей.
+      #
+      # Качаются здесь напрямую, а не берутся из артефакта public_res: тот
+      # собирается в build-go, а связывать мак с build-go нельзя — он в needs у
+      # publish, и поломка мака вернулась бы блокировкой выпуска под Windows.
+      - name: Fetch geo data
+        shell: bash
+        run: |
+          set -e
+          mkdir -p deployment/public_res
+          curl -fLso deployment/public_res/geoip.db             "https://github.com/SagerNet/sing-geoip/releases/latest/download/geoip.db"
+          curl -fLso deployment/public_res/geosite.db             "https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite.db"
+          curl -fLso deployment/public_res/geosite-category-ads-all.srs             "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs"
+          curl -fLso deployment/public_res/geoip-ru.srs             "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs"
+          # Пустой файл curl создаёт и при отказе, поэтому проверяем размер: без
+          # этого сборка вышла бы с нулевыми базами и вела бы себя как без них.
+          for f in geoip.db geosite.db geosite-category-ads-all.srs geoip-ru.srs; do
+            test -s "deployment/public_res/$f" || { echo "пустой или отсутствует: $f"; exit 1; }
+          done
+
       - name: Deploy bundle
         shell: bash
         env:
@@ -368,11 +409,43 @@ jobs:
           find download-artifact -name artifacts.tgz | xargs -n1 tar xvzf
           ./libs/deploy_macos.sh
 
+      # Образ обязан существовать. continue-on-error защищает выпуск под
+      # Windows и не должен заодно прятать факт, что мака в релизе нет: без
+      # этой проверки шаг выкладки просто ничего не найдёт и промолчит.
+      - name: Check the image exists
+        shell: bash
+        run: |
+          ls -la deployment/macos-${{ matrix.arch }}/
+          test -n "$(ls deployment/macos-${{ matrix.arch }}/*.dmg 2>/dev/null)"
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: GreenRhythm-${{ github.sha }}-macos-${{ matrix.arch }}
           path: deployment/macos-${{ matrix.arch }}/*.dmg
+
+      # ПОЧЕМУ ОТЧЁТ ОБ ОШИБКЕ ВЫВОДИТСЯ ОТДЕЛЬНЫМ ШАГОМ.
+      #
+      # Журнал прогона по API отдаётся только тем, у кого есть права на
+      # репозиторий, а разбирать поломку часто приходится тому, у кого их нет.
+      # Строки с ::error:: попадают в аннотации проверки, а те читаются
+      # открыто — то есть причина становится видна, не открывая Actions.
+      - name: Report failure details
+        if: failure()
+        shell: bash
+        run: |
+          for f in macos-cmake.log macos-build.log macos-tests-build.log; do
+            [ -f "$f" ] || continue
+            echo "::error::===== $f (последние строки) ====="
+            tail -25 "$f" | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+          done
+          echo "::error::===== окружение ====="
+          echo "::error::system: $(sw_vers -productVersion 2>/dev/null) arch: $(uname -m)"
+          echo "::error::cmake: $(cmake --version 2>/dev/null | head -1)"
+          echo "::error::qt: ${QT_ROOT_DIR:-не задан}"
+
 
   publish:
     name: Pack & Publish

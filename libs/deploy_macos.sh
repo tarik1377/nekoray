@@ -76,14 +76,57 @@ else
   exit 1
 fi
 
-#### значок и шаблоны настроек ####
+#### значок ####
+# Собирается здесь из существующего PNG, а не хранится двоичным файлом в
+# репозитории: sips и iconutil входят в macOS, и лишний бинарь в дереве ничего
+# не даёт. Имя обязано совпадать с MACOSX_BUNDLE_ICON_FILE в CMakeLists.
+#
+# Отсутствие значка — не мелочь: у неподписанного приложения система и так
+# показывает предупреждение, и безымянный белый лист рядом с ним читается как
+# «это точно вирус».
+ICONSET="$DEST/greenrhythm.iconset"
+rm -rf "$ICONSET"
+mkdir -p "$ICONSET"
+SRC_ICON="$SRC_ROOT/res/public/greenrhythm.png"
+# Исходник 256x256, поэтому крупные размеры не выдумываем: увеличенное из
+# меньшего выглядит мылом, и лучше честно отдать те размеры, что есть.
+for sz in 16 32 64 128 256; do
+  sips -z $sz $sz "$SRC_ICON" --out "$ICONSET/icon_${sz}x${sz}.png" >/dev/null
+done
+# Удвоенные варианты для экранов Retina: имя _NxN@2x означает картинку вдвое
+# больше, поэтому берём готовый следующий размер.
+cp "$ICONSET/icon_32x32.png" "$ICONSET/icon_16x16@2x.png"
+cp "$ICONSET/icon_64x64.png" "$ICONSET/icon_32x32@2x.png"
+cp "$ICONSET/icon_256x256.png" "$ICONSET/icon_128x128@2x.png"
+rm -f "$ICONSET/icon_64x64.png"
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/greenrhythm.icns"
+rm -rf "$ICONSET"
+test -f "$APP/Contents/Resources/greenrhythm.icns"
+
+#### шаблоны настроек ####
 cp "$SRC_ROOT/res/public/greenrhythm.png" "$BIN/greenrhythm.png"
 mkdir -p "$BIN/config/groups"
 cp "$SRC_ROOT/res/config_template/groups/nekobox.json" "$BIN/config/groups/nekobox.json"
 
+#### геобазы ####
+# БЕЗ НИХ ПРИЛОЖЕНИЕ НЕ СОБИРАЕТ КОНФИГУРАЦИЮ ВООБЩЕ. db/ConfigBuilder.cpp
+# проверяет наличие geoip.db и geosite.db раньше всего остального, и человек на
+# любой профиль получает окно с отказом вместо подключения. То есть без этих
+# двух файлов сборка бесполезна целиком, а выглядит рабочей.
+#
+# Кладутся в $BIN, а не в config/: FindCoreAsset ищет их рядом с исполняемым
+# файлом, то есть в Contents/MacOS.
+#
+# Ошибки НЕ глушатся. Здесь стояло «2>/dev/null || true», и любое расхождение
+# в путях прошло бы молча — ровно тот случай, когда собранное выглядит целым.
+cp "$DEPLOYMENT/public_res/geoip.db" "$BIN/"
+cp "$DEPLOYMENT/public_res/geosite.db" "$BIN/"
+
 #### наборы правил ####
-cp "$DEPLOYMENT/public_res/geosite-category-ads-all.srs" "$BIN/config/" 2>/dev/null || true
-cp "$DEPLOYMENT/public_res/geoip-ru.srs" "$BIN/config/" 2>/dev/null || true
+# Тоже без глушения: без них правила «российское — напрямую» и блокировка
+# рекламы не действуют до первой докачки, а докачка идёт через сам туннель.
+cp "$DEPLOYMENT/public_res/geosite-category-ads-all.srs" "$BIN/config/"
+cp "$DEPLOYMENT/public_res/geoip-ru.srs" "$BIN/config/"
 
 #### Qt ####
 # ПОСЛЕ копирования всех бинарей: macdeployqt правит пути к библиотекам у того,

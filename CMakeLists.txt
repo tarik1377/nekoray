@@ -319,6 +319,14 @@ if (APPLE)
             MACOSX_BUNDLE TRUE
             MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/cmake/macos/Info.plist.in
             MACOSX_BUNDLE_BUNDLE_NAME "GreenRhythm"
+            # Имя файла значка. Сам файл кладёт libs/deploy_macos.sh — он
+            # собирает его из res/public/greenrhythm.png системными sips и
+            # iconutil, поэтому двоичного .icns в репозитории нет. Без этого
+            # поля CFBundleIconFile выходит ПУСТЫМ, и человек видит в Finder,
+            # Launchpad и Spotlight белый лист вместо значка — для
+            # неподписанного приложения это та деталь, после которой файл
+            # удаляют, не открывая.
+            MACOSX_BUNDLE_ICON_FILE "greenrhythm.icns"
             MACOSX_BUNDLE_GUI_IDENTIFIER "ru.verdantvibe.greenrhythm"
             MACOSX_BUNDLE_BUNDLE_VERSION "${NKR_VERSION_PLAIN}"
             MACOSX_BUNDLE_SHORT_VERSION_STRING "${NKR_VERSION_PLAIN}"
