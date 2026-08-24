@@ -226,6 +226,7 @@ private:
     void repair_windows_network();      // strip leftovers of other VPN/DPI tools that hijack traffic
     void disable_extra_adapters();      // show foreign TAP/TUN adapters; disable only what the user ticks
     QString foreign_tunnels_line();     // ЗВАТЬ ТОЛЬКО ИЗ РАБОЧЕГО ПОТОКА — запускает powershell и ждёт
+    void show_macos_modes(bool onlyOnce); // выбор режима и объяснение к нему (окно только на macOS)
     void show_conn_context_menu(const QPoint &pos);     // right-click a connection → make a routing rule
     void add_routing_rule(const QString &host, int kind); // kind: 0 direct, 1 proxy, 2 block
 

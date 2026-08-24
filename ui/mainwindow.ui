@@ -656,6 +656,7 @@
     <addaction name="menu_gr_diag"/>
     <addaction name="menu_gr_fixnet"/>
     <addaction name="menu_gr_adapters"/>
+    <addaction name="menu_gr_howto"/>
     <addaction name="separator"/>
     <addaction name="menu_gr_about"/>
    </widget>
@@ -690,6 +691,14 @@
    </property>
    <property name="toolTip">
     <string>Убрать следы других VPN и утилит обхода: службы, драйверы-перехватчики, прокси, DNS</string>
+   </property>
+  </action>
+  <action name="menu_gr_howto">
+   <property name="text">
+    <string>Как вести трафик…</string>
+   </property>
+   <property name="toolTip">
+    <string>Два режима и честная цена каждого</string>
    </property>
   </action>
   <action name="menu_gr_adapters">

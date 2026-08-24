@@ -192,6 +192,7 @@ set(PROJECT_SOURCES
         sys/ExternalProcess.cpp
         sys/AutoRun.cpp
         sys/ForeignTunnels.cpp
+        ui/dialog_macos_mode.cpp
 
         ui/ThemeManager.cpp
         ui/Icon.cpp
@@ -418,3 +419,19 @@ target_include_directories(relay_dialog_preview PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_BINARY_DIR}/greenrhythm_autogen/include)
 target_link_libraries(relay_dialog_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+
+# Снимок экрана выбора режима. Экран показывается только на macOS, а смотреть на
+# него надо здесь — иначе вёрстка проверяется впервые у человека. Собирается на
+# любой платформе, потому что и сам класс собирается везде.
+add_executable(macos_mode_preview EXCLUDE_FROM_ALL
+        test/MacosModePreview.cpp
+        ui/dialog_macos_mode.cpp
+)
+# Свой AUTOMOC: у диалога есть Q_OBJECT, и без обработки moc'ом линковка не
+# найдёт staticMetaObject. Слоя настроек здесь нет намеренно — именно ради
+# этого хранение и вынесено из диалога.
+set_property(TARGET macos_mode_preview PROPERTY AUTOMOC ON)
+target_include_directories(macos_mode_preview PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_BINARY_DIR}/greenrhythm_autogen/include)
+target_link_libraries(macos_mode_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)

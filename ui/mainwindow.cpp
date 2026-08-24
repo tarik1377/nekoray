@@ -25,6 +25,7 @@
 #include "3rdparty/VT100Parser.hpp"
 #include "3rdparty/qv2ray/v2/components/proxy/QvProxyConfigurator.hpp"
 #include "sys/ForeignTunnels.hpp"
+#include "ui/dialog_macos_mode.h"
 
 #ifdef Q_OS_MACOS
 #include "sys/macos/MacProxyController.hpp"
@@ -183,6 +184,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->menu_gr_diag, &QAction::triggered, this, [=] { run_diagnostics(); });
     connect(ui->menu_gr_fixnet, &QAction::triggered, this, [=] { repair_windows_network(); });
     connect(ui->menu_gr_adapters, &QAction::triggered, this, [=] { disable_extra_adapters(); });
+    connect(ui->menu_gr_howto, &QAction::triggered, this, [=] { show_macos_modes(false); });
+#ifndef Q_OS_MACOS
+    // Пункт про выбор режима нужен там, где выбор есть. На Windows туннель
+    // перехватывает всё и объяснять нечего.
+    ui->menu_gr_howto->setVisible(false);
+#endif
 #ifndef Q_OS_WIN
     ui->menu_gr_adapters->setVisible(false);
     // «Починить сеть Windows» вне Windows не просто бесполезен — он весь состоит
@@ -455,7 +462,22 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         MW_dialog_message("", "UpdateDataStore");
     });
     //
-    connect(ui->checkBox_VPN, &QCheckBox::clicked, this, [=](bool checked) { neko_set_spmode_vpn(checked); });
+    connect(ui->checkBox_VPN, &QCheckBox::clicked, this, [=](bool checked) {
+        // ПЕРВОЕ включение на маке объясняем ДО того, как что-то произойдёт.
+        // Иначе человек нажимает галку, получает запрос пароля и не понимает
+        // ни зачем он, ни почему повторится в следующий раз. На Windows и
+        // Linux окно не показывается: там выбора нет.
+        if (checked) {
+            show_macos_modes(true);
+            // Окно само включает выбранный режим, поэтому если человек им
+            // воспользовался — делать здесь больше нечего.
+            if (NekoGui::dataStore->spmode_vpn || NekoGui::dataStore->spmode_system_proxy) {
+                refresh_status();
+                return;
+            }
+        }
+        neko_set_spmode_vpn(checked);
+    });
     connect(ui->checkBox_SystemProxy, &QCheckBox::clicked, this, [=](bool checked) { neko_set_spmode_system_proxy(checked); });
     connect(ui->menu_spmode, &QMenu::aboutToShow, this, [=]() {
         ui->menu_spmode_disabled->setChecked(!(NekoGui::dataStore->spmode_system_proxy || NekoGui::dataStore->spmode_vpn));
@@ -1769,6 +1791,49 @@ void MainWindow::macos_clear_pac() {
     if (pac_server != nullptr) pac_server->Stop();
 }
 #endif
+
+/**
+ * Показать выбор режима и объяснение к нему.
+ *
+ * `onlyOnce` — вызов из потока событий подключения: показываем, если человек
+ * этого экрана ещё не видел. Из меню приходит false, то есть открывается всегда.
+ *
+ * Функция собирается на всех платформах, а показывает окно только на маке.
+ * Прятать под #ifdef ЦЕЛИКОМ нельзя: код под ним не компилируется нигде, кроме
+ * своей платформы, и ошибка в нём всплывает только на сборке, которую здесь
+ * проверить нечем. Уже обжигались.
+ */
+void MainWindow::show_macos_modes(bool onlyOnce) {
+#ifdef Q_OS_MACOS
+    // Объясняем ОДИН раз. Одно и то же окно при каждом запуске приучает
+    // закрывать его не читая — а тогда объяснение не работает вовсе.
+    if (onlyOnce && NekoGui::dataStore->macos_mode_explained) return;
+
+    DialogMacosMode dlg(this);
+    dlg.exec();
+
+    // Засчитывается любой исход, включая «решу позже»: человек прочитал.
+    if (!NekoGui::dataStore->macos_mode_explained) {
+        NekoGui::dataStore->macos_mode_explained = true;
+        NekoGui::dataStore->Save();
+    }
+
+    switch (dlg.Chosen()) {
+        case DialogMacosMode::Tunnel:
+            neko_set_spmode_system_proxy(false);
+            neko_set_spmode_vpn(true);
+            break;
+        case DialogMacosMode::SystemProxy:
+            neko_set_spmode_vpn(false);
+            neko_set_spmode_system_proxy(true);
+            break;
+        default:
+            break;
+    }
+#else
+    Q_UNUSED(onlyOnce)
+#endif
+}
 
 void MainWindow::run_diagnostics() {
     QString host;
