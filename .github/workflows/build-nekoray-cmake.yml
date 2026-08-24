@@ -10,8 +10,18 @@ on:
         description: "Publish release (yes/no)"
         required: false
         default: "yes"
+  # СОБИРАЕМ И РАБОЧИЕ ВЕТКИ, а не только main.
+  #
+  # Раньше здесь стоял один main, и это давало ровно ту картину, из-за которой
+  # и завели эту правку: ветку отправили, в Actions пусто, и выглядит это как
+  # поломка, хотя ничего не сломано — просто запускать было нечем.
+  #
+  # Шаблоны feat/** и fix/** покрывают весь принятый здесь именной обиход и не
+  # трогают чужие ветки. Publish при этом НЕ выполняется: он закрыт условием
+  # github.event_name == 'workflow_dispatch', то есть пуш даёт сборку и
+  # артефакты, но никогда — публичный выпуск.
   push:
-    branches: [main]
+    branches: [main, "feat/**", "fix/**"]
   pull_request:
     branches: [main]
 
@@ -310,6 +320,33 @@ jobs:
         with:
           pattern: GreenRhythm-${{ github.sha }}-darwin-${{ matrix.arch }}
           path: download-artifact
+
+      # ВНЕШНЕЕ ЯДРО XRAY — В БАНДЛ. Без него на маке не подключатся профили,
+      # которые sing-box не разбирает и которые этот форк намеренно уводит на
+      # внешнее ядро: xhttp и Reality с постквантовым обменом. Человек увидел бы
+      # не «не поддерживается», а молчаливый отказ подключения.
+      #
+      # Версия и суммы закреплены так же, как для Windows, и суммы не переписаны
+      # из чужого файла: обе скачаны и посчитаны, а затем сверены с
+      # опубликованными .dgst — совпали. Обновлять пару «версия + сумма» только
+      # вместе и только после проверки.
+      - name: Fetch pinned xray
+        shell: bash
+        env:
+          XRAY_VERSION: "v26.3.27"
+        run: |
+          set -e
+          case "${{ matrix.arch }}" in
+            arm64) ASSET="Xray-macos-arm64-v8a.zip"; SHA="2e93a67e8aa1936ecefb307e120830fcbd4c643ab9b1c46a2d0838d5f8409eaf" ;;
+            amd64) ASSET="Xray-macos-64.zip";        SHA="f5b0471d3459eff1b82e48af0aeac186abcc3298210070afbbbd8437a4e8b203" ;;
+            *) echo "неизвестная архитектура"; exit 1 ;;
+          esac
+          mkdir -p deployment
+          curl -fsSL -o /tmp/xray.zip             "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${ASSET}"
+          echo "${SHA}  /tmp/xray.zip" | shasum -a 256 -c -
+          unzip -o -j /tmp/xray.zip xray -d /tmp/xrayout
+          mv /tmp/xrayout/xray "deployment/xray-macos-${{ matrix.arch }}"
+          chmod +x "deployment/xray-macos-${{ matrix.arch }}"
 
       - name: Deploy bundle
         shell: bash
