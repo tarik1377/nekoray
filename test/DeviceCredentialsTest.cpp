@@ -11,11 +11,13 @@
  */
 
 #include "main/DeviceCredentials.hpp"
+#include "main/RelayActivation.hpp"
 #include "main/SealedStore.hpp"
 
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
 
@@ -144,6 +146,99 @@ int main(int argc, char *argv[]) {
        DeviceCredentials::CurrentState() == DeviceCredentials::Expired);
     is("и объяснение вместе с ним", DeviceCredentials::StateDetail() == "Подписка закончилась");
     is("реквизиты при этом не появились", !DeviceCredentials::IsProvisioned());
+
+
+    // ---- разбор ответов сайта ----
+    //
+    // Ровно тот же протокол, что на Android (Provisioning.java). Здесь важно не
+    // «разобралось», а КАКАЯ ветка выбрана: 402 требует стереть реквизиты, а
+    // сетевой сбой — не трогать ничего. Перепутать значит либо отключить
+    // человека на ровном месте, либо оставить ему нерабочие ключи.
+
+    say("");
+    say("RelayActivation");
+
+    {
+        QJsonObject full;
+        full["endpoint"] = "storage.example.net";
+        full["bucket"] = "b";
+        full["key"] = "k";
+        full["secret"] = "s";
+        full["psk"] = "p";
+        full["tag"] = "t";
+        const auto fullBody = QJsonDocument(full).toJson(QJsonDocument::Compact);
+
+        QJsonObject issued;
+
+        // ГЛАВНОЕ РАЗЛИЧЕНИЕ. Ноль — сеть не ответила.
+        auto net = RelayActivation::InterpretDevice(0, "", "host not found", &issued);
+        is("сбой сети — не успех", !net.ok);
+        is("сбой сети НЕ ведёт к стиранию", !net.revoked);
+        is("и объясняет, что дело в связи", net.detail.contains("связаться"));
+
+        auto gone = RelayActivation::InterpretDevice(
+            402, R"({"canRenew":true})", "", &issued);
+        is("402 — подписка кончилась", gone.state == DeviceCredentials::Expired);
+        is("и предлагает продлить", gone.actionText == "Продлить");
+
+        auto never = RelayActivation::InterpretDevice(402, R"({})", "", &issued);
+        is("402 без canRenew — предлагает оформить", never.actionText == "Оформить");
+
+        auto traffic = RelayActivation::InterpretDevice(
+            402, R"({"code":"traffic_exhausted"})", "", &issued);
+        is("402 про трафик говорит про трафик", traffic.detail.contains("Трафик"));
+
+        auto limit = RelayActivation::InterpretDevice(409, R"({})", "", &issued);
+        is("409 — лимит устройств", limit.state == DeviceCredentials::Limit);
+        is("409 НЕ ведёт к стиранию", !limit.revoked);
+
+        auto closed = RelayActivation::InterpretDevice(
+            403, R"({"code":"relay_admin_only"})", "", &issued);
+        is("403 relay_admin_only — канал не открыт", closed.state == DeviceCredentials::Closed);
+
+        auto stale = RelayActivation::InterpretDevice(401, R"({})", "", &issued);
+        is("401 — вход устарел, а не «нет подписки»", stale.state == DeviceCredentials::SignedOut);
+        is("и не путается с подпиской", !stale.detail.contains("одписк"));
+        is("401 НЕ ведёт к стиранию", !stale.revoked);
+        is("а 402 ведёт, во всех трёх видах", gone.revoked && traffic.revoked && never.revoked);
+
+        auto half = RelayActivation::InterpretDevice(200, R"({"endpoint":"x"})", "", &issued);
+        is("неполная конфигурация отвергается", !half.ok);
+        is("и наружу ничего не отдаёт", issued.isEmpty());
+
+        auto good = RelayActivation::InterpretDevice(200, fullBody, "", &issued);
+        is("полная конфигурация принимается", good.ok);
+        is("состояние активно", good.state == DeviceCredentials::Active);
+        is("и конфигурация отдана наружу", issued.value("bucket").toString() == "b");
+    }
+
+    {
+        QString token;
+
+        auto net = RelayActivation::InterpretRedeem(0, "", "timeout", &token);
+        is("код: сбой сети — не отказ в доступе", !net.ok && token.isEmpty());
+
+        auto bad = RelayActivation::InterpretRedeem(401, R"({})", "", &token);
+        is("код не подошёл — сказано про 5 минут", bad.detail.contains("5 минут"));
+        is("и предложено взять новый", bad.actionText == "Взять новый код");
+        is("токен при отказе пуст", token.isEmpty());
+
+        auto many = RelayActivation::InterpretRedeem(429, R"({})", "", &token);
+        is("429 — про попытки, а не про код", many.detail.contains("попыток"));
+
+        // Поле называется именно token. Прочитать не то — значит получить пустую
+        // строку из ответа 200 и узнать об этом шагом позже, где отказ будет
+        // выглядеть как неверный код. Ровно на этом сгорела публикация 4.7.
+        auto wrongField = RelayActivation::InterpretRedeem(
+            200, R"({"accessToken":"abc"})", "", &token);
+        is("ответ без поля token — отказ, а не молчаливый успех", !wrongField.ok);
+        is("и токен не выдуман", token.isEmpty());
+
+        auto ok = RelayActivation::InterpretRedeem(
+            200, R"({"token":"tok-1","email":"a@b.c"})", "", &token);
+        is("успех отдаёт токен", ok.ok && token == "tok-1");
+        is("и почту для показа", ok.detail == "a@b.c");
+    }
 
     say("");
     say(QString("проверок: %1, провалов: %2").arg(checks).arg(fails));

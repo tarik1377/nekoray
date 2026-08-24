@@ -131,6 +131,9 @@ set(PROJECT_SOURCES
         main/DeviceCredentials.cpp
         main/DeviceCredentials.hpp
         main/SealedStore.hpp
+        main/RelayActivation.cpp
+        main/RelayActivationParse.cpp
+        main/RelayActivation.hpp
 
         3rdparty/base64.cpp
         3rdparty/qrcodegen.cpp
@@ -331,6 +334,7 @@ target_link_libraries(relaytrace_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 add_executable(credentials_test EXCLUDE_FROM_ALL
         test/DeviceCredentialsTest.cpp
         main/DeviceCredentials.cpp
+        main/RelayActivationParse.cpp
         ${SEALED_STORE_SOURCE}
 )
 target_include_directories(credentials_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
