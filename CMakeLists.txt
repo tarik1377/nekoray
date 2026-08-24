@@ -30,8 +30,13 @@ if (NKR_CROSS)
 endif ()
 
 #### Platform Variables ####
+# Мак — ОТДЕЛЬНОЙ веткой, а не через else(). До этого он собирался как Linux и
+# тянул getcap/setcap/pkexec, которых там нет, и запечатку от /etc/machine-id,
+# которого там тоже нет: ключ выходил пустым, и реквизиты не сохранялись молча.
 if (WIN32)
     include("cmake/windows/windows.cmake")
+elseif (APPLE)
+    include("cmake/macos/macos.cmake")
 else ()
     include("cmake/linux/linux.cmake")
 endif ()
@@ -283,6 +288,26 @@ set_property(TARGET greenrhythm PROPERTY AUTORCC ON)
 set_target_properties(greenrhythm PROPERTIES
         WIN32_EXECUTABLE TRUE
 )
+
+if (APPLE)
+    # Версия без ведущей «v»: CFBundleVersion система ждёт числами и точками, и
+    # «v1.4.5» она примет молча, но при первой же попытке заверить сборку
+    # выяснится, что версия нечитаемая. Проще не заводить эту мину сейчас.
+    string(REGEX REPLACE "^v" "" NKR_VERSION_PLAIN "${NKR_VERSION}")
+
+    # Бандл со своим Info.plist. Схема greenrhythm:// разбирается в коде давно
+    # (main.cpp читает её из аргументов), но система не отдаст нам ссылку, пока
+    # приложение не объявит, что умеет её принимать, — а объявляется это только
+    # здесь.
+    set_target_properties(greenrhythm PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/cmake/macos/Info.plist.in
+            MACOSX_BUNDLE_BUNDLE_NAME "GreenRhythm"
+            MACOSX_BUNDLE_GUI_IDENTIFIER "ru.verdantvibe.greenrhythm"
+            MACOSX_BUNDLE_BUNDLE_VERSION "${NKR_VERSION_PLAIN}"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${NKR_VERSION_PLAIN}"
+    )
+endif ()
 
 # Precompiled header — speeds up incremental rebuilds (heavy Qt includes compiled once).
 target_precompile_headers(greenrhythm PRIVATE main/pch.hpp)

@@ -21,6 +21,24 @@ DialogVPNSettings::DialogVPNSettings(QWidget *parent) : QDialog(parent), ui(new 
 #endif
     ui->strict_route->setChecked(NekoGui::dataStore->vpn_strict_route);
     ui->single_core->setChecked(NekoGui::dataStore->vpn_internal_tun);
+#ifdef Q_OS_MACOS
+    /*
+     * НЕДОСТУПНОЕ НА ПЛАТФОРМЕ ПРЯЧЕТСЯ, А НЕ ГАСИТСЯ СЕРЫМ.
+     *
+     * Серая галка обещает, что где-то есть условие, при котором она включится,
+     * и человек будет его искать. Обеих настроек на маке нет вовсе:
+     *
+     *  — «одно ядро» (туннель внутри процесса) там невозможен: ядро запускается
+     *    потомком интерфейса, интерфейс не root, повысить права уже запущенному
+     *    процессу нельзя. См. NekoGui::PlatformSupportsInternalTun.
+     *
+     *  — strict_route в реализации sing-tun под darwin не существует вовсе
+     *    (tun_darwin.go). Галка не отключала бы ничего — она создавала бы
+     *    ложное впечатление, что защита включена.
+     */
+    ui->single_core->setVisible(false);
+    ui->strict_route->setVisible(false);
+#endif
     //
     D_LOAD_STRING_PLAIN(vpn_rule_cidr)
     D_LOAD_STRING_PLAIN(vpn_rule_process)

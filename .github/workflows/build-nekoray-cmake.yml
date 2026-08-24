@@ -25,6 +25,13 @@ jobs:
         include:
           - cross_os: windows
             cross_arch: amd64
+          # Кросс-сборка darwin делается ОТСЮДА, с ubuntu-раннера: CGO_ENABLED=0,
+          # и никакой Xcode для этого не нужен. Проверено сборкой обеих
+          # архитектур на посторонней машине.
+          - cross_os: darwin
+            cross_arch: arm64
+          - cross_os: darwin
+            cross_arch: amd64
           - cross_os: public_res
             cross_arch: public_res
       fail-fast: false
@@ -138,6 +145,32 @@ jobs:
           cd ..
           ./libs/deploy_windows64.sh
 
+      - name: Run test suites
+        shell: bash
+        env:
+          DL_QT_VER: "6.7"
+        run: |
+          # Наборы собираются и гоняются здесь, а не «когда-нибудь руками».
+          # Каждый из них закрывает место, где ошибка не отказывает, а молчит:
+          # разбор вывода резервного канала (утечка в журнал), хранилище
+          # реквизитов (потеря идентификатора устройства) и сборка файла
+          # автонастройки для macOS (трафик уходит не туда).
+          source libs/env_qtsdk.sh $PWD/qtsdk/Qt
+          cd build
+          ninja relaytrace_test credentials_test pac_test
+          cd ..
+          # Запуск из временного каталога: credentials_test пишет device.dat
+          # рядом с собой, и делать это в дереве сборки незачем.
+          mkdir -p build/testrun
+          cp build/relaytrace_test.exe build/credentials_test.exe build/pac_test.exe build/testrun/
+          cd build/testrun
+          ./relaytrace_test.exe
+          ./credentials_test.exe
+          ./pac_test.exe
+          # Файл автонастройки исполняется настоящим движком: разбор текста не
+          # отвечает на вопрос, разбирается ли он вообще и что возвращает.
+          node ../../support/Test-Pac.js pac-sample.pac
+
       - name: Tar artifacts
         shell: bash
         run: tar czvf artifacts.tgz ./deployment
@@ -148,10 +181,105 @@ jobs:
           name: GreenRhythm-${{ github.sha }}-windows-x64-Qt6.7
           path: artifacts.tgz
 
+  # СБОРКА ПОД MACOS. Отдельным job'ом и НЕ В needs у publish — см. комментарий
+  # там же. Пока она в бете, её поломка не имеет права задержать выпуск под
+  # Windows, которым пользуются сегодня.
+  build-macos:
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+          - arch: amd64
+            runner: macos-13
+      fail-fast: false
+    runs-on: ${{ matrix.runner }}
+    # Ждёт Go-сборку: без её артефактов бандл собирать не из чего. На publish это
+    # не влияет — тот на build-macos не смотрит вовсе.
+    needs: build-go
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.7.*"
+          modules: "qtsvg"
+
+      - name: Install ninja
+        run: brew install ninja
+
+      - name: Set version from tag
+        if: github.event.inputs.tag != ''
+        shell: bash
+        run: echo -n "${{ github.event.inputs.tag }}" > nekoray_version.txt
+
+      - name: Build Qt GUI
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || '' }}
+        run: |
+          mkdir build
+          cd build
+          cmake -GNinja -DQT_VERSION_MAJOR=6 -DCMAKE_BUILD_TYPE=Release ..
+          ninja -j3
+
+      - name: Run test suites
+        shell: bash
+        run: |
+          cd build
+          ninja relaytrace_test credentials_test pac_test
+          mkdir -p testrun
+          cp relaytrace_test credentials_test pac_test testrun/
+          cd testrun
+          ./relaytrace_test
+          # На маке запечатка своя (IOPlatformUUID), и набор проверяет именно
+          # её: «на диске нет читаемых ключей» на разных платформах держится на
+          # разном коде.
+          ./credentials_test
+          ./pac_test
+          node ../../support/Test-Pac.js pac-sample.pac
+
+      - name: Download Go artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: GreenRhythm-${{ github.sha }}-darwin-${{ matrix.arch }}
+          path: download-artifact
+
+      - name: Deploy bundle
+        shell: bash
+        env:
+          NKR_MACOS_ARCH: ${{ matrix.arch }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || '' }}
+        run: |
+          find download-artifact -name artifacts.tgz | xargs -n1 tar xvzf
+          ./libs/deploy_macos.sh
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GreenRhythm-${{ github.sha }}-macos-${{ matrix.arch }}
+          path: deployment/macos-${{ matrix.arch }}/*.dmg
+
   publish:
     name: Pack & Publish
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    # build-macos ЗДЕСЬ НАМЕРЕННО НЕТ.
+    #
+    # Это главная ловушка всей затеи с маком, и попасть в неё легко: кажется
+    # естественным перечислить в needs всё, что собирается. Но тогда любая
+    # поломка на маке — сменившаяся метка Intel-раннера, отвалившийся Qt-экшен,
+    # недоступный релиз xray — блокирует ВЫПУСК ПОД WINDOWS, которым пользуются
+    # сегодня и который выпускается отсюда.
+    #
+    # Артефакты мака подтягиваются ниже отдельным шагом, и его отсутствие не
+    # мешает выпуску: пока macOS в бете, нет dmg — не повод не отдать людям
+    # Windows.
     needs:
       - build-windows
       - build-go
@@ -193,6 +321,23 @@ jobs:
           rm -rf GreenRhythm
           sha256sum GreenRhythm-${{ github.event.inputs.tag }}-windows-x64.zip > GreenRhythm-${{ github.event.inputs.tag }}-windows-x64.zip.sha256
 
+      # Сборки под мак — если они есть. continue-on-error здесь не украшение:
+      # без него отсутствующий артефакт валит шаг и с ним весь выпуск.
+      - name: Collect macOS builds
+        id: macos
+        continue-on-error: true
+        shell: bash
+        run: |
+          found=0
+          for dmg in $(find download-artifact -name '*.dmg' 2>/dev/null); do
+            cp "$dmg" deployment/
+            found=1
+          done
+          echo "found=$found" >> "$GITHUB_OUTPUT"
+          if [ "$found" = "0" ]; then
+            echo "::warning::сборок под macOS в этом прогоне нет — выпуск выйдет без них"
+          fi
+
       - name: Upload Release Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -209,5 +354,6 @@ jobs:
           files: |
             deployment/*.zip
             deployment/*.sha256
+            deployment/*.dmg
           draft: false
           prerelease: false

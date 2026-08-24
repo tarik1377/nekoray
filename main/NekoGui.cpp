@@ -268,6 +268,7 @@ namespace NekoGui {
         _add(new configItem("vpn_ipv6", &vpn_ipv6, itemType::boolean));
         _add(new configItem("vpn_hide_console", &vpn_hide_console, itemType::boolean));
         _add(new configItem("vpn_strict_route", &vpn_strict_route, itemType::boolean));
+        _add(new configItem("macos_use_pac", &macos_use_pac, itemType::boolean));
         _add(new configItem("vpn_bypass_process", &vpn_rule_process, itemType::string));
         _add(new configItem("vpn_bypass_cidr", &vpn_rule_cidr, itemType::string));
         _add(new configItem("vpn_rule_white", &vpn_rule_white, itemType::boolean));

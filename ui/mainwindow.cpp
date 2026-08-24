@@ -25,6 +25,11 @@
 #include "3rdparty/VT100Parser.hpp"
 #include "3rdparty/qv2ray/v2/components/proxy/QvProxyConfigurator.hpp"
 
+#ifdef Q_OS_MACOS
+#include "sys/macos/MacProxyController.hpp"
+#include "sys/macos/PacBuilder.hpp"
+#endif
+
 #ifndef NKR_NO_ZXING
 #include "3rdparty/ZxingQtReader.hpp"
 #endif
@@ -92,6 +97,20 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     MW_dialog_message = [=](const QString &a, const QString &b) {
         runOnUiThread([=] { dialog_message_impl(a, b); });
     };
+
+#ifdef Q_OS_MACOS
+    /*
+     * ПЕРВЫМ ДЕЛОМ — вернуть системные настройки, если прошлый раз кончился
+     * плохо. Файл снимка, переживший запуск, означает ровно это: приложение
+     * упало или было убито, а в системе до сих пор стоит наш адрес
+     * автонастройки, ведущий на порт, которого больше нет. Человек при этом
+     * остаётся без интернета в браузере и никак не свяжет это с нами.
+     *
+     * Зовётся ДО всего остального намеренно: любая наша ошибка ниже не должна
+     * помешать вернуть чужую систему в рабочее состояние.
+     */
+    NekoGui_sys::MacProxy::RestoreIfCrashed();
+#endif
 
     // Load Manager
     NekoGui::profileManager->LoadManager();
@@ -162,6 +181,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->menu_gr_qr, &QAction::triggered, this, [=] { show_subscription_qr(); });
     connect(ui->menu_gr_diag, &QAction::triggered, this, [=] { run_diagnostics(); });
     connect(ui->menu_gr_fixnet, &QAction::triggered, this, [=] { repair_windows_network(); });
+#ifndef Q_OS_WIN
+    // «Починить сеть Windows» вне Windows не просто бесполезен — он весь состоит
+    // из netsh, Get-NetAdapter и списка службы Zapret. Прятать, а не гасить:
+    // серый пункт обещает условие, при котором он заработает, и человек будет
+    // его искать.
+    ui->menu_gr_fixnet->setVisible(false);
+#endif
     ui->menu_gr_autopilot->setChecked(NekoGui::dataStore->connection_autopilot);
     connect(ui->menu_gr_autopilot, &QAction::toggled, this, [=](bool checked) {
         NekoGui::dataStore->connection_autopilot = checked;
@@ -872,9 +898,35 @@ void MainWindow::neko_set_spmode_system_proxy(bool enable, bool save) {
         if (enable) {
             auto socks_port = NekoGui::dataStore->inbound_socks_port;
             auto http_port = NekoGui::dataStore->inbound_socks_port;
+#ifdef Q_OS_MACOS
+            /*
+             * На маке — свой путь, и не ради красоты.
+             *
+             * Вендорный SetSystemProxy прописывает ОДИН адрес на всё, а
+             * ClearSystemProxy потом гасит прокси на всех сетевых службах, не
+             * помня, что там было до нас. Первое отправляет в канал домашний
+             * NAS, принтер и рабочую сеть; второе стирает человеку его
+             * собственный корпоративный прокси без возможности вернуть.
+             *
+             * Здесь вместо этого файл автонастройки (местное всегда напрямую) и
+             * снимок прежнего состояния на диске до всякой правки.
+             */
+            if (!macos_apply_pac()) {
+                MessageBoxWarning(software_name,
+                                  tr("Не удалось включить системный прокси. "
+                                     "Возможно, настройками сети управляет организация."));
+                refresh_status();
+                return;
+            }
+#else
             SetSystemProxy(http_port, socks_port);
+#endif
         } else {
+#ifdef Q_OS_MACOS
+            macos_clear_pac();
+#else
             ClearSystemProxy();
+#endif
         }
     }
 
@@ -1646,6 +1698,59 @@ void MainWindow::import_link_offer_connect(const QString &link) {
 // internet up? does DNS resolve? does the server's port accept TCP? does its TLS
 // handshake complete, or is it DPI-filtered?). Runs off the UI thread; produces a
 // plain-language verdict plus a secrets-free report the user can hand to support.
+#ifdef Q_OS_MACOS
+/**
+ * Собрать файл автонастройки по текущим правилам, поднять его и отдать системе.
+ *
+ * Файл пересобирается на КАЖДОЕ включение, а не хранится: правила человек
+ * правит между сеансами, и отданный системе устаревший файл — это трафик,
+ * идущий не туда, о чём никто не узнает.
+ *
+ * Пропущенные правила называются в журнале поимённо. Молчание здесь дороже
+ * всего: поддержка иначе ищет причину «почему этот сайт пошёл не туда» вслепую,
+ * а причина — в том, что правило просто не выразимо в этом режиме.
+ */
+bool MainWindow::macos_apply_pac() {
+    NekoGui_sys::PacInput in;
+    in.socksPort = NekoGui::dataStore->inbound_socks_port;
+    in.directDomain = NekoGui::dataStore->routing->direct_domain;
+    in.directIp = NekoGui::dataStore->routing->direct_ip;
+    in.proxyDomain = NekoGui::dataStore->routing->proxy_domain;
+    in.proxyIp = NekoGui::dataStore->routing->proxy_ip;
+    in.blockDomain = NekoGui::dataStore->routing->block_domain;
+
+    NekoGui_sys::PacNotes notes;
+    const auto pac = NekoGui_sys::BuildPac(in, &notes);
+
+    if (!notes.skipped.isEmpty()) {
+        MW_show_log(tr("Системный прокси: часть правил в этом режиме не применяется — %1")
+                        .arg(notes.skipped.join(", ")));
+        MW_show_log(tr("Эти правила работают только в режиме туннеля."));
+    }
+
+    if (pac_server == nullptr) pac_server = new NekoGui_sys::PacServer(this);
+    const auto url = pac_server->Start(pac);
+    if (url.isEmpty()) {
+        MW_show_log(tr("Системный прокси: не удалось поднять локальную выдачу настроек."));
+        return false;
+    }
+
+    if (!NekoGui_sys::MacProxy::Enable(url)) {
+        // Снимок к этому моменту уже на диске, поэтому откат возможен и делается
+        // сразу: полувключённое состояние хуже выключенного.
+        NekoGui_sys::MacProxy::Disable();
+        pac_server->Stop();
+        return false;
+    }
+    return true;
+}
+
+void MainWindow::macos_clear_pac() {
+    NekoGui_sys::MacProxy::Disable();
+    if (pac_server != nullptr) pac_server->Stop();
+}
+#endif
+
 void MainWindow::run_diagnostics() {
     QString host;
     int port = 0;

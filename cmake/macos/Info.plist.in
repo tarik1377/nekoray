@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+	<key>CFBundleDisplayName</key>
+	<string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+	<key>CFBundleExecutable</key>
+	<string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+	<key>CFBundleIdentifier</key>
+	<string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleVersion</key>
+	<string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
+	<key>CFBundleShortVersionString</key>
+	<string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
+	<key>CFBundleIconFile</key>
+	<string>${MACOSX_BUNDLE_ICON_FILE}</string>
+
+	<!--
+	    Схема greenrhythm:// разбирается в коде давно — main.cpp читает её из
+	    аргументов запуска, — но система не отдаст нам ссылку, пока приложение
+	    не объявит здесь, что умеет её принимать. Без этого блока ссылка из
+	    письма или с сайта просто ничего не открывает.
+	-->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>ru.verdantvibe.greenrhythm.url</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>greenrhythm</string>
+			</array>
+		</dict>
+	</array>
+
+	<!--
+	    Тёмную тему приложение поддерживает своей темой, а не системной. Без
+	    этого ключа система рисовала бы стандартные элементы в светлом виде
+	    поверх нашего тёмного оформления.
+	-->
+	<key>NSRequiresAquaSystemAppearance</key>
+	<false/>
+
+	<key>NSHighResolutionCapable</key>
+	<true/>
+
+	<!--
+	    Минимальная версия. Ниже 11 не заявляем: sing-tun под darwin опирается
+	    на поведение utun, которое на более старых системах отличается, а
+	    проверить это нам не на чем — обещать поддержку, которую никто не
+	    видел, значит собирать отзывы вместо пользователей.
+	-->
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+</dict>
+</plist>
