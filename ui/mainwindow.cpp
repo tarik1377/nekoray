@@ -182,7 +182,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->menu_gr_qr, &QAction::triggered, this, [=] { show_subscription_qr(); });
     connect(ui->menu_gr_diag, &QAction::triggered, this, [=] { run_diagnostics(); });
     connect(ui->menu_gr_fixnet, &QAction::triggered, this, [=] { repair_windows_network(); });
+    connect(ui->menu_gr_adapters, &QAction::triggered, this, [=] { disable_extra_adapters(); });
 #ifndef Q_OS_WIN
+    ui->menu_gr_adapters->setVisible(false);
     // «Починить сеть Windows» вне Windows не просто бесполезен — он весь состоит
     // из netsh, Get-NetAdapter и списка службы Zapret. Прятать, а не гасить:
     // серый пункт обещает условие, при котором он заработает, и человек будет
@@ -1936,6 +1938,95 @@ void MainWindow::run_diagnostics() {
 // spell out what will change, require confirmation, and never touch the hosts file —
 // on a real machine it held the user's own work entries (corporate hosts, docker),
 // and wiping those would break something we were never asked to touch.
+void MainWindow::disable_extra_adapters() {
+#ifndef Q_OS_WIN
+    QMessageBox::information(this, tr("Сетевые адаптеры"),
+                             tr("Эта функция доступна только в Windows."));
+#else
+    /*
+     * ЭТОТ ПУНКТ ЗАМЕНЯЕТ ТО, ЧТО РАНЬШЕ ДЕЛАЛОСЬ БЕЗ СПРОСА.
+     *
+     * «Починить сеть Windows» выключала все сторонние TAP/TUN-адаптеры молча —
+     * и выключала людям домашний WireGuard, потому что он проходит отбор
+     * целиком и по делу: он действительно посторонний туннель. Отличить «остаток
+     * от удалённой программы» от «мой туннель до дома» может только человек,
+     * поэтому список показывается с маршрутами, все галки сняты, и без явного
+     * согласия не выключается ничего.
+     */
+    const auto found = NekoGui_sys::DetectForeignTunnels();
+    if (found.isEmpty()) {
+        QMessageBox::information(this, tr("Сетевые адаптеры"),
+                                 tr("Сторонних туннелей не найдено."));
+        return;
+    }
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Отключить лишние сетевые адаптеры"));
+    auto *lay = new QVBoxLayout(&dlg);
+
+    auto *note = new QLabel(
+        tr("Ниже — сетевые адаптеры, созданные не нами. Среди них может быть ваш "
+           "туннель до дома или до работы: если через адаптер идут маршруты, он, "
+           "скорее всего, нужен вам.\n\nОтметьте только те, которые точно лишние."),
+        &dlg);
+    note->setWordWrap(true);
+    lay->addWidget(note);
+
+    QList<QCheckBox *> boxes;
+    for (const auto &t: found) {
+        QString label = t.name;
+        if (t.ownsHalfTheInternet) {
+            label += tr("  —  через него идёт ВЕСЬ трафик, это почти наверняка ваш VPN");
+        } else if (!t.prefixes.isEmpty()) {
+            auto shown = t.prefixes.mid(0, 4);
+            if (t.prefixes.size() > 4) shown << QStringLiteral("…");
+            label += tr("  —  маршруты: ") + shown.join(", ");
+        } else {
+            label += tr("  —  маршрутов нет, похоже на остаток удалённой программы");
+        }
+        auto *cb = new QCheckBox(label, &dlg);
+        cb->setChecked(false); // ВСЕ СНЯТЫ. Отмеченное по умолчанию однажды нажмут не глядя.
+        cb->setProperty("adapter", t.name);
+        boxes << cb;
+        lay->addWidget(cb);
+    }
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    buttons->button(QDialogButtonBox::Ok)->setText(tr("Отключить отмеченные"));
+    buttons->button(QDialogButtonBox::Cancel)->setText(tr("Отмена"));
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    lay->addWidget(buttons);
+
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    QStringList chosen;
+    for (auto *cb: boxes) {
+        if (cb->isChecked()) chosen << cb->property("adapter").toString();
+    }
+    if (chosen.isEmpty()) return;
+
+    // Имя адаптера приходит от системы, но в командную строку оно всё равно
+    // попадает через параметр PowerShell, а не склейкой: имена содержат пробелы
+    // и знаки, и склеенная строка однажды выключит не тот адаптер.
+    QStringList quoted;
+    for (const auto &name: chosen) quoted << "'" + QString(name).replace("'", "''") + "'";
+    const auto script = QStringLiteral("$names = @(%1); foreach ($n in $names) { "
+                                       "Disable-NetAdapter -Name $n -Confirm:$false }")
+                            .arg(quoted.join(","));
+
+    WinCommander::runProcessElevated("powershell",
+                                     {"-NoProfile", "-NonInteractive", "-Command", script});
+
+    MW_show_log(tr("Отключены сетевые адаптеры: %1").arg(chosen.join(", ")));
+    QMessageBox::information(
+        this, tr("Сетевые адаптеры"),
+        tr("Отключено: %1.\n\nВключить обратно можно в «Сетевых подключениях» Windows "
+           "или командой Enable-NetAdapter.")
+            .arg(chosen.join(", ")));
+#endif
+}
+
 void MainWindow::repair_windows_network() {
 #ifndef Q_OS_WIN
     QMessageBox::information(this, tr("Починить сеть Windows"),

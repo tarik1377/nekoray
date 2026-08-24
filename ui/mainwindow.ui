@@ -655,6 +655,7 @@
     <addaction name="menu_gr_telegram"/>
     <addaction name="menu_gr_diag"/>
     <addaction name="menu_gr_fixnet"/>
+    <addaction name="menu_gr_adapters"/>
     <addaction name="separator"/>
     <addaction name="menu_gr_about"/>
    </widget>
@@ -689,6 +690,14 @@
    </property>
    <property name="toolTip">
     <string>Убрать следы других VPN и утилит обхода: службы, драйверы-перехватчики, прокси, DNS</string>
+   </property>
+  </action>
+  <action name="menu_gr_adapters">
+   <property name="text">
+    <string>Отключить лишние сетевые адаптеры…</string>
+   </property>
+   <property name="toolTip">
+    <string>Показать сторонние TAP/TUN-адаптеры и их маршруты. Ничего не выключается без вашего согласия.</string>
    </property>
   </action>
   <action name="menu_gr_autopilot">

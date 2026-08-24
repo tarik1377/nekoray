@@ -224,6 +224,7 @@ private:
     NekoGui_sys::PacServer *pac_server = nullptr;
 #endif
     void repair_windows_network();      // strip leftovers of other VPN/DPI tools that hijack traffic
+    void disable_extra_adapters();      // show foreign TAP/TUN adapters; disable only what the user ticks
     void show_conn_context_menu(const QPoint &pos);     // right-click a connection → make a routing rule
     void add_routing_rule(const QString &host, int kind); // kind: 0 direct, 1 proxy, 2 block
 
