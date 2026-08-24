@@ -134,10 +134,59 @@ cp "$DEPLOYMENT/public_res/geoip-ru.srs" "$BIN/config/"
 # приложение соберётся внешне целым, а упадёт при запуске у человека.
 macdeployqt "$APP" -verbose=2
 
-#### образ диска ####
-# Простой образ без оформления: без подписи всё равно придётся объяснять
-# человеку первый запуск словами, и красивый фон этой задачи не решает.
-hdiutil create -volname "GreenRhythm" -srcfolder "$APP" -ov -format UDZO \
-  "$DEST/GreenRhythm-$version_standalone-macos-$ARCH.dmg"
+#### подпись «для себя» ####
+#
+# Настоящей подписи разработчика у нас нет, и этот шаг её не заменяет: система
+# всё равно предупредит при первом запуске, и об этом сказано в
+# docs/Run_macOS.md.
+#
+# Он закрывает ДРУГОЙ отказ, который выглядит куда хуже: macdeployqt правит пути
+# к библиотекам через install_name_tool, а это ломает подпись, проставленную
+# компоновщиком. Бандл со сломанной подписью система объявляет «повреждённым» и
+# предлагает переместить в корзину — без варианта «всё равно открыть». Человек
+# уверен, что скачал битый файл, и второго раза не будет.
+#
+# Ad-hoc подпись (-s -) ставится ПОСЛЕ macdeployqt и делает бандл целостным с
+# точки зрения системы, не заявляя при этом никакого разработчика.
+codesign --force --deep --sign - "$APP"
+codesign --verify --deep "$APP" || {
+  echo "бандл не проходит собственную проверку целостности" >&2
+  exit 1
+}
 
-echo "готово: $DEST"
+#### образ диска — С ПАПКОЙ «ПРОГРАММЫ» ####
+#
+# ПОЧЕМУ НЕ ПРОСТО .app В ОБРАЗЕ. Так на маке не делают, и дело не в красоте:
+# запущенное прямо из образа приложение работает из тома ТОЛЬКО ДЛЯ ЧТЕНИЯ — оно
+# не запоминает ни серверов, ни входа. То же самое происходит при запуске из
+# «Загрузок», и ради этого случая уже заведён отдельный экран в main.cpp.
+#
+# Ярлык на «Программы» рядом с приложением превращает установку в одно
+# перетаскивание и снимает нужду объяснять её словами. Это и есть обычный вид
+# установщика на этой системе.
+STAGE="$DEST/dmg"
+rm -rf "$STAGE"
+mkdir -p "$STAGE"
+cp -R "$APP" "$STAGE/"
+ln -s /Applications "$STAGE/Программы"
+
+DMG="$DEST/GreenRhythm-$version_standalone-macos-$ARCH.dmg"
+hdiutil create -volname "GreenRhythm" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+rm -rf "$STAGE"
+
+# ПРОВЕРЯЕМ СВОЙ РЕЗУЛЬТАТ, а не верим ему на слово: образ должен открываться и
+# содержать оба предмета. Битый образ снаружи неотличим от целого, и узнать об
+# этом от человека — худший из возможных способов.
+MNT=$(mktemp -d)
+hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MNT" >/dev/null
+fail() { echo "$1" >&2; hdiutil detach "$MNT" >/dev/null 2>&1; exit 1; }
+test -d "$MNT/GreenRhythm.app" || fail "в образе нет приложения"
+test -L "$MNT/Программы" || fail "в образе нет ярлыка на Программы"
+test -x "$MNT/GreenRhythm.app/Contents/MacOS/greenrhythm_core" || fail "в образе нет исполняемого ядра"
+test -f "$MNT/GreenRhythm.app/Contents/MacOS/geoip.db" || fail "в образе нет базы сетевых адресов"
+test -f "$MNT/GreenRhythm.app/Contents/Resources/greenrhythm.icns" || fail "в образе нет значка"
+hdiutil detach "$MNT" >/dev/null
+rmdir "$MNT" 2>/dev/null || true
+
+echo "готово: $DMG"
+ls -la "$DEST"
