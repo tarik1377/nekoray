@@ -435,6 +435,98 @@ jobs:
           ls -la deployment/macos-${{ matrix.arch }}/
           test -n "$(ls deployment/macos-${{ matrix.arch }}/*.dmg 2>/dev/null)"
 
+      # ПРИЛОЖЕНИЕ ЗАПУСКАЕТСЯ ЗДЕСЬ, А НЕ У ЧЕЛОВЕКА.
+      #
+      # До 2026-08-25 оно не запускалось НИГДЕ: CI гонял только консольные наборы,
+      # а про macOS проверял ровно то, что файл образа существует. Первым живым
+      # запуском за всю историю проекта стал запуск у тестера, и он ответил
+      # «не запускается» — без текста ошибки, то есть без причины.
+      #
+      # Шаг ловит ровно тот отказ, который CI поймать в состоянии: приложение не
+      # собралось в рабочее целое — не нашлась библиотека Qt, не переписаны пути,
+      # нет оконного слоя. Такое умирает до первого окна, и снаружи выглядит
+      # неотличимо от всего остального.
+      #
+      # ЧЕГО ШАГ НЕ ЛОВИТ, и это надо знать: он не заменяет живого мака. Окно
+      # Gatekeeper решается политикой системы (следующий шаг), а как приложение
+      # ВЫГЛЯДИТ, offscreen не покажет.
+      #
+      # ТАЙМАУТ — ЭТО УСПЕХ. Приложение обязано жить, а не завершиться: живое
+      # значит дошло до цикла событий. Отказом считается ранний выход.
+      - name: Smoke-launch the bundle
+        shell: bash
+        run: |
+          set -o pipefail
+          DMG=$(ls deployment/macos-${{ matrix.arch }}/*.dmg | head -1)
+          MNT=$(mktemp -d)
+          hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MNT" >/dev/null
+
+          # В /Applications, а не из образа: запуск из образа наше же приложение
+          # отвергает намеренно (main.cpp, ветка AppTranslocation), и проверка
+          # мерила бы эту ветку вместо готовности пакета.
+          sudo cp -R "$MNT/GreenRhythm.app" /Applications/
+          hdiutil detach "$MNT" >/dev/null
+
+          echo "--- чем слинковано ---"
+          otool -L /Applications/GreenRhythm.app/Contents/MacOS/greenrhythm | head -20
+
+          export QT_QPA_PLATFORM=offscreen
+          /Applications/GreenRhythm.app/Contents/MacOS/greenrhythm > launch.log 2>&1 &
+          PID=$!
+          sleep 12
+
+          if kill -0 "$PID" 2>/dev/null; then
+              echo "приложение поднялось и живёт — цикл событий достигнут"
+              kill "$PID" 2>/dev/null || true
+              wait "$PID" 2>/dev/null || true
+              echo "--- что оно успело напечатать ---"
+              cat launch.log || true
+          else
+              wait "$PID" 2>/dev/null
+              CODE=$?
+              echo "::error::приложение завершилось само, код $CODE — пакет не собрался в рабочее целое"
+              echo "--- вывод приложения ---"
+              cat launch.log || true
+              echo "--- отчёты о падении ---"
+              ls -lt ~/Library/Logs/DiagnosticReports 2>/dev/null | head -5 || true
+              for r in $(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -1); do
+                  echo "--- $r ---"; head -60 "$r"
+              done
+              exit 1
+          fi
+
+      # ЧТО УВИДИТ ЧЕЛОВЕК, СКАЧАВШИЙ ЭТОТ ОБРАЗ.
+      #
+      # Шаг воспроизводит положение тестера буквально: помечает приложение
+      # карантином — тем самым, который система вешает на всё скачанное из
+      # интернета, — и спрашивает у самой системы, пустит ли она его.
+      #
+      # ЭТО НЕ ОТКАЗ СБОРКИ. Подписи разработчика у нас нет, и «rejected» здесь
+      # ожидаем; ставить сборку в зависимость от него значило бы никогда не
+      # выпустить мак. Ценность в другом: точная формулировка отказа попадает в
+      # журнал КАЖДОГО выпуска. Тогда на вопрос «что человек увидит» отвечает
+      # запись, а не память тестера, — а разные отказы лечатся по-разному:
+      # «повреждено» и «разработчик не проверен» это две разные дороги.
+      - name: What a downloader will face
+        shell: bash
+        continue-on-error: true
+        run: |
+          APP=/Applications/GreenRhythm.app
+          sudo xattr -w com.apple.quarantine "0081;$(printf %x $(date +%s));Safari;" "$APP" || true
+
+          echo "--- метки на приложении ---"
+          xattr -l "$APP" || true
+
+          echo "--- целостность подписи ---"
+          codesign --verify --deep --strict -vvv "$APP" 2>&1 || true
+
+          echo "--- вердикт системной политики ---"
+          spctl -a -t exec -vvv "$APP" 2>&1 || true
+
+          echo ""
+          echo "Напоминание: без сертификата Developer ID отказ здесь ожидаем."
+          echo "Человеку помогает: xattr -dr com.apple.quarantine /Applications/GreenRhythm.app"
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
