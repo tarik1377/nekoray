@@ -57,13 +57,30 @@
     </widget>
    </item>
    <item row="2" column="0">
+    <widget class="QLabel" name="udpLabel">
+     <property name="text">
+      <string>Звонки и игры</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QCheckBox" name="udp_direct">
+     <property name="text">
+      <string>напрямую, мимо резервного подключения</string>
+     </property>
+     <property name="toolTip">
+      <string>Через резервное подключение звонки и игры не идут — оно переносит данные слишком медленно для разговора. Включите, чтобы они шли в обход него, напрямую. Цена: собеседник увидит ваш настоящий адрес. Если звонки блокируют в вашей сети, это не поможет.</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="0">
     <widget class="QLabel" name="dnsLabel">
      <property name="text">
       <string>DNS</string>
      </property>
     </widget>
    </item>
-   <item row="2" column="1">
+   <item row="3" column="1">
     <widget class="QLineEdit" name="dns_servers">
      <property name="placeholderText">
       <string>по умолчанию</string>
@@ -73,14 +90,14 @@
      </property>
     </widget>
    </item>
-   <item row="3" column="0">
+   <item row="4" column="0">
     <widget class="QLabel" name="portLabel">
      <property name="text">
       <string>Локальный порт</string>
      </property>
     </widget>
    </item>
-   <item row="3" column="1">
+   <item row="4" column="1">
     <widget class="QLineEdit" name="socks_port">
      <property name="placeholderText">
       <string>выбрать свободный</string>

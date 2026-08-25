@@ -45,6 +45,7 @@ void EditRelay::onStart(std::shared_ptr<NekoGui::ProxyEntity> _ent) {
     auto bean = this->ent->RelayBean();
 
     P_LOAD_BOOL(bypass_ru);
+    P_LOAD_BOOL(udp_direct);
     P_LOAD_STRING(dns_servers);
 
     // Не P_LOAD_INT: он печатает ноль как «0», а ноль здесь значит «выбрать
@@ -58,6 +59,7 @@ bool EditRelay::onEnd() {
     auto bean = this->ent->RelayBean();
 
     P_SAVE_BOOL(bypass_ru);
+    P_SAVE_BOOL(udp_direct);
     P_SAVE_STRING(dns_servers);
     bean->socks_port = ui->socks_port->text().trimmed().toInt();
 

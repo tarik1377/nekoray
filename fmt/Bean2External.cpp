@@ -371,6 +371,9 @@ namespace NekoGui_fmt {
             "TUN_PSK=" + DeviceCredentials::Field("psk"),
             "DEVICE_TAG=" + DeviceCredentials::Field("tag"),
             QStringLiteral("RELAY_BYPASS_RU=") + (bypass_ru ? "1" : "0"),
+            // Читается движком при старте, как и обход выше: уже открытая связь
+            // не должна на середине сменить дорогу.
+            QStringLiteral("RELAY_UDP_DIRECT=") + (udp_direct ? "1" : "0"),
         };
         if (!dns_servers.trimmed().isEmpty()) env << "DNS_SERVERS=" + dns_servers.trimmed();
         result.env = env;
