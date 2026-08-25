@@ -196,6 +196,43 @@ mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Программы"
 
+# ПАМЯТКА ВНУТРИ ОБРАЗА, а не только в git.
+#
+# До неё в образе лежали ровно два предмета: приложение и ярлык. Человек,
+# открывший образ, видит значок и щёлкает по нему — самое естественное действие
+# из возможных. И тут его встречает НАШ СОБСТВЕННЫЙ отказ: запуск прямо из
+# образа идёт через копию только для чтения, приложение это замечает, показывает
+# окно «перетащите в Программы» и закрывается. Снаружи это выглядит как «не
+# запускается», и отличить от поломки нечем.
+#
+# Памятка стоит рядом со значком и отвечает на это раньше, чем человек нажмёт.
+cat > "$STAGE/ПРОЧТИТЕ МЕНЯ.txt" <<'READMEEOF'
+GreenRhythm — как открыть в первый раз
+
+1. ПЕРЕТАЩИТЕ значок GreenRhythm на ярлык «Программы» рядом.
+   Запускать прямо отсюда нельзя: macOS открывает копию только для чтения,
+   и приложение закроется, не сохранив ни серверов, ни входа.
+
+2. Откройте «Программы» и запустите GreenRhythm оттуда.
+
+3. Если система говорит, что приложение повреждено или что разработчик
+   не проверен, — выполните в Терминале одну строку:
+
+      xattr -dr com.apple.quarantine /Applications/GreenRhythm.app
+
+   После этого откройте обычным двойным щелчком.
+
+   Почему так: у приложения пока нет подписи разработчика Apple, и всё
+   скачанное из интернета система помечает карантином. Команда снимает
+   пометку с одного этого приложения и больше ни с чего.
+
+Если не открылось и после этого — запустите в Терминале:
+
+      /Applications/GreenRhythm.app/Contents/MacOS/greenrhythm
+
+и пришлите нам то, что он напечатает. Это назовёт причину точно.
+READMEEOF
+
 DMG="$DEST/GreenRhythm-$version_standalone-macos-$ARCH.dmg"
 hdiutil create -volname "GreenRhythm" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 rm -rf "$STAGE"
@@ -208,9 +245,35 @@ hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MNT" >/dev/null
 fail() { echo "$1" >&2; hdiutil detach "$MNT" >/dev/null 2>&1; exit 1; }
 test -d "$MNT/GreenRhythm.app" || fail "в образе нет приложения"
 test -L "$MNT/Программы" || fail "в образе нет ярлыка на Программы"
+
+# САМО ПРИЛОЖЕНИЕ И QT — ПЕРВЫМИ, и до 2026-08-25 их здесь не было вовсе.
+#
+# Проверялись ядро, база адресов и значок — то есть довесок, — а главный бинарь
+# и фреймворки, без которых не запустится ничто, не проверялись ни строкой. Это
+# ровно та дыра, из-за которой первый живой запуск на маке случился у тестера, а
+# не у нас: образ собирался, выкладывался и объявлялся готовым, ни разу не
+# ответив на вопрос «а внутри есть чему запускаться».
+test -x "$MNT/GreenRhythm.app/Contents/MacOS/greenrhythm" || fail "в образе нет исполняемого приложения"
+test -d "$MNT/GreenRhythm.app/Contents/Frameworks/QtCore.framework" || fail "macdeployqt не положил Qt"
+test -f "$MNT/GreenRhythm.app/Contents/PlugIns/platforms/libqcocoa.dylib" || fail "нет оконного слоя Qt — приложение не покажет ни одного окна"
+test -f "$MNT/GreenRhythm.app/Contents/Resources/qt.conf" || fail "нет qt.conf — Qt пойдёт искать плагины мимо пакета"
+
+# Ссылки на сборочную машину внутри бинаря означают, что macdeployqt не
+# переписал пути: на чужом маке такой файл не найдёт библиотеку и умрёт до окна.
+if otool -L "$MNT/GreenRhythm.app/Contents/MacOS/greenrhythm" | grep -q "/Users/runner"; then
+    fail "в приложении остались пути сборочной машины — macdeployqt не отработал"
+fi
+
 test -x "$MNT/GreenRhythm.app/Contents/MacOS/greenrhythm_core" || fail "в образе нет исполняемого ядра"
 test -f "$MNT/GreenRhythm.app/Contents/MacOS/geoip.db" || fail "в образе нет базы сетевых адресов"
 test -f "$MNT/GreenRhythm.app/Contents/Resources/greenrhythm.icns" || fail "в образе нет значка"
+
+# Что скажет о пакете сама система. Не отказ: подписи разработчика у нас нет, и
+# «rejected» здесь ожидаем. Но вердикт обязан попасть в журнал сборки — иначе
+# спорить о том, пустил Gatekeeper или нет, приходится по памяти тестера.
+echo "--- вердикт системной политики (rejected без сертификата — ожидаемо) ---"
+codesign --verify --deep --strict -vvv "$MNT/GreenRhythm.app" 2>&1 | sed 's/^/    /' || true
+spctl -a -t exec -vvv "$MNT/GreenRhythm.app" 2>&1 | sed 's/^/    /' || true
 hdiutil detach "$MNT" >/dev/null
 rmdir "$MNT" 2>/dev/null || true
 
