@@ -5,6 +5,7 @@ namespace RelayTrace {
     namespace {
         const QString kWarmMark = QStringLiteral("relay-milestone warm ");
         const QString kCarryMark = QStringLiteral("relay-milestone carry ");
+        const QString kUdpMark = QStringLiteral("relay-milestone udp ");
 
         // Больше восемнадцати цифр не бывает ни у срока, ни у счётчика, а
         // длинная последовательность — признак испорченной строки, а не числа.
@@ -102,6 +103,59 @@ namespace RelayTrace {
                 .arg(ms(took), ms(limit));
         }
 
+        /**
+         * Состояние датаграмм — то, ради чего человек и открывает журнал, когда
+         * «подключено», а позвонить нельзя.
+         *
+         * ЧЕТЫРЕ ИСХОДА, И ОНИ РАЗНЫЕ ПО ДЕЙСТВИЮ. «Датаграмм не было» — человек
+         * ещё не звонил, и жаловаться не на что. «Идут напрямую» — переключатель
+         * включён и работает; если разговор всё равно не выходит, режут в самой
+         * сети, и дальше искать надо там. «Не идут» — переключатель выключен, и
+         * это лечится им же. Смешанное состояние называется отдельно: часть
+         * ушла, часть нет, и обе цифры нужны, иначе поддержка увидит «идут» и
+         * закроет обращение.
+         *
+         * Порт назван числом: по нему видно, чего человек лишился (3478 — это
+         * разговор), и не видно, с кем он разговаривал.
+         */
+        QString udpText(qint64 direct, qint64 dropped, qint64 port) {
+            if (direct == 0 && dropped == 0) {
+                return QStringLiteral("звонки и игры: датаграмм не было");
+            }
+            if (dropped == 0) {
+                return QStringLiteral("звонки и игры: идут напрямую (%1 шт., порт %2)")
+                    .arg(ms(direct), ms(port));
+            }
+            if (direct == 0) {
+                return QStringLiteral("звонки и игры: не идут, отброшено %1 (порт %2) — "
+                                      "включите «Звонки и игры напрямую» в профиле")
+                    .arg(ms(dropped), ms(port));
+            }
+            return QStringLiteral("звонки и игры: часть идёт напрямую (%1), часть отброшена (%2), порт %3")
+                .arg(ms(direct), ms(dropped), ms(port));
+        }
+
+        QString scanUdp(const QString &line) {
+            const int mark = line.indexOf(kUdpMark);
+            if (mark < 0) return {};
+
+            Scan s(line, mark + kUdpMark.length());
+            if (!s.word(QStringLiteral("direct="))) return {};
+            const qint64 direct = s.number();
+            if (!s.word(QStringLiteral(" dropped="))) return {};
+            const qint64 dropped = s.number();
+            if (!s.word(QStringLiteral(" port="))) return {};
+            const qint64 port = s.number();
+            // Хвоста быть не должно — по той же причине, что и у соседок.
+            if (!s.done()) return {};
+            if (direct < 0 || dropped < 0 || port < 0) return {};
+            // Номера порта выше этого не существует; большее число означает
+            // испорченную строку, а не редкий случай.
+            if (port > 65535) return {};
+
+            return udpText(direct, dropped, port);
+        }
+
         QString scanCarry(const QString &line) {
             const int mark = line.indexOf(kCarryMark);
             if (mark < 0) return {};
@@ -150,6 +204,9 @@ namespace RelayTrace {
 
         const QString carry = scanCarry(line);
         if (!carry.isEmpty()) return carry;
+
+        const QString udp = scanUdp(line);
+        if (!udp.isEmpty()) return udp;
 
         return scanWarm(line);
     }

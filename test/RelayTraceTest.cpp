@@ -144,6 +144,58 @@ int main(int argc, char *argv[]) {
         is("во фразе нет метки времени", !said.contains("2026/08/24"));
     }
 
+
+    // ---- состояние датаграмм ----
+    //
+    // Ради этой вехи и заводился счётчик: до неё отказ по звонкам был
+    // молчащим — клиенту на запрос отвечают УСПЕХОМ (через ту же ассоциацию
+    // ходит разрешение имён, отказать нельзя), датаграммы пропадают, а человек
+    // видит «подключено» и не звонится.
+    {
+        say("");
+        say("состояние датаграмм");
+
+        // Четыре исхода, и они разные ПО ДЕЙСТВИЮ, а не по формулировке.
+        says("ничего не было — так и сказано",
+             "relay-milestone udp direct=0 dropped=0 port=0", "датаграмм не было");
+        says("идут напрямую",
+             "relay-milestone udp direct=128 dropped=0 port=3478", "идут напрямую");
+        says("не идут — и названо, чем лечится",
+             "relay-milestone udp direct=0 dropped=41 port=3478", "Звонки и игры напрямую");
+        says("часть туда, часть никуда",
+             "relay-milestone udp direct=7 dropped=9 port=3478", "часть");
+
+        // Числа не перепутаны местами.
+        says("отброшенные названы своим числом",
+             "relay-milestone udp direct=0 dropped=41 port=3478", "41");
+        says("порт назван",
+             "relay-milestone udp direct=0 dropped=41 port=3478", "3478");
+
+        // ХВОСТ ОТВЕРГАЕТ СТРОКУ ЦЕЛИКОМ. Это и есть то, что не пускает в
+        // журнал адрес, приписанный за форматом, — а журнал человек пересылает
+        // в поддержку целиком.
+        silent("приписанный за формат адрес не проходит",
+               "relay-milestone udp direct=1 dropped=2 port=3478 peer=203.0.113.9");
+        silent("недостающее поле не проходит",
+               "relay-milestone udp direct=1 dropped=2");
+        silent("перепутанные подписи не проходят",
+               "relay-milestone udp dropped=1 direct=2 port=3478");
+        silent("порт больше существующего не проходит",
+               "relay-milestone udp direct=1 dropped=2 port=70000");
+        silent("буквы вместо числа не проходят",
+               "relay-milestone udp direct=x dropped=2 port=3478");
+
+        // Во фразе не остаётся ни одного символа из строки движка.
+        {
+            const auto said = RelayTrace::Line(
+                "2026/08/25 13:00:00 relay-milestone udp direct=0 dropped=41 port=3478");
+            is("во фразе про датаграммы нет метки формата", !said.contains("relay-milestone"));
+            is("во фразе про датаграммы нет латиницы движка",
+               !said.contains("direct=") && !said.contains("dropped="));
+            is("во фразе про датаграммы нет метки времени", !said.contains("2026/08/25"));
+        }
+    }
+
     say("");
     say(QString("проверок: %1, провалов: %2").arg(checks).arg(fails));
     std::fflush(stdout);
