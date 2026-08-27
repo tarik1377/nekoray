@@ -3985,7 +3985,21 @@ bool MainWindow::StartVPNProcess() {
         }
     });
     //
-    vpn_process->setProcessChannelMode(QProcess::ForwardedChannels);
+    /*
+     * ВЫВОД ПРИВИЛЕГИРОВАННОГО ПРОЦЕССА — В ЖУРНАЛ ПРИЛОЖЕНИЯ, а не в терминал.
+     *
+     * Стояло ForwardedChannels: вывод уходил на стандартные потоки самого
+     * приложения, то есть в терминал, которого у человека, запустившего значок,
+     * нет вовсе. Значит причина любого отказа туннеля пропадала бесследно —
+     * именно поэтому на маке «не работает TUN» до сих пор не имело подробностей.
+     */
+    vpn_process->setProcessChannelMode(QProcess::MergedChannels);
+    QProcess::connect(vpn_process, &QProcess::readyRead, this, [=] {
+        const auto text = QString::fromLocal8Bit(vpn_process->readAll());
+        for (const auto &line: text.split(QChar(10), Qt::SkipEmptyParts)) {
+            MW_show_log_ext("tun", line.trimmed());
+        }
+    });
 #ifdef Q_OS_MACOS
     /*
      * ПУТЬ НА МАКЕ СОДЕРЖИТ ПРОБЕЛ, и здесь он проходит через ДВА разбора.
@@ -4013,7 +4027,36 @@ bool MainWindow::StartVPNProcess() {
 #else
     vpn_process->start("pkexec", {"bash", scriptPath});
 #endif
-    vpn_process->waitForStarted();
+    /*
+     * РЕЗУЛЬТАТ ПРОВЕРЯЕТСЯ, И ЭТО ИСПРАВЛЕНИЕ, А НЕ ПРИДИРКА.
+     *
+     * Стояло `waitForStarted(); return true;` — то есть «поднялся» возвращалось
+     * всегда. Человек, отменивший запрос пароля, получал включённую галку и
+     * выключенный туннель; отказ скрипта выглядел так же. На маке это и есть
+     * самый частый способ не запустить туннель, и он не давал ни одного признака.
+     *
+     * Двух проверок мало по отдельности и хватает вместе: waitForStarted ловит
+     * «не запустилось вовсе», короткая выдержка следом — «запустилось и сразу
+     * умерло», а это как раз отменённый пароль и упавший скрипт.
+     */
+    if (!vpn_process->waitForStarted(20000)) {
+        MessageBoxWarning(software_name,
+                          tr("Не удалось запустить туннель.") + "\n\n" +
+                              tr("Скорее всего, запрос прав администратора был отменён. "
+                                 "Попробуйте снова и подтвердите его."));
+        vpn_process->deleteLater();
+        return false;
+    }
+    // Умирает такой процесс мгновенно: осталось дать ему это сделать.
+    if (vpn_process->waitForFinished(1500)) {
+        const auto tail = QString::fromLocal8Bit(vpn_process->readAll()).trimmed();
+        MW_show_log_ext("tun", tail.isEmpty() ? tr("процесс туннеля завершился сразу") : tail);
+        MessageBoxWarning(software_name,
+                          tr("Туннель запустился и сразу закрылся.") + "\n\n" +
+                              tr("Подробности — в журнале приложения, раздел «tun»."));
+        vpn_process->deleteLater();
+        return false;
+    }
     vpn_pid = vpn_process->processId(); // actually it's pkexec or bash PID
 #endif
     return true;
