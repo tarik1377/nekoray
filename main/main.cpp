@@ -247,6 +247,35 @@ int main(int argc, char* argv[]) {
                 if (QFile::exists(name)) continue;
                 QFile::copy(shipped.absoluteFilePath(name), name);
             }
+
+            /*
+             * ПОСТАВЛЯЕМЫЕ УМОЛЧАНИЯ — ТОЖЕ, и раньше их здесь не было.
+             *
+             * Копировались только правила (.srs), а groups/nekobox.json нет. На
+             * Windows это не замечалось: каталог настроек совпадает с местом
+             * установки, и файл лежал там сам собой. На macOS настройки живут в
+             * ~/Library/…, шаблон остаётся внутри пакета, и до приложения не
+             * доходит НИКОГДА.
+             *
+             * Чем оборачивалось. В шаблоне ровно один ключ, и он не декоративный:
+             * vpn_impl = 2, то есть смешанный сетевой стек туннеля. Умолчание в
+             * коде — 0, gvisor, и на нём туннель отчитывается исправным, счётчики
+             * идут, имена разрешаются, а страницы не открываются. Ровно этот отказ
+             * описан в коммите 73c6818 по жалобе живого клиента. То есть Windows
+             * получал рабочую настройку, а macOS — ту, на которой не работает.
+             *
+             * Копируется только НЕДОСТАЮЩЕЕ, как и правила выше: перезапись при
+             * каждом запуске стирала бы всё, что человек настроил.
+             */
+            const QDir shippedGroups(shipped.absoluteFilePath("groups"));
+            if (shippedGroups.exists()) {
+                QDir().mkpath("groups");
+                for (const auto &name: shippedGroups.entryList({"*.json"}, QDir::Files)) {
+                    const QString target = "groups/" + name;
+                    if (QFile::exists(target)) continue;
+                    QFile::copy(shippedGroups.absoluteFilePath(name), target);
+                }
+            }
         }
     }
 
