@@ -197,3 +197,29 @@ namespace NekoGui_sys {
     }
 
 } // namespace NekoGui_sys
+
+namespace NekoGui_sys {
+
+    bool OurTunnelHeldByAnother() {
+#ifdef Q_OS_WIN
+        // Спрашиваем ровно про наш адаптер и ровно про его состояние. Живой
+        // (Up) значит, что им кто-то пользуется прямо сейчас; отключённый
+        // остаток от прошлого запуска безвреден — wintun его переиспользует.
+        QProcess p;
+        p.start("powershell",
+                {"-NoProfile", "-NonInteractive", "-Command",
+                 "$a = Get-NetAdapter -Name 'neko-tun' -ErrorAction SilentlyContinue; "
+                 "if ($a -and $a.Status -eq 'Up') { 'held' } else { 'free' }"});
+        if (!p.waitForFinished(10000)) {
+            p.kill();
+            // Не смогли спросить — не повод запрещать. Отказ здесь стоил бы
+            // человеку туннеля из-за медленной оболочки.
+            return false;
+        }
+        return QString::fromLocal8Bit(p.readAllStandardOutput()).contains("held");
+#else
+        return false;
+#endif
+    }
+
+} // namespace NekoGui_sys
