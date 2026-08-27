@@ -82,6 +82,20 @@ jobs:
           curl -sL -o deployment/public_res/geoip-ru.srs \
             "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs"
 
+      # ОТДЕЛЬНЫМ ШАГОМ И ИЗ КОРНЯ — так же, как на macOS, где он проходит.
+      #
+      # Внутри общего шага он звался из build/testrun и дважды подряд ронял
+      # работу, а по имени шага «Run test suites» причина не отличалась от любой
+      # другой. Набор читает файлы дерева; запускать его оттуда, где лежат
+      # остальные, значит держать лишнюю переменную ради ничего.
+      - name: Test the tunnel exclusions against our own ranges
+        shell: bash
+        env:
+          DL_QT_VER: "6.7"
+        run: |
+          source libs/env_qtsdk.sh $PWD/qtsdk/Qt
+          ./build/tun_exclude_test.exe
+
       - name: Tar artifacts
         run: tar czvf artifacts.tgz ./deployment
 
@@ -218,17 +232,6 @@ jobs:
           ./credentials_test.exe
           ./pac_test.exe
           ./relay_component_test.exe
-          # Лежит в build, а не в testrun: сам ищет файлы дерева на два уровня
-          # вверх, и копировать его сюда незачем.
-          #
-          # Шаг говорит о себе САМ, потому что журналы работы читать может не
-          # каждый: два прогона подряд упали здесь, и по имени шага причина не
-          # отличалась от «набор нашёл беду» до «файла нет вовсе».
-          echo "--- сторож исключений ---"
-          echo "рабочий каталог: $(pwd)"
-          ls -la ../tun_exclude_test.exe || echo "  двоичного файла НЕТ — он не собрался"
-          ls -la ../../res/vpn/sing-box-vpn.json || echo "  шаблона НЕТ по ожидаемому пути"
-          ../tun_exclude_test.exe
           # Файл автонастройки исполняется настоящим движком: разбор текста не
           # отвечает на вопрос, разбирается ли он вообще и что возвращает.
           node ../../support/Test-Pac.js pac-sample.pac
