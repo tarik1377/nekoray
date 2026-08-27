@@ -206,17 +206,20 @@ jobs:
           # автонастройки для macOS (трафик уходит не туда).
           source libs/env_qtsdk.sh $PWD/qtsdk/Qt
           cd build
-          ninja relaytrace_test credentials_test pac_test relay_component_test
+          ninja relaytrace_test credentials_test pac_test relay_component_test tun_exclude_test
           cd ..
           # Запуск из временного каталога: credentials_test пишет device.dat
           # рядом с собой, и делать это в дереве сборки незачем.
           mkdir -p build/testrun
           cp build/relaytrace_test.exe build/credentials_test.exe build/pac_test.exe build/relay_component_test.exe build/testrun/
+          cp build/tun_exclude_test.exe build/
           cd build/testrun
           ./relaytrace_test.exe
           ./credentials_test.exe
           ./pac_test.exe
           ./relay_component_test.exe
+          # Читает файлы дерева, поэтому запускается из корня, а не из testrun.
+          (cd .. && ./build/tun_exclude_test.exe)
           # Файл автонастройки исполняется настоящим движком: разбор текста не
           # отвечает на вопрос, разбирается ли он вообще и что возвращает.
           node ../../support/Test-Pac.js pac-sample.pac
@@ -331,7 +334,7 @@ jobs:
         run: |
           set -o pipefail
           cd build
-          ninja relaytrace_test credentials_test pac_test relay_component_test 2>&1 | tee ../macos-tests-build.log
+          ninja relaytrace_test credentials_test pac_test relay_component_test tun_exclude_test 2>&1 | tee ../macos-tests-build.log
           mkdir -p testrun
           cp relaytrace_test credentials_test pac_test relay_component_test testrun/
 
@@ -352,6 +355,9 @@ jobs:
 
       - name: Test the relay component contract
         run: cd build/testrun && ./relay_component_test 2>&1 | tee ../../macos-test-component.log
+
+      - name: Test the tunnel exclusions against our own ranges
+        run: ./build/tun_exclude_test 2>&1 | tee macos-test-tunexclude.log
 
       - name: Test — исполнение файла автонастройки
         shell: bash

@@ -402,6 +402,14 @@ target_link_libraries(credentials_test PRIVATE Qt${QT_VERSION_MAJOR}::Core ${SEA
 
 # Разбор ответов о компоненте резерва. Без сети: цена ошибки здесь не в отказе,
 # а в неверном совете — см. шапку набора.
+# Исключения из туннеля против собственных поддельных диапазонов. Две постоянные
+# в двух файлах, обязанные сходиться; разошлись молча — см. шапку набора.
+add_executable(tun_exclude_test EXCLUDE_FROM_ALL
+        test/TunExcludeTest.cpp
+)
+target_link_libraries(tun_exclude_test PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network)
+target_include_directories(tun_exclude_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
 add_executable(relay_component_test EXCLUDE_FROM_ALL
         test/RelayComponentTest.cpp
         main/RelayComponentParse.cpp
