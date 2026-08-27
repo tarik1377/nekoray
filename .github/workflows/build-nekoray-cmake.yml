@@ -218,8 +218,10 @@ jobs:
           ./credentials_test.exe
           ./pac_test.exe
           ./relay_component_test.exe
-          # Читает файлы дерева, поэтому запускается из корня, а не из testrun.
-          (cd .. && ./build/tun_exclude_test.exe)
+          # Лежит в build, а не в testrun: сам ищет файлы дерева на два уровня
+          # вверх, и копировать его сюда незачем. Прежняя строка звала его как
+          # ./build/... уже из build — то есть build/build, и шаг падал.
+          ../tun_exclude_test.exe
           # Файл автонастройки исполняется настоящим движком: разбор текста не
           # отвечает на вопрос, разбирается ли он вообще и что возвращает.
           node ../../support/Test-Pac.js pac-sample.pac
