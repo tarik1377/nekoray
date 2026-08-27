@@ -227,7 +227,12 @@ private:
     void disable_extra_adapters();      // show foreign TAP/TUN adapters; disable only what the user ticks
     void repair_macos_network();        // macOS-начинка того же пункта меню: прокси, кэш имён, отчёт
     QString foreign_tunnels_line();     // ЗВАТЬ ТОЛЬКО ИЗ РАБОЧЕГО ПОТОКА — запускает powershell и ждёт
-    void show_macos_modes(bool onlyOnce); // выбор режима и объяснение к нему (окно только на macOS)
+    // Выбор режима и объяснение к нему; окно показывается только на macOS.
+    //
+    // ВОЗВРАЩАЕТ, РАСПОРЯДИЛАСЬ ЛИ ОНА РЕЖИМОМ САМА. Без этого вызывающий
+    // догадывался по состоянию dataStore, а оно на тот миг ещё прежнее — и
+    // догадка была неверной. Подробно — над ранним выходом в обработчике галки.
+    bool show_macos_modes(bool onlyOnce);
     void show_conn_context_menu(const QPoint &pos);     // right-click a connection → make a routing rule
     void add_routing_rule(const QString &host, int kind); // kind: 0 direct, 1 proxy, 2 block
 

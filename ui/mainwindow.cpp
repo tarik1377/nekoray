@@ -502,14 +502,21 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         // Иначе человек нажимает галку, получает запрос пароля и не понимает
         // ни зачем он, ни почему повторится в следующий раз. На Windows и
         // Linux окно не показывается: там выбора нет.
-        if (checked) {
-            show_macos_modes(true);
-            // Окно само включает выбранный режим, поэтому если человек им
-            // воспользовался — делать здесь больше нечего.
-            if (NekoGui::dataStore->spmode_vpn || NekoGui::dataStore->spmode_system_proxy) {
-                refresh_status();
-                return;
-            }
+        // РАННИЙ ВЫХОД ТОЛЬКО ПО ОТВЕТУ ОКНА, а не по состоянию настроек.
+        //
+        // Здесь стояла проверка «spmode_vpn || spmode_system_proxy», и она читала
+        // состояние ДО нажатия. Значит у всякого, у кого уже включён системный
+        // прокси, галка «Туннель» не делала НИЧЕГО: обработчик выходил, а
+        // refresh_status возвращал её на место. Ни диалога, ни строки в журнале —
+        // человек видел, что галка отщёлкнулась сама, ровно как в той поломке,
+        // ради которой окно и заводилось.
+        //
+        // На macOS било сильнее: окно объясняет режимы ОДИН раз, дальше
+        // show_macos_modes выходит сразу, и галка оставалась мёртвой навсегда.
+        if (checked && show_macos_modes(true)) {
+            // Окно само включило выбранный режим — делать здесь больше нечего.
+            refresh_status();
+            return;
         }
         neko_set_spmode_vpn(checked);
     });
@@ -1838,11 +1845,11 @@ void MainWindow::macos_clear_pac() {
  * своей платформы, и ошибка в нём всплывает только на сборке, которую здесь
  * проверить нечем. Уже обжигались.
  */
-void MainWindow::show_macos_modes(bool onlyOnce) {
+bool MainWindow::show_macos_modes(bool onlyOnce) {
 #ifdef Q_OS_MACOS
     // Объясняем ОДИН раз. Одно и то же окно при каждом запуске приучает
     // закрывать его не читая — а тогда объяснение не работает вовсе.
-    if (onlyOnce && NekoGui::dataStore->macos_mode_explained) return;
+    if (onlyOnce && NekoGui::dataStore->macos_mode_explained) return false;
 
     DialogMacosMode dlg(this);
     dlg.exec();
@@ -1857,16 +1864,19 @@ void MainWindow::show_macos_modes(bool onlyOnce) {
         case DialogMacosMode::Tunnel:
             neko_set_spmode_system_proxy(false);
             neko_set_spmode_vpn(true);
-            break;
+            return true;
         case DialogMacosMode::SystemProxy:
             neko_set_spmode_vpn(false);
             neko_set_spmode_system_proxy(true);
-            break;
+            return true;
         default:
-            break;
+            // «Решу позже» — режимом никто не распорядился, и вызывающий
+            // обязан продолжить обычным путём.
+            return false;
     }
 #else
     Q_UNUSED(onlyOnce)
+    return false;
 #endif
 }
 
