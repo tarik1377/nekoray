@@ -234,6 +234,17 @@ jobs:
         run: |
           source libs/env_qtsdk.sh $PWD/qtsdk/Qt
           ./build/tun_exclude_test.exe
+
+      # СВОИМ ШАГОМ, как и на маке. Внутри соседнего он уже стоял, и это
+      # повторяло ошибку, от которой предостерегает комментарий выше:
+      # упади он там — в списке шагов значилось бы «tunnel exclusions», и
+      # причина не отличалась бы от чужой.
+      - name: Test the TUN report against the core's stack rule
+        shell: bash
+        env:
+          DL_QT_VER: "6.7"
+        run: |
+          source libs/env_qtsdk.sh $PWD/qtsdk/Qt
           ./build/tun_report_test.exe
 
       - name: Tar artifacts
