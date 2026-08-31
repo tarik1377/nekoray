@@ -1948,6 +1948,9 @@ void MainWindow::run_diagnostics() {
         // powershell и ждёт его, а в потоке интерфейса эти секунды выглядят
         // как «программа не отвечает».
         const QString foreign = foreign_tunnels_line();
+        // Состояние туннеля спрашивается здесь же: внутри powershell/ifconfig,
+        // и в потоке интерфейса эти секунды выглядели бы как зависание.
+        const QString tunAdapter = NekoGui_sys::DescribeTunAdapter();
 
         bool net, dns, tcp = false, tls = false;
         {
@@ -2055,7 +2058,7 @@ void MainWindow::run_diagnostics() {
 
             // Support report — no secrets: server host:port is public and helps support,
             // but the subscription token / keys are never included.
-            QString report = header + foreign;
+            QString report = header + tun_diagnostics_block(tunAdapter) + foreign;
             report += QStringLiteral("Internet: %1\nDNS: %2\n").arg(net ? "OK" : "FAIL", dns ? "OK" : "FAIL");
             if (!host.isEmpty()) {
                 report += QStringLiteral("Server %1:%2 TCP: %3\nTLS: %4\n")
@@ -3518,6 +3521,64 @@ void MainWindow::append_log_to_file(const QStringList &lines) {
 
 // A short, secret-free preamble for the copyable report and the saved log: what version,
 // OS, server and mode — the facts support asks for first. Never the token or keys.
+/**
+ * Блок про туннель для отчёта в поддержку.
+ *
+ * ЗАЧЕМ ОН ЕСТЬ. Диагностика умела сказать «трафик через VPN не идёт» и на
+ * этом кончалась. Дальше шла переписка на несколько кругов: какой стек, поднят
+ * ли адаптер, кто им владеет, что сказало ядро. Каждый круг — это день, и
+ * половина ответов приходила про другую сборку. Теперь всё это собирается
+ * одной кнопкой и одинаково у всех.
+ *
+ * Настройки берутся здесь, в потоке интерфейса, — это чтение полей. Систему
+ * спрашивает DescribeTunAdapter из рабочего потока, и её строка приходит
+ * готовым параметром.
+ */
+QString MainWindow::tun_diagnostics_block(const QString &adapter) const {
+    QStringList v;
+
+    // Внутренний туннель против внешнего. На маке внутреннего нет вовсе, и
+    // человек об этом знать не обязан — а поддержке разница нужна сразу.
+    v << QStringLiteral("tun-requested=%1").arg(NekoGui::dataStore->spmode_vpn ? "yes" : "no");
+    v << QStringLiteral("tun-internal=%1 platform-allows=%2")
+             .arg(NekoGui::dataStore->vpn_internal_tun ? "yes" : "no",
+                  NekoGui::PlatformSupportsInternalTun() ? "yes" : "no");
+
+    /*
+     * СТЕК ПИШЕТСЯ ДВАЖДЫ, И ЭТО НЕ ИЗБЫТОЧНОСТЬ.
+     *
+     * Ядро переписывает выбор: normalizeTunStack превращает «gvisor» в
+     * «mixed» (чистый gvisor рвёт соединения на части машин с Windows), а
+     * «system» уважает. Отчёт с одним лишь выбранным значением расходится с
+     * журналом ядра, и на выяснение этого уходит лишний круг переписки.
+     */
+    const auto chosen = Preset::SingBox::VpnImplementation.value(NekoGui::dataStore->vpn_implementation);
+    const auto effective = (chosen == QStringLiteral("gvisor") || chosen.isEmpty())
+                               ? QStringLiteral("mixed")
+                               : chosen;
+    v << QStringLiteral("stack=%1%2 mtu=%3 strict-route=%4 ipv6=%5")
+             .arg(chosen,
+                  chosen == effective ? QString() : QStringLiteral(" (ядро применит %1)").arg(effective))
+             .arg(NekoGui::dataStore->vpn_mtu)
+             .arg(NekoGui::dataStore->vpn_strict_route ? "on" : "off",
+                  NekoGui::dataStore->vpn_ipv6 ? "on" : "off");
+
+    v << QStringLiteral("system=%1").arg(adapter.isEmpty() ? QStringLiteral("-") : adapter);
+
+#ifdef Q_OS_MACOS
+    /*
+     * Перемещённая копия — самая частая причина «на маке ничего не работает», и
+     * снаружи она неотличима от поломки туннеля. Система запускает скачанное
+     * приложение из временной копии только на чтение: настройки не пишутся,
+     * туннель не поднимается, а человек видит лишь то, что ничего не вышло.
+     */
+    v << QStringLiteral("translocated=%1")
+             .arg(QApplication::applicationDirPath().contains(QStringLiteral("/AppTranslocation/")) ? "YES (перетащите в Программы)" : "no");
+#endif
+
+    return QStringLiteral("TUN: ") + v.join(QStringLiteral("; ")) + "\n";
+}
+
 QString MainWindow::diagnostics_header() const {
     QString h = QStringLiteral("GreenRhythm %1\nOS: %2\n")
                     .arg(QString(NKR_VERSION), QSysInfo::prettyProductName());
@@ -3638,6 +3699,7 @@ void MainWindow::on_masterLogBrowser_customContextMenuRequested(const QPoint &po
             return;
         }
         out.write(diagnostics_header().toUtf8());
+        out.write(tun_diagnostics_block({}).toUtf8());
         out.write("\n");
         // Prefer the on-disk history (full); fall back to the on-screen buffer if no file yet.
         bool wroteFile = false;

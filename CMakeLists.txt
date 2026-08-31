@@ -410,6 +410,15 @@ add_executable(tun_exclude_test EXCLUDE_FROM_ALL
 target_link_libraries(tun_exclude_test PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network)
 target_include_directories(tun_exclude_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Отчёт о туннеле против правила подмены стека в ядре. Правило продублировано
+# на двух языках в двух файлах; разойтись они могут молча, и тогда отчёт врёт
+# ровно там, где ему верят больше всего — см. шапку набора.
+add_executable(tun_report_test EXCLUDE_FROM_ALL
+        test/TunReportTest.cpp
+)
+target_link_libraries(tun_report_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+target_include_directories(tun_report_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
 add_executable(relay_component_test EXCLUDE_FROM_ALL
         test/RelayComponentTest.cpp
         main/RelayComponentParse.cpp

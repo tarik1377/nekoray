@@ -249,6 +249,7 @@ private:
     QString log_file_path;
     void append_log_to_file(const QStringList &lines);
     QString diagnostics_header() const; // version/OS/server/mode, no secrets — for report + log
+    QString tun_diagnostics_block(const QString &adapter) const; // стек, режим, адаптер — для разбора TUN
 
     // «Автопилот»: watchdog that probes the live tunnel end-to-end and self-heals —
     // refresh subscription (rotated keys), reconnect, switch server, then back off.

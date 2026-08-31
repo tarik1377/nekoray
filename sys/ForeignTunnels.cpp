@@ -222,4 +222,68 @@ namespace NekoGui_sys {
 #endif
     }
 
+
+    /**
+     * Состояние нашего туннеля словами системы.
+     *
+     * Отвечает на то, что поддержка иначе выясняет перепиской: поднят ли
+     * адаптер, идут ли через него маршруты. Спрашивается по-разному, потому
+     * что туннель на платформах разный: на Windows это именованный
+     * wintun-адаптер, на маке — utun со случайным номером, который система
+     * выдаёт сама, и по имени его не найти.
+     */
+    QString DescribeTunAdapter() {
+        QStringList out;
+#ifdef Q_OS_WIN
+        // Одним заходом: состояние адаптера и сколько маршрутов через него.
+        // Два запуска powershell стоили бы лишних секунд на ровном месте.
+        const auto raw = ask("powershell",
+                             {"-NoProfile", "-NonInteractive", "-Command",
+                              "$a = Get-NetAdapter -Name 'neko-tun' -ErrorAction SilentlyContinue; "
+                              "if (-not $a) { 'adapter=absent' } else { "
+                              "'adapter=' + $a.Status + ' ifIndex=' + $a.ifIndex; "
+                              "$r = @(Get-NetRoute -InterfaceIndex $a.ifIndex -ErrorAction SilentlyContinue); "
+                              "'routes=' + $r.Count }"},
+                             12000);
+        for (const auto &ln: raw.split('\n')) {
+            const auto t = ln.trimmed();
+            if (!t.isEmpty()) out << t;
+        }
+        if (out.isEmpty()) out << QStringLiteral("adapter=unknown (система не ответила)");
+#elif defined(Q_OS_MACOS)
+        // На маке имя не наше: sing-tun берёт первый свободный utun. Поэтому
+        // ищем не по имени, а по НАШЕМУ адресу — он из шаблона и постоянен.
+        const auto raw = ask("ifconfig", {"-a"}, 8000);
+        QString current;
+        bool found = false;
+        for (const auto &ln: raw.split('\n')) {
+            if (!ln.startsWith(' ') && !ln.startsWith('\t')) current = ln.section(':', 0, 0).trimmed();
+            if (ln.contains(QStringLiteral("172.19.0.1")) && !current.isEmpty()) {
+                out << QStringLiteral("adapter=%1 (наш адрес поднят)").arg(current);
+                found = true;
+                break;
+            }
+        }
+        if (!found) out << QStringLiteral("adapter=absent (нашего адреса нет ни на одном utun)");
+        const auto routes = ask("netstat", {"-rn", "-f", "inet"}, 8000);
+        int viaUtun = 0;
+        for (const auto &ln: routes.split('\n')) {
+            if (ln.contains(QStringLiteral("utun"))) viaUtun++;
+        }
+        out << QStringLiteral("routes-via-utun=%1").arg(viaUtun);
+#else
+        const auto raw = ask("ip", {"-br", "addr", "show"}, 8000);
+        bool found = false;
+        for (const auto &ln: raw.split('\n')) {
+            if (ln.contains(QStringLiteral("172.19.0.1"))) {
+                out << QStringLiteral("adapter=%1").arg(ln.section(' ', 0, 0).trimmed());
+                found = true;
+                break;
+            }
+        }
+        if (!found) out << QStringLiteral("adapter=absent");
+#endif
+        return out.join(QStringLiteral(", "));
+    }
+
 } // namespace NekoGui_sys
