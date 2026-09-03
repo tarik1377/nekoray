@@ -430,12 +430,27 @@ namespace NekoGui {
             //    соединения уходили мимо туннеля, к CDN и API, которых нет в списке
             //    прямых доменов. Поэтому его здесь нет и быть не должно; Squad же
             //    покупается в Steam, и лаунчер Epic ему не нужен вовсе.
-            //    Помощник EpicOnlineServicesUserHelper.exe убран по той же причине,
-            //    а заодно потому, что за всё наблюдение не встретился ни разу: это
-            //    было угаданное имя, а угаданные имена мы больше не возим.
+            //    Помощник EpicOnlineServicesUserHelper.exe в обходе тоже не нужен.
+            // 4. ЛАУНЧЕР ИДЁТ ЧЕРЕЗ ТУННЕЛЬ ПОИМЁННО, И ЭТО НЕ ПРОТИВОРЕЧИЕ.
+            //    Убрать его из обхода оказалось мало: домены Epic перечислены в
+            //    списке «напрямую» (см. direct_domain ниже — epicgames.com и
+            //    соседние), а домен решает раньше имени программы. Список этот
+            //    правильный для ИГР: игра и её служба входа обязаны выходить с
+            //    одного адреса, иначе вход отвергается. Но самому лаунчеру
+            //    прямой адрес закрыт — сеть Epic с него не пускает.
+            //
+            //    Поэтому лаунчер и его встроенный браузер названы поимённо в
+            //    правиле «через туннель»: правила пресета решают раньше списков
+            //    доменов, так что имя побеждает домен именно там, где надо, и
+            //    только там. Имена взяты из журнала, а не выдуманы.
+            //
+            //    EpicOnlineServicesUserHelper.exe сюда НЕ добавлен намеренно: он
+            //    обслуживает вход самой игры, а игры идут напрямую. Уведи его в
+            //    туннель — и адреса игры и её входа разойдутся, что и ломает вход.
+
             //    long-lived game connections. Every helper must share the game's exit IP
             //    or Xbox/Epic auth fails (seen as Sea of Thieves "Lavenderbeard").
-            custom = "{\"rules\":[{\"outbound\":\"bypass\",\"process_name\":[\"SquadGame-Win64-Shipping.exe\",\"SquadGame.exe\",\"Squad.exe\",\"EasyAntiCheat.exe\",\"EasyAntiCheat_EOS.exe\",\"EACLauncher.exe\",\"BEService.exe\",\"BEService_x64.exe\",\"SoTGame.exe\",\"SoTLauncher.exe\",\"UnrealCEFSubProcess.exe\",\"XboxPcAppFT.exe\",\"XboxPcApp.exe\",\"GameBarPresenceWriter.exe\",\"GamingServices.exe\",\"GamingServicesNet.exe\",\"XboxIdentityProvider.exe\",\"steam.exe\",\"steamwebhelper.exe\",\"steamservice.exe\",\"BsgLauncher.exe\",\"EscapeFromTarkov.exe\"]},{\"outbound\":\"bypass\",\"process_path_regex\":[\"(?i)-Win64-Shipping\\\\.exe$\",\"(?i)-WinGDK-Shipping\\\\.exe$\"]},{\"network\":\"icmp\",\"outbound\":\"bypass\"},{\"network\":\"udp\",\"port\":443,\"ip_cidr\":[\"8.8.8.8/32\",\"8.8.4.4/32\",\"1.1.1.1/32\",\"1.0.0.1/32\",\"9.9.9.9/32\",\"77.88.8.8/32\",\"77.88.8.1/32\"],\"outbound\":\"direct\"},{\"network\":\"udp\",\"port\":443,\"outbound\":\"block\"},{\"protocol\":\"quic\",\"outbound\":\"block\"},{\"outbound\":\"proxy\",\"process_name\":[\"Discord.exe\",\"discord.exe\",\"Telegram.exe\",\"telegram.exe\",\"Codex.exe\",\"codex.exe\",\"Claude.exe\",\"claude.exe\",\"claude-code.exe\"]}]}";
+            custom = "{\"rules\":[{\"outbound\":\"bypass\",\"process_name\":[\"SquadGame-Win64-Shipping.exe\",\"SquadGame.exe\",\"Squad.exe\",\"EasyAntiCheat.exe\",\"EasyAntiCheat_EOS.exe\",\"EACLauncher.exe\",\"BEService.exe\",\"BEService_x64.exe\",\"SoTGame.exe\",\"SoTLauncher.exe\",\"UnrealCEFSubProcess.exe\",\"XboxPcAppFT.exe\",\"XboxPcApp.exe\",\"GameBarPresenceWriter.exe\",\"GamingServices.exe\",\"GamingServicesNet.exe\",\"XboxIdentityProvider.exe\",\"steam.exe\",\"steamwebhelper.exe\",\"steamservice.exe\",\"BsgLauncher.exe\",\"EscapeFromTarkov.exe\"]},{\"outbound\":\"bypass\",\"process_path_regex\":[\"(?i)-Win64-Shipping\\\\.exe$\",\"(?i)-WinGDK-Shipping\\\\.exe$\"]},{\"network\":\"icmp\",\"outbound\":\"bypass\"},{\"network\":\"udp\",\"port\":443,\"ip_cidr\":[\"8.8.8.8/32\",\"8.8.4.4/32\",\"1.1.1.1/32\",\"1.0.0.1/32\",\"9.9.9.9/32\",\"77.88.8.8/32\",\"77.88.8.1/32\"],\"outbound\":\"direct\"},{\"network\":\"udp\",\"port\":443,\"outbound\":\"block\"},{\"protocol\":\"quic\",\"outbound\":\"block\"},{\"outbound\":\"proxy\",\"process_name\":[\"Discord.exe\",\"discord.exe\",\"Telegram.exe\",\"telegram.exe\",\"Codex.exe\",\"codex.exe\",\"Claude.exe\",\"claude.exe\",\"claude-code.exe\",\"EpicGamesLauncher.exe\",\"EpicWebHelper.exe\",\"EpicOnlineServicesInstallHelper.exe\"]}]}";
         }
         if (!Preset::SingBox::DomainStrategy.contains(domain_strategy)) domain_strategy = "";
         if (!Preset::SingBox::DomainStrategy.contains(outbound_domain_strategy)) outbound_domain_strategy = "";
@@ -574,7 +589,11 @@ namespace NekoGui {
         bool changed = false;
         for (const auto &v: QString2QJsonObject(preset.custom)["rules"].toArray()) {
             const auto want = v.toObject();
-            if (want["outbound"].toString() != "bypass") continue;
+            // Переносим и «мимо туннеля», и «через туннель»: лаунчер Epic
+            // прописан вторым способом, и без этого он не доехал бы до тех, у
+            // кого схема уже сохранена.
+            const QString wantOut = want["outbound"].toString();
+            if (wantOut != "bypass" && wantOut != "proxy") continue;
             QString field;
             for (const auto &candidate: {QStringLiteral("process_name"),
                                         QStringLiteral("process_path_regex"),
@@ -599,7 +618,7 @@ namespace NekoGui {
             int at = -1;
             for (int i = 0; i < rules.size(); i++) {
                 const auto o = rules[i].toObject();
-                if (o["outbound"].toString() != "bypass" || !o.contains(field)) continue;
+                if (o["outbound"].toString() != wantOut || !o.contains(field)) continue;
                 if (!mergeable) {
                     // Своим считаем только правило с ТЕМ ЖЕ значением, иначе
                     // «нашлось» бы первое попавшееся правило про сеть.
@@ -616,15 +635,25 @@ namespace NekoGui {
             }
 
             if (at < 0) {
-                rules.insert(firstBlock, want);
-                firstBlock++;
+                // МЕСТО ЗАВИСИТ ОТ СМЫСЛА. «Мимо туннеля» обязано стоять ВЫШЕ
+                // блокировок — иначе пакет гасится раньше, чем доходит до
+                // правила. А «через туннель» в пресете стоит НИЖЕ них, и
+                // поднимать его нельзя: тогда QUIC мессенджеров пошёл бы в
+                // туннель вместо запрета, а запрет этот сделан намеренно.
+                if (wantOut == QStringLiteral("proxy")) {
+                    rules.append(want);
+                } else {
+                    rules.insert(firstBlock, want);
+                    firstBlock++;
+                }
                 changed = true;
                 continue;
             }
 
             if (!mergeable) {
                 // Нашлось и совпало по значению — переставить, если оно ниже блока.
-                if (at > firstBlock) {
+                // Правила «через туннель» не переставляем никогда, см. выше.
+                if (wantOut != QStringLiteral("proxy") && at > firstBlock) {
                     const auto mine = rules[at].toObject();
                     rules.removeAt(at);
                     rules.insert(firstBlock, mine);

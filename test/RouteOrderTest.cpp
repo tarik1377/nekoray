@@ -149,6 +149,8 @@ int main(int argc, char **argv) {
         bool epicBypassed = false;
         int regexAt = -1;
         int icmpAt = -1;
+        bool epicProxied = false;
+        bool gameAuthProxied = false;
         for (int i = 0; i < rules.size(); i++) {
             const auto o = rules[i].toObject();
             const auto out = o.value(QStringLiteral("outbound")).toString();
@@ -170,6 +172,13 @@ int main(int argc, char **argv) {
                 && o.value(QStringLiteral("network")).toString() == QStringLiteral("icmp")) {
                 icmpAt = i;
             }
+            if (out == QStringLiteral("proxy")) {
+                for (const auto &n: o.value(QStringLiteral("process_name")).toArray()) {
+                    const auto nm = n.toString();
+                    if (nm == QStringLiteral("EpicGamesLauncher.exe")) epicProxied = true;
+                    if (nm == QStringLiteral("EpicOnlineServicesUserHelper.exe")) gameAuthProxied = true;
+                }
+            }
             if (blockAt < 0 && out == QStringLiteral("block")) blockAt = i;
         }
 
@@ -184,6 +193,14 @@ int main(int argc, char **argv) {
         // он отвечает «ошибка соединения». Один раз он в этот список уже попал —
         // как часть списка «с запасом», собранного по догадке.
         is(QStringLiteral("лаунчера Epic в обходе нет"), !epicBypassed);
+        // Мало убрать его из обхода: домены Epic перечислены в списке
+        // «напрямую», а домен решает раньше имени. Поэтому лаунчер назван
+        // поимённо в правиле «через туннель» — правила пресета читаются раньше
+        // списков доменов, и имя побеждает домен именно там, где нужно.
+        is(QStringLiteral("лаунчер Epic назван в правиле «через туннель»"), epicProxied);
+        // А помощник входа самой игры — НЕ назван: игры идут напрямую, и увести
+        // их вход в туннель значит развести адреса игры и её входа.
+        is(QStringLiteral("помощник входа игры оставлен напрямую"), !gameAuthProxied);
         // Имя игры на Unreal нельзя знать заранее, поэтому рядом с поимённым
         // списком стоит шаблон по суффиксу сборки — он и ловит будущие игры.
         is(QStringLiteral("есть правило по шаблону пути"), regexAt >= 0);
