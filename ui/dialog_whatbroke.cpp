@@ -169,6 +169,11 @@ void DialogWhatBroke::buildVerdict() {
     pages->addWidget(page);
 }
 
+void DialogWhatBroke::setFixAvailable(bool can, const QString &whyNot) {
+    canFix = can;
+    cannotFixWhy = whyNot;
+}
+
 void DialogWhatBroke::inspect(const QString &name) {
     if (name.isEmpty()) return;
     program = name;
@@ -241,7 +246,12 @@ void DialogWhatBroke::conclude() {
                            "у игр от этого не грузится список серверов и не считается пинг.")
                             .arg(f.udpViaTunnel);
             }
-            if (covered) {
+            if (!canFix) {
+                // Причина названа, кнопки нет: предложить починку, которая ничего
+                // не изменит, — худшее из возможного, потому что второй заход
+                // скажет «уже в списке» и замкнёт человека в петле.
+                body += QStringLiteral("\n\n") + cannotFixWhy;
+            } else if (covered) {
                 body += tr("\n\nНо эта программа уже в списке тех, кто выходит напрямую. Значит менять "
                            "нечего — похоже, изменения ещё не вступили в силу: переподключитесь.");
                 fixButton->setText(tr("Переподключить"));
@@ -252,7 +262,7 @@ void DialogWhatBroke::conclude() {
                 fixButton->setText(tr("Пустить эту программу напрямую"));
             }
             verdictBody->setText(body);
-            fixButton->setVisible(true);
+            fixButton->setVisible(canFix);
             break;
         }
     }

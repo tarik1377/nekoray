@@ -3484,6 +3484,24 @@ void MainWindow::open_what_broke() {
     d->setAttribute(Qt::WA_DeleteOnClose);
     d->setAlreadyDirect(NekoGui::dataStore->vpn_rule_process.split(QChar(0x0A), Qt::SkipEmptyParts));
 
+    // Действует ли поимённый список ПРЯМО СЕЙЧАС. Признак намеренно не включает
+    // UseInternalTun(): на macOS внутреннего туннеля нет, а список там применяется
+    // вторым путём, при сборке конфига туннеля, — по этой проверке кнопка была бы
+    // навсегда погашена ровно на той платформе, которую сейчас доводят.
+    if (!NekoGui::dataStore->spmode_vpn) {
+        d->setFixAvailable(false,
+                           tr("Но пустить её напрямую сейчас нельзя: поимённый выбор действует "
+                              "только при включённом режиме VPN. Включите его и загляните сюда "
+                              "снова."));
+    } else if (NekoGui::dataStore->vpn_rule_white) {
+        d->setFixAvailable(false,
+                           tr("Но сейчас список работает наоборот: в нём перечислены те, кого "
+                              "пускают через VPN, а не мимо. Пока так, увести программу отсюда "
+                              "нельзя."));
+    } else {
+        d->setFixAvailable(true, QString());
+    }
+
     connect(d, &DialogWhatBroke::fixRequested, this, [this](const QString &program) {
         auto list = NekoGui::dataStore->vpn_rule_process.split(QChar(0x0A), Qt::SkipEmptyParts);
         // Дважды не добавляем: список читает человек, и повтор в нём выглядит
@@ -3520,7 +3538,17 @@ void MainWindow::open_greenrhythm_panel() {
     connect(&d, &DialogGreenRhythm::connectRequested, ui->menu_gr_connect, &QAction::trigger);
     connect(&d, &DialogGreenRhythm::relayRequested, ui->menu_gr_relay, &QAction::trigger);
     connect(&d, &DialogGreenRhythm::qrRequested, ui->menu_gr_qr, &QAction::trigger);
-    connect(&d, &DialogGreenRhythm::troubleRequested, this, [this] { open_what_broke(); });
+    connect(&d, &DialogGreenRhythm::troubleRequested, this, [this, &d] {
+        // Панель показана модально, и немодальное окно разбора поверх неё не
+        // принимало бы НИ ОДНОГО нажатия: оно появлялось бы, клики проваливались,
+        // и человек при первом же знакомстве решал бы, что механизм сломан.
+        //
+        // Закрываем именно accept(), а не close(): по «Сохранить» панель отдаёт
+        // наружу список «мимо туннеля», а по отказу — нет. close() потерял бы
+        // несохранённые правки, то есть ровно то, что мы бережём.
+        d.accept();
+        open_what_broke();
+    });
     connect(&d, &DialogGreenRhythm::diagnosticsRequested, ui->menu_gr_diag, &QAction::trigger);
     connect(&d, &DialogGreenRhythm::buyRequested, ui->menu_gr_buy, &QAction::trigger);
     connect(&d, &DialogGreenRhythm::telegramRequested, ui->menu_gr_telegram, &QAction::trigger);

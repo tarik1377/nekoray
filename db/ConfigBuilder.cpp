@@ -743,9 +743,20 @@ namespace NekoGui {
 
         // Routing
 
-        // dns hijack
+        // ПЕРЕХВАТ DNS — ПЕРВЫМ ПРАВИЛОМ, ВЫШЕ ВСЕГО, ЧТО ЗАДАЁТ ЧЕЛОВЕК.
+        //
+        // Разрешение имён идёт на адрес внутри самого туннеля. Стоит человеку
+        // вписать в «мимо туннеля» подсеть, которая его накрывает (172.16.0.0/12
+        // вписывают, чтобы не заводить в туннель рабочую сеть), — и запросы имён
+        // уходят в никуда: сперва в чёрную дыру на предпочитаемом интерфейсе, а
+        // затем, если повезёт, мимо туннеля и на глазах у провайдера. Снаружи это
+        // «интернет пропал или еле шевелится», и связать это со своей же строкой
+        // в настройках человек не сможет никогда.
+        //
+        // Поэтому перехват живёт в отдельном массиве, который приклеивается
+        // раньше всех остальных: обогнать его нельзя ни списком, ни пресетом.
         if (!status->forTest) {
-            status->routingRules += QJsonObject{
+            status->routingRulesDns += QJsonObject{
                 {"protocol", "dns"},
                 {"outbound", "dns-out"},
             };
@@ -873,7 +884,8 @@ namespace NekoGui {
         // final add routing rule
         // Порядок сборки: сначала поимённый выбор человека, затем цепочка пресета,
         // затем его же общие правила, затем всё остальное.
-        auto routingRules = status->routingRulesFirst;
+        auto routingRules = status->routingRulesDns;
+        QJSONARRAY_ADD(routingRules, status->routingRulesFirst)
         QJSONARRAY_ADD(routingRules, QString2QJsonObject(dataStore->routing->custom)["rules"].toArray())
         if (status->forTest) routingRules = {};
         if (!status->forTest) QJSONARRAY_ADD(routingRules, QString2QJsonObject(dataStore->custom_route_global)["rules"].toArray())

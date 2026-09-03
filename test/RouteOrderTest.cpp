@@ -91,6 +91,22 @@ int main(int argc, char **argv) {
     is(QStringLiteral("признаком точности служит full:"),
        src.mid(picker, 400).contains(QStringLiteral("full:")));
 
+    // ---- ПЕРЕХВАТ ИМЁН ВЫШЕ ВСЕГО, ЧТО ЗАДАЁТ ЧЕЛОВЕК ----
+    //
+    // Разрешение имён идёт на адрес внутри туннеля. Пользовательский список
+    // «мимо туннеля», обогнавший перехват, уводит эти запросы в никуда: человек
+    // вписывает 172.16.0.0/12, чтобы не заводить в туннель рабочую сеть, и
+    // остаётся без разрешения имён вовсе. Связать это со своей же строкой в
+    // настройках он не сможет никогда — поэтому отношение закреплено здесь.
+    const int dnsAdd   = src.indexOf(QStringLiteral("status->routingRulesDns +="));
+    const int dnsFirst = src.indexOf(QStringLiteral("auto routingRules = status->routingRulesDns"));
+    const int userNext = src.indexOf(QStringLiteral("QJSONARRAY_ADD(routingRules, status->routingRulesFirst)"));
+
+    is(QStringLiteral("перехват имён живёт отдельным массивом"), dnsAdd >= 0);
+    is(QStringLiteral("цепочка начинается с перехвата имён"), dnsFirst >= 0);
+    is(QStringLiteral("поимённый список человека приклеивается ПОСЛЕ перехвата"),
+       dnsFirst >= 0 && userNext > dnsFirst);
+
     // ---- ВТОРОЕ ОТНОШЕНИЕ: обход по процессу выше блокировок ----
     //
     // Тот же закон «первое совпадение решает», но в цепочке правил из пресета.
