@@ -359,7 +359,25 @@ void MainWindow::neko_start(int _id) {
         bool rpcOK;
         QString error = defaultClient->Start(&rpcOK, req);
         if (rpcOK && !error.isEmpty()) {
-            runOnUiThread([=] { MessageBoxWarning("LoadConfig return error", error); });
+            // ЧЕЛОВЕКУ — ЧЕЛОВЕЧЕСКОЕ. Отказ занять локальный порт приходит от
+            // системы по-английски и выглядит как «bind: An attempt was made to
+            // access a socket in a way forbidden by its access permissions». По
+            // этой строке нельзя догадаться ни что случилось, ни что делать, а
+            // случается она на машинах с Hyper-V, WSL или Docker: они держат за
+            // собой часть диапазона портов. Подключения при этом просто нет.
+            QString human = error;
+            if (error.contains(QStringLiteral("bind"), Qt::CaseInsensitive) &&
+                (error.contains(QStringLiteral("forbidden"), Qt::CaseInsensitive) ||
+                 error.contains(QStringLiteral("permissions"), Qt::CaseInsensitive) ||
+                 error.contains(QStringLiteral("already in use"), Qt::CaseInsensitive))) {
+                human = tr("Не удалось занять локальный порт для подключения.\n\n"
+                           "Так бывает, когда часть портов держат за собой Hyper-V, WSL "
+                           "или Docker. Нажмите «Подключить» ещё раз — программа возьмёт "
+                           "другой порт. Если повторяется, помогает перезапуск компьютера.\n\n"
+                           "Ответ системы: %1")
+                              .arg(error);
+            }
+            runOnUiThread([=] { MessageBoxWarning(software_name, human); });
             return false;
         } else if (!rpcOK) {
             return false;

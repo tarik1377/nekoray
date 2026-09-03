@@ -8,6 +8,7 @@
 #include <QApplication>
 #include <QUrlQuery>
 #include <QTcpServer>
+#include <QUdpSocket>
 #include <QTimer>
 #include <QMessageBox>
 #include <QFile>
@@ -137,11 +138,41 @@ QString ReadFileText(const QString &path) {
     return stream.readAll();
 }
 
+/**
+ * Свободный порт для наших локальных входов.
+ *
+ * ПОЧЕМУ ОДНОЙ ПРОВЕРКИ МАЛО. Порт спрашивается у системы по TCP, а отдаётся в
+ * том числе под UDP. На Windows с Hyper-V, WSL или Docker часть динамического
+ * диапазона зарезервирована ими: TCP там слушается, а UDP отвечает отказом
+ * доступа. Ядро тогда не поднимается вовсе, и человек видит английскую строку
+ * «listen udp 127.0.0.1:62060: bind: An attempt was made to access a socket in
+ * a way forbidden by its access permissions» — по ней невозможно догадаться ни
+ * что случилось, ни что нажимать. Подключение при этом просто не происходит.
+ *
+ * Поэтому порт проверяется обоими способами и берётся только тот, который
+ * годится и туда и туда. Гонку между проверкой и занятием портом ядром это не
+ * убирает полностью — но зарезервированный диапазон не гонка, а постоянное
+ * свойство машины, и именно он давал отказ каждый раз.
+ */
 int MkPort() {
-    QTcpServer s;
-    s.listen();
-    auto port = s.serverPort();
-    s.close();
+    for (int attempt = 0; attempt < 32; attempt++) {
+        QTcpServer tcp;
+        if (!tcp.listen(QHostAddress::LocalHost)) continue;
+        const auto port = tcp.serverPort();
+        tcp.close();
+
+        QUdpSocket udp;
+        if (!udp.bind(QHostAddress::LocalHost, port)) continue; // диапазон занят системой
+        udp.close();
+        return port;
+    }
+
+    // Не нашли за 32 попытки — отдаём хоть что-то: пусть лучше ядро откажется
+    // вслух, чем мы вернём ноль и получим отказ в непонятном месте.
+    QTcpServer last;
+    last.listen(QHostAddress::LocalHost);
+    const auto port = last.serverPort();
+    last.close();
     return port;
 }
 
