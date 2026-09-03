@@ -146,6 +146,7 @@ int main(int argc, char **argv) {
         int blockAt = -1;
         bool squad = false;
         bool squadExact = false;
+        bool epicBypassed = false;
         int regexAt = -1;
         int icmpAt = -1;
         for (int i = 0; i < rules.size(); i++) {
@@ -158,6 +159,7 @@ int main(int argc, char **argv) {
                     const auto nm = n.toString();
                     if (nm.startsWith(QStringLiteral("SquadGame"))) squad = true;
                     if (nm == QStringLiteral("SquadGame-Win64-Shipping.exe")) squadExact = true;
+                    if (nm.startsWith(QStringLiteral("Epic"))) epicBypassed = true;
                 }
             }
             if (regexAt < 0 && out == QStringLiteral("bypass")
@@ -178,6 +180,10 @@ int main(int argc, char **argv) {
            bypassAt >= 0 && blockAt > bypassAt);
         is(QStringLiteral("Squad в списке обхода"), squad);
         is(QStringLiteral("Squad записан настоящим именем сборки"), squadExact);
+        // Лаунчеру Epic напрямую нельзя: его сеть не пускает с прямого адреса, и
+        // он отвечает «ошибка соединения». Один раз он в этот список уже попал —
+        // как часть списка «с запасом», собранного по догадке.
+        is(QStringLiteral("лаунчера Epic в обходе нет"), !epicBypassed);
         // Имя игры на Unreal нельзя знать заранее, поэтому рядом с поимённым
         // списком стоит шаблон по суффиксу сборки — он и ловит будущие игры.
         is(QStringLiteral("есть правило по шаблону пути"), regexAt >= 0);

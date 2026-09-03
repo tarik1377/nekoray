@@ -424,9 +424,18 @@ namespace NekoGui {
             //    which looks exactly like the bug we were trying to fix.
             // 2. Games and their auth/anti-cheat helpers go "bypass", not "direct":
             //    "direct" still re-injects packets through the TUN adapter, which resets
+            // 3. НО ЛАУНЧЕР EPIC — НЕ ИГРА, И ЕМУ НАПРЯМУЮ НЕЛЬЗЯ. Сеть Epic не
+            //    пускает с прямого адреса: лаунчер отвечает «ошибка соединения» и
+            //    предлагает автономный режим. Проверено по журналу — все его
+            //    соединения уходили мимо туннеля, к CDN и API, которых нет в списке
+            //    прямых доменов. Поэтому его здесь нет и быть не должно; Squad же
+            //    покупается в Steam, и лаунчер Epic ему не нужен вовсе.
+            //    Помощник EpicOnlineServicesUserHelper.exe убран по той же причине,
+            //    а заодно потому, что за всё наблюдение не встретился ни разу: это
+            //    было угаданное имя, а угаданные имена мы больше не возим.
             //    long-lived game connections. Every helper must share the game's exit IP
             //    or Xbox/Epic auth fails (seen as Sea of Thieves "Lavenderbeard").
-            custom = "{\"rules\":[{\"outbound\":\"bypass\",\"process_name\":[\"SquadGame-Win64-Shipping.exe\",\"SquadGame.exe\",\"Squad.exe\",\"EasyAntiCheat.exe\",\"EasyAntiCheat_EOS.exe\",\"EACLauncher.exe\",\"BEService.exe\",\"BEService_x64.exe\",\"EpicOnlineServicesUserHelper.exe\",\"EpicGamesLauncher.exe\",\"SoTGame.exe\",\"SoTLauncher.exe\",\"UnrealCEFSubProcess.exe\",\"XboxPcAppFT.exe\",\"XboxPcApp.exe\",\"GameBarPresenceWriter.exe\",\"GamingServices.exe\",\"GamingServicesNet.exe\",\"XboxIdentityProvider.exe\",\"steam.exe\",\"steamwebhelper.exe\",\"steamservice.exe\",\"BsgLauncher.exe\",\"EscapeFromTarkov.exe\"]},{\"outbound\":\"bypass\",\"process_path_regex\":[\"(?i)-Win64-Shipping\\\\.exe$\",\"(?i)-WinGDK-Shipping\\\\.exe$\"]},{\"network\":\"icmp\",\"outbound\":\"bypass\"},{\"network\":\"udp\",\"port\":443,\"ip_cidr\":[\"8.8.8.8/32\",\"8.8.4.4/32\",\"1.1.1.1/32\",\"1.0.0.1/32\",\"9.9.9.9/32\",\"77.88.8.8/32\",\"77.88.8.1/32\"],\"outbound\":\"direct\"},{\"network\":\"udp\",\"port\":443,\"outbound\":\"block\"},{\"protocol\":\"quic\",\"outbound\":\"block\"},{\"outbound\":\"proxy\",\"process_name\":[\"Discord.exe\",\"discord.exe\",\"Telegram.exe\",\"telegram.exe\",\"Codex.exe\",\"codex.exe\",\"Claude.exe\",\"claude.exe\",\"claude-code.exe\"]}]}";
+            custom = "{\"rules\":[{\"outbound\":\"bypass\",\"process_name\":[\"SquadGame-Win64-Shipping.exe\",\"SquadGame.exe\",\"Squad.exe\",\"EasyAntiCheat.exe\",\"EasyAntiCheat_EOS.exe\",\"EACLauncher.exe\",\"BEService.exe\",\"BEService_x64.exe\",\"SoTGame.exe\",\"SoTLauncher.exe\",\"UnrealCEFSubProcess.exe\",\"XboxPcAppFT.exe\",\"XboxPcApp.exe\",\"GameBarPresenceWriter.exe\",\"GamingServices.exe\",\"GamingServicesNet.exe\",\"XboxIdentityProvider.exe\",\"steam.exe\",\"steamwebhelper.exe\",\"steamservice.exe\",\"BsgLauncher.exe\",\"EscapeFromTarkov.exe\"]},{\"outbound\":\"bypass\",\"process_path_regex\":[\"(?i)-Win64-Shipping\\\\.exe$\",\"(?i)-WinGDK-Shipping\\\\.exe$\"]},{\"network\":\"icmp\",\"outbound\":\"bypass\"},{\"network\":\"udp\",\"port\":443,\"ip_cidr\":[\"8.8.8.8/32\",\"8.8.4.4/32\",\"1.1.1.1/32\",\"1.0.0.1/32\",\"9.9.9.9/32\",\"77.88.8.8/32\",\"77.88.8.1/32\"],\"outbound\":\"direct\"},{\"network\":\"udp\",\"port\":443,\"outbound\":\"block\"},{\"protocol\":\"quic\",\"outbound\":\"block\"},{\"outbound\":\"proxy\",\"process_name\":[\"Discord.exe\",\"discord.exe\",\"Telegram.exe\",\"telegram.exe\",\"Codex.exe\",\"codex.exe\",\"Claude.exe\",\"claude.exe\",\"claude-code.exe\"]}]}";
         }
         if (!Preset::SingBox::DomainStrategy.contains(domain_strategy)) domain_strategy = "";
         if (!Preset::SingBox::DomainStrategy.contains(outbound_domain_strategy)) outbound_domain_strategy = "";
