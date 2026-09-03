@@ -3896,12 +3896,6 @@ void MainWindow::start_select_mode(QObject *context, const std::function<void(in
 inline QJsonArray last_arr; // format is nekoray_connections_json
 
 void MainWindow::refresh_connection_list(const QJsonArray &arr) {
-    if (last_arr == arr) {
-        return;
-    }
-    last_arr = arr;
-
-    if (NekoGui::dataStore->flag_debug) qDebug() << arr;
 
     // Разбор поломок кормится ДО отбора для таблицы: ему нужны и закрытые
     // соединения, а таблица их не показывает. Пока окно закрыто — ни строчки
@@ -3924,29 +3918,30 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
         what_broke->feed(batch);
     }
 
+    // СРАВНИВАЕМ ТОЛЬКО ЖИВЫЕ, и это не мелочь.
+    //
+    // Ранний выход «ничего не изменилось» держит таблицу на месте, пока на месте
+    // соединения: иначе она перестраивается под руками и теряет и выделение, и
+    // место прокрутки. Закрытые записи устаревают каждую секунду, поэтому
+    // сравнение по всему ответу не совпадало бы почти никогда, и покой таблицы
+    // пропал бы вместе с возможностью что-то в ней прочитать.
+    QJsonArray live;
+    for (const auto &_item: arr) {
+        if (_item.toObject()["End"].toInt() == 0) live += _item;
+    }
+    if (last_arr == live) return;
+    last_arr = live;
+
+    if (NekoGui::dataStore->flag_debug) qDebug() << live;
+
     ui->tableWidget_conn->setRowCount(0);
 
     int nProxy = 0, nDirect = 0, nBlock = 0; // route-map tallies (active connections only)
     int row = -1;
-    for (const auto &_item: arr) {
+    for (const auto &_item: live) {
         auto item = _item.toObject();
         if (NekoGui::dataStore->ignoreConnTag.contains(item["Tag"].toString())) continue;
 
-        // ЗАКРЫТЫЕ СОЕДИНЕНИЯ СЮДА НЕ ПОКАЗЫВАЕМ.
-        //
-        // Ядро теперь присылает и их — они нужны разбору поломок, потому что
-        // короткое соединение живёт меньше промежутка между опросами и в списке
-        // живых не появляется никогда. Но таблица перестраивается раз в секунду,
-        // и две сотни мёртвых строк в ней превратили бы рабочий экран в мельницу:
-        // строки ползли бы вверх по мере устаревания записей.
-        //
-        // Разбор читает тот же массив ДО этого отбора. Показывать историю в
-        // таблице — отдельное решение, и принимать его надо отдельно.
-        // Разбор поломок читает ВСЕ записи, включая закрытые, — именно в них
-        // короткие соединения, которых в живом списке не бывает никогда.
-        // Кормим до отбора, поэтому строка стоит здесь, а не ниже.
-
-        if (item["End"].toInt() != 0) continue;
 
         // Count active (not-yet-ended) connections per outbound for the route map.
         if (item["End"].toInt() == 0) {
