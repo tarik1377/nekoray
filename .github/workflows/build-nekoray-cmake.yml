@@ -206,7 +206,7 @@ jobs:
           # автонастройки для macOS (трафик уходит не туда).
           source libs/env_qtsdk.sh $PWD/qtsdk/Qt
           cd build
-          ninja relaytrace_test credentials_test pac_test relay_component_test tun_exclude_test tun_report_test
+          ninja relaytrace_test credentials_test pac_test relay_component_test tun_exclude_test tun_report_test route_order_test
           cd ..
           # Запуск из временного каталога: credentials_test пишет device.dat
           # рядом с собой, и делать это в дереве сборки незачем.
@@ -246,6 +246,7 @@ jobs:
         run: |
           source libs/env_qtsdk.sh $PWD/qtsdk/Qt
           ./build/tun_report_test.exe
+          ./build/route_order_test.exe
 
       - name: Tar artifacts
         shell: bash
@@ -357,7 +358,7 @@ jobs:
         run: |
           set -o pipefail
           cd build
-          ninja relaytrace_test credentials_test pac_test relay_component_test tun_exclude_test tun_report_test 2>&1 | tee ../macos-tests-build.log
+          ninja relaytrace_test credentials_test pac_test relay_component_test tun_exclude_test tun_report_test route_order_test 2>&1 | tee ../macos-tests-build.log
           mkdir -p testrun
           cp relaytrace_test credentials_test pac_test relay_component_test testrun/
 
@@ -384,6 +385,9 @@ jobs:
 
       - name: Test the TUN report against the core's stack rule
         run: ./build/tun_report_test 2>&1 | tee macos-test-tunreport.log
+
+      - name: Test the routing order — an explicit exception beats a category
+        run: ./build/route_order_test 2>&1 | tee macos-test-routeorder.log
 
       - name: Test — исполнение файла автонастройки
         shell: bash
@@ -579,7 +583,7 @@ jobs:
           # ограниченное число, и первый же прогон это показал: весь запас
           # съел хвост успешного журнала конфигурации, а настоящая причина —
           # падение набора проверок — не поместилась вовсе.
-          for f in macos-cmake.log macos-build.log macos-tests-build.log                    macos-test-relaytrace.log macos-test-credentials.log macos-test-pac.log                    macos-test-component.log macos-test-tunexclude.log macos-test-tunreport.log macos-deploy.log; do
+          for f in macos-cmake.log macos-build.log macos-tests-build.log                    macos-test-relaytrace.log macos-test-credentials.log macos-test-pac.log                    macos-test-component.log macos-test-tunexclude.log macos-test-tunreport.log macos-test-routeorder.log macos-deploy.log; do
             [ -f "$f" ] || continue
             hits=$(grep -nE "error:|Error|FAILED|fatal|ПЛОХО|undefined|No such file" "$f" | head -8 || true)
             if [ -n "$hits" ]; then
@@ -593,7 +597,7 @@ jobs:
           # Раньше брался самый свежий по времени, и это давало не тот файл:
           # успешный набор проверок пишется позже, чем падает сборка.
           last=""
-          for f in macos-cmake.log macos-build.log macos-tests-build.log                    macos-test-relaytrace.log macos-test-credentials.log                    macos-test-pac.log macos-test-component.log macos-test-tunexclude.log macos-test-tunreport.log macos-deploy.log; do
+          for f in macos-cmake.log macos-build.log macos-tests-build.log                    macos-test-relaytrace.log macos-test-credentials.log                    macos-test-pac.log macos-test-component.log macos-test-tunexclude.log macos-test-tunreport.log macos-test-routeorder.log macos-deploy.log; do
             [ -f "$f" ] && last="$f"
           done
           if [ -n "$last" ]; then

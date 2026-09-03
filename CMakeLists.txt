@@ -413,6 +413,15 @@ target_include_directories(tun_exclude_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # Отчёт о туннеле против правила подмены стека в ядре. Правило продублировано
 # на двух языках в двух файлах; разойтись они могут молча, и тогда отчёт врёт
 # ровно там, где ему верят больше всего — см. шапку набора.
+# Порядок правил маршрутизации: явное исключение против широкой категории.
+# Перестановка этих строк ничего не ломает при сборке — она возвращает
+# неисправимый блок, и виден он только тем, что что-то перестало открываться.
+add_executable(route_order_test EXCLUDE_FROM_ALL
+        test/RouteOrderTest.cpp
+)
+target_link_libraries(route_order_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+target_include_directories(route_order_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
 add_executable(tun_report_test EXCLUDE_FROM_ALL
         test/TunReportTest.cpp
 )

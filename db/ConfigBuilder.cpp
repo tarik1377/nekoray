@@ -759,6 +759,38 @@ namespace NekoGui {
             status->routingRules += rule;
         };
 
+        /*
+         * ЯВНОЕ ИСКЛЮЧЕНИЕ БЬЁТ ШИРОКУЮ КАТЕГОРИЮ.
+         *
+         * Блок стоял первым, и это значило, что исключения из него сделать
+         * нельзя ВООБЩЕ. Живой случай: в «Блок» вписан geosite:category-ads-all,
+         * а рекламный кабинет VK живёт на ads.vk.ru — он в той же категории, и
+         * рабочий инструмент пропадал вместе с рекламой. Дописать его в
+         * «Напрямую» не помогало: до этого правила дело не доходило.
+         *
+         * Просто переставить списки местами нельзя, и это не осторожность.
+         * В «Напрямую» у людей стоит domain:ru — а ads.vk.ru тоже .ru, и такая
+         * перестановка молча сняла бы блокировку рекламы со всей российской
+         * зоны. Широкое правило не должно отменять широкое.
+         *
+         * Поэтому вперёд выносится только ТОЧНОЕ совпадение — то, что человек
+         * написал через full:. Категорию он не составлял, а этот домен вписал
+         * сам и осознанно; из двух правил выигрывает то, которое он назвал
+         * поимённо.
+         *
+         * Ничего не написавший через full: не заметит правки вовсе: списки ниже
+         * остались на прежних местах и в прежнем порядке.
+         */
+        auto only_exact = [](const QStringList &list) {
+            QStringList out;
+            for (const auto &item: list) {
+                if (item.startsWith("full:")) out += item;
+            }
+            return out;
+        };
+        add_rule_route(only_exact(status->domainListDirect), false, "bypass");
+        add_rule_route(only_exact(status->domainListRemote), false, tagProxy);
+
         // final add user rule
         add_rule_route(status->domainListBlock, false, "block");
         add_rule_route(status->domainListRemote, false, tagProxy);
