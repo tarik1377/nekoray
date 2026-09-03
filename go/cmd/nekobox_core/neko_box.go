@@ -13,6 +13,8 @@ import (
 	"github.com/matsuridayo/libneko/neko_common"
 	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/adapter"
+	"github.com/sagernet/sing-box/experimental/clashapi"
+	"github.com/sagernet/sing-box/experimental/clashapi/trafficontrol"
 	"github.com/sagernet/sing-box/experimental/v2rayapi"
 	"github.com/sagernet/sing-box/include"
 	"github.com/sagernet/sing-box/option"
@@ -27,6 +29,19 @@ import (
 // (QueryStats runs on a gRPC goroutine while Start/Stop run on others), so it is
 // an atomic pointer; nil when no instance runs.
 var statsService atomic.Pointer[v2rayapi.StatsService]
+
+// trafficManager — учёт соединений работающего ядра. Нужен ради ЗАКРЫТЫХ
+// соединений: снимок Clash API отдаёт только живые, а короткое соединение живёт
+// меньше, чем промежуток между опросами, и в снимок не попадает никогда. Именно
+// такими были запросы игры к списку серверов — по живому списку их не видно
+// вовсе, и понять, куда они уходили, нельзя.
+//
+// ЭТО ОСОЗНАННОЕ ИСКЛЮЧЕНИЕ из правила «брать соединения через опубликованный
+// API, а не из внутренностей» (см. начало connections.go). Другого пути нет:
+// ClosedConnections() наружу не отдаёт ни один маршрут Clash API. Цена —
+// привязка к конкретному типу; она проявится ошибкой СБОРКИ при обновлении
+// sing-box, а не молчаливой пустотой, и потому приемлема.
+var trafficManager atomic.Pointer[trafficontrol.Manager]
 
 // nekoCreate creates a sing-box instance from JSON config bytes.
 func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
@@ -76,6 +91,15 @@ func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
 	if v2 := service.FromContext[adapter.V2RayServer](ctx); v2 != nil {
 		if ss, ok := v2.StatsService().(*v2rayapi.StatsService); ok {
 			statsService.Store(ss)
+		}
+	}
+
+	// Тем же приёмом — учёт соединений. Отсутствие не ошибка: при выключенном
+	// clash_api его просто нет, и список закрытых останется пустым.
+	trafficManager.Store(nil)
+	if cs := service.FromContext[adapter.ClashServer](ctx); cs != nil {
+		if srv, ok := cs.(*clashapi.Server); ok {
+			trafficManager.Store(srv.TrafficManager())
 		}
 	}
 

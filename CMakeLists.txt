@@ -251,6 +251,10 @@ set(PROJECT_SOURCES
         ui/dialog_manage_groups.h
         ui/dialog_manage_groups.ui
 
+        main/RunningPrograms.cpp
+        ui/dialog_whatbroke.cpp
+        main/ProgramTrouble.cpp
+        ui/dialog_greenrhythm.cpp
         ui/dialog_manage_routes.cpp
         ui/dialog_manage_routes.h
         ui/dialog_manage_routes.ui
@@ -416,6 +420,15 @@ target_include_directories(tun_exclude_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # Порядок правил маршрутизации: явное исключение против широкой категории.
 # Перестановка этих строк ничего не ломает при сборке — она возвращает
 # неисправимый блок, и виден он только тем, что что-то перестало открываться.
+# Разбор «что случилось с программой»: чистый счёт по записям ядра, без окон и
+# без сети. Потому и проверяется набором, а не ломанием собственной сети.
+add_executable(program_trouble_test EXCLUDE_FROM_ALL
+        test/ProgramTroubleTest.cpp
+        main/ProgramTrouble.cpp
+)
+target_link_libraries(program_trouble_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+target_include_directories(program_trouble_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
 add_executable(route_order_test EXCLUDE_FROM_ALL
         test/RouteOrderTest.cpp
 )
@@ -457,6 +470,27 @@ target_include_directories(relay_dialog_preview PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_BINARY_DIR}/greenrhythm_autogen/include)
 target_link_libraries(relay_dialog_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+
+# Снимок панели «Зелёный Ритм». Панель длинная и собирается кодом, а не из .ui,
+# поэтому увидеть её иначе как запуском клиента нельзя — а на машине владельца
+# поднят рабочий туннель, и второй экземпляр ради вёрстки того не стоит.
+add_executable(greenrhythm_panel_preview EXCLUDE_FROM_ALL
+        test/GreenRhythmPanelPreview.cpp
+        ui/dialog_greenrhythm.cpp
+        ui/dialog_whatbroke.cpp
+        main/ProgramTrouble.cpp
+        main/RunningPrograms.cpp
+        # Ресурсы приложения целиком: иначе знак в шапке возьмётся из пустоты, и
+        # снимок покажет аккуратную вёрстку с невидимой иконкой — то есть соврёт
+        # ровно про то, что мы пришли проверять.
+        res/neko.qrc
+)
+set_property(TARGET greenrhythm_panel_preview PROPERTY AUTORCC ON)
+target_include_directories(greenrhythm_panel_preview PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(greenrhythm_panel_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+# Свой AUTOMOC: у панели есть Q_OBJECT и сигналы, без обработки moc'ом линковка
+# не найдёт ни staticMetaObject, ни тела сигналов.
+set_property(TARGET greenrhythm_panel_preview PROPERTY AUTOMOC ON)
 
 # Снимок экрана выбора режима. Экран показывается только на macOS, а смотреть на
 # него надо здесь — иначе вёрстка проверяется впервые у человека. Собирается на

@@ -74,6 +74,21 @@ type uiConnection struct {
 	Dest    string `json:"Dest"`
 	RDest   string `json:"RDest"`
 	Process string `json:"Process"`
+
+	// Network и Rule нужны, чтобы объяснить человеку ПОЧЕМУ, а не только КУДА.
+	//
+	// Оба поля приходят от ядра и до сих пор выбрасывались. Цена этого видна на
+	// живом случае: у игры Squad ломался именно UDP к игровому серверу, тогда как
+	// её же HTTPS шёл мимо туннеля правильно. По одному лишь Tag эти два случая
+	// не различить — таблица показывала и то и другое вперемешку, и понять,
+	// что сломано, было нельзя.
+	//
+	// Rule — это описание сработавшего правила словами самого ядра. Оно
+	// служебное и человеку в таком виде не показывается, но именно по нему
+	// отличается «программа не подошла ни под одно исключение» от «подошла, но
+	// не под то».
+	Network string `json:"Network"`
+	Rule    string `json:"Rule"`
 }
 
 func fetchClashConnections() ([]clashConnection, error) {
@@ -112,6 +127,91 @@ func fetchClashConnections() ([]clashConnection, error) {
 	return out.Connections, nil
 }
 
+
+// shortProcess оставляет от пути одно имя файла.
+//
+// Полный путь превращает колонку в стену «C:\Program Files\...» и прячет то
+// единственное слово, которое человек ищет. Разбор вынесен отдельно, потому что
+// одно и то же имя нужно и живым соединениям, и закрытым: разъехавшись, эти два
+// разбора дали бы одну и ту же программу под двумя именами, и сведение по имени
+// молча развалилось бы.
+// Сколько закрытых соединений отдавать и за какой срок.
+//
+// Ядро хранит последнюю тысячу. Отдавать её целиком раз в секунду — впустую
+// гонять мегабайты ради таблицы, которая показывает живые. Две минуты и триста
+// записей покрывают разбор одной поломки с запасом: человек называет программу,
+// нажимает в ней то, что не выходит, и всё случившееся укладывается в этот срок.
+const (
+	closedWindow = 2 * time.Minute
+	closedLimit  = 200
+)
+
+func shortProcess(path string) string {
+	proc := path
+	if slash := strings.LastIndexAny(proc, `\/`); slash >= 0 {
+		proc = proc[slash+1:]
+	}
+	if paren := strings.Index(proc, " ("); paren > 0 {
+		proc = proc[:paren] // отрезаем хвост « (пользователь)», который добавляет API
+	}
+	if proc == "" {
+		return "—"
+	}
+	return proc
+}
+
+// closedConnections — недавно ЗАКРЫТЫЕ соединения работающего ядра.
+//
+// ЗАЧЕМ. Снимок Clash API отдаёт только живые. Соединение, прожившее меньше
+// промежутка между опросами, не попадает в него никогда — а именно такими и
+// бывают запросы игры к списку серверов. Без закрытых записей о них нельзя
+// сказать даже того, каким путём они ушли.
+//
+// ЧЕГО ЗДЕСЬ НЕ БУДЕТ. Соединения, которые правило ЗАПРЕТИЛО. Запрет в ядре —
+// действие правила, и обрабатывается оно раньше, чем заводится запись об учёте
+// (route/route.go: ветка RuleActionReject возвращает управление до вызова
+// tracker.RoutedConnection). Так что запрещённого не видно ни здесь, ни среди
+// живых, и искать его надо в журнале, а не в соединениях. Знать это важно:
+// иначе пустой список читается как «всё в порядке».
+func closedConnections(now time.Time, maxAge time.Duration, limit int) []uiConnection {
+	mgr := trafficManager.Load()
+	if mgr == nil {
+		return nil
+	}
+	all := mgr.ClosedConnections()
+	out := make([]uiConnection, 0, limit)
+	// С конца: там самые свежие, а именно они и интересны.
+	for i := len(all) - 1; i >= 0 && len(out) < limit; i-- {
+		m := all[i]
+		if m == nil || now.Sub(m.ClosedAt) > maxAge {
+			continue
+		}
+		dest := m.Metadata.Destination.String()
+		rdest := ""
+		if m.Metadata.Domain != "" {
+			rdest = m.Metadata.Domain
+		}
+		proc := "—"
+		if m.Metadata.ProcessInfo != nil {
+			proc = shortProcess(m.Metadata.ProcessInfo.ProcessPath)
+		}
+		rule := ""
+		if m.Rule != nil {
+			rule = m.Rule.String()
+		}
+		out = append(out, uiConnection{
+			Start:   m.CreatedAt.Unix(),
+			End:     m.ClosedAt.Unix(),
+			Tag:     m.Outbound,
+			Dest:    dest,
+			RDest:   rdest,
+			Process: proc,
+			Network: m.Metadata.Network,
+			Rule:    rule,
+		})
+	}
+	return out
+}
 func buildConnectionListJSON() string {
 	conns, err := fetchClashConnections()
 	if err != nil {
@@ -152,19 +252,7 @@ func buildConnectionListJSON() string {
 			start = t.Unix()
 		}
 
-		// Show just the executable name: a full path turns the column into a wall of
-		// "C:\Program Files\..." and hides the one word the user is looking for. The
-		// path stays available as the cell's tooltip on the GUI side.
-		proc := c.Metadata.ProcessPath
-		if slash := strings.LastIndexAny(proc, `\/`); slash >= 0 {
-			proc = proc[slash+1:]
-		}
-		if paren := strings.Index(proc, " ("); paren > 0 {
-			proc = proc[:paren] // strip the " (user)" suffix the API appends
-		}
-		if proc == "" {
-			proc = "—"
-		}
+		proc := shortProcess(c.Metadata.ProcessPath)
 
 		list = append(list, uiConnection{
 			ID:      i,
@@ -174,7 +262,19 @@ func buildConnectionListJSON() string {
 			Dest:    dest,
 			RDest:   rdest,
 			Process: proc,
+			Network: c.Metadata.Network,
+			Rule:    c.Rule,
 		})
+	}
+
+	// Закрытые дописываем ПОСЛЕ живых и помечаем ненулевым End. Таблица
+	// соединений в клиенте показывает только живые и отбирает их по End == 0;
+	// разбору поломок нужны все. Так один вызов обслуживает обоих, и заводить
+	// второй метод в протоколе не пришлось.
+	closed := closedConnections(time.Now(), closedWindow, closedLimit)
+	for i := range closed {
+		closed[i].ID = len(list) + i
+		list = append(list, closed[i])
 	}
 
 	b, err := json.Marshal(list)

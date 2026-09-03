@@ -69,6 +69,10 @@ public:
 
     void refresh_connection_list(const QJsonArray &arr);
 
+    // Окно разбора кормится тем же потоком соединений, что и таблица. Пока оно
+    // закрыто — указатель пуст, и лишней работы не делается.
+    class DialogWhatBroke *what_broke = nullptr;
+
     void RegisterHotkey(bool unregister);
 
     bool StopVPNProcess(bool unconditional = false);
@@ -210,6 +214,8 @@ private:
 
     void CheckUpdate();
 
+    void open_greenrhythm_panel();      // наши функции одним окном, с объяснениями
+    void open_what_broke();             // разбор «почему не работает эта программа»
     void show_about_greenrhythm();
     void refresh_subscription_status(); // «Зелёный Ритм» days/traffic-left badge + renew nudge
     void smart_connect_greenrhythm();   // connect to the fastest server in the brand group

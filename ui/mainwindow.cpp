@@ -14,6 +14,8 @@
 #include "ui/edit/dialog_edit_profile.h"
 #include "ui/dialog_basic_settings.h"
 #include "ui/dialog_manage_groups.h"
+#include "ui/dialog_greenrhythm.h"
+#include "ui/dialog_whatbroke.h"
 #include "ui/dialog_manage_routes.h"
 #include "ui/dialog_vpn_settings.h"
 #include "ui/dialog_hotkey.h"
@@ -254,6 +256,36 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->menu_gr_buy, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl)); });
     connect(ui->menu_gr_telegram, &QAction::triggered, this, [=] { QDesktopServices::openUrl(QUrl(GreenRhythm::kTelegramUrl)); });
     connect(ui->menu_gr_about, &QAction::triggered, this, [=] { show_about_greenrhythm(); });
+
+    // ПАНЕЛЬ — ПЕРВОЙ КНОПКОЙ И ПЕРВЫМ ПУНКТОМ.
+    //
+    // Всё наше лежало в подменю второго уровня, а слово «Панель» на панели
+    // инструментов занято чужим дашбордом Clash. Пока средство лечения спрятано
+    // на два уровня вглубь и названо по-английски, им не пользуются: владелец
+    // полдня искал, почему не работает игра, а нужный список лежал в настройках
+    // TUN под заголовком «Bypass Process Name».
+    {
+        auto *panelAction = new QAction(tr("Зелёный Ритм"), this);
+        // Прямо из ресурсов, а не через QIcon::fromTheme: поиск по теме молча
+        // отдаёт пустую иконку, если имя не нашлось, и кнопка остаётся без знака
+        // — отказ, который на глаз не отличить от «так и задумано».
+        panelAction->setIcon(QIcon(QStringLiteral(":/icon/gr-panel.svg")));
+        connect(panelAction, &QAction::triggered, this, [=] { open_greenrhythm_panel(); });
+        if (!ui->menu_greenrhythm->actions().isEmpty()) {
+            auto *first = ui->menu_greenrhythm->actions().first();
+            ui->menu_greenrhythm->insertAction(first, panelAction);
+            ui->menu_greenrhythm->insertSeparator(first);
+        } else {
+            ui->menu_greenrhythm->addAction(panelAction);
+        }
+
+        auto *panelButton = new QToolButton(this);
+        panelButton->setDefaultAction(panelAction);
+        panelButton->setIconSize(QSize(24, 24));
+        panelButton->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+        panelButton->setCursor(Qt::PointingHandCursor);
+        ui->horizontalLayout_2->insertWidget(0, panelButton);
+    }
 
     // Setup log UI
     ui->splitter->restoreState(DecodeB64IfValid(NekoGui::dataStore->splitter_state));
@@ -668,6 +700,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         NekoGui::dataStore->Save();
         if (migrated > 0)
             MW_show_log(tr("Маршрутизация обновлена: блокировка QUIC и локальный DNS (схем: %1).").arg(migrated));
+    }
+
+    // Второй одноразовый ремонт, свой флаг: правило «мимо туннеля» поднимается выше
+    // блокировки udp/443. Ниже неё оно не работало вовсе — см. MigrateGameBypass.
+    if (!NekoGui::dataStore->routing_games_migrated) {
+        const int migrated = NekoGui::Routing::MigrateGamesAll();
+        NekoGui::dataStore->routing_games_migrated = true;
+        NekoGui::dataStore->Save();
+        if (migrated > 0)
+            MW_show_log(tr("Маршрутизация обновлена: игры и звонки теперь идут мимо туннеля раньше блокировок (схем: %1).").arg(migrated));
     }
 
     TM_auto_update_subsctiption = new QTimer;
@@ -3415,6 +3457,91 @@ inline void FastAppendTextDocument(const QString &message, QTextDocument *doc) {
     cursor.endEditBlock();
 }
 
+/**
+ * Панель «Зелёный Ритм».
+ *
+ * Действия НЕ дублируются: каждая кнопка дёргает тот же QAction, что и пункт
+ * меню. Скопировать сюда тела обработчиков было бы короче на вид, но тогда
+ * правка любого из них чинила бы одно место из двух — а второе продолжало бы
+ * работать по-старому и молча.
+ *
+ * Панель не закрывается при нажатии: иначе несохранённый список программ
+ * пропадал бы всякий раз, когда человек по дороге нажал «Проверить».
+ */
+/**
+ * Окно разбора «почему не работает эта программа».
+ *
+ * Живёт не модально: полноэкранная игра закрывает собой любое окно, и человек
+ * должен иметь возможность свернуть нас, попробовать в игре и вернуться. Пока
+ * окно открыто, оно получает те же записи о соединениях, что и таблица.
+ */
+void MainWindow::open_what_broke() {
+    if (what_broke != nullptr) {
+        ActivateWindow(what_broke);
+        return;
+    }
+    auto *d = new DialogWhatBroke(this);
+    d->setAttribute(Qt::WA_DeleteOnClose);
+    d->setAlreadyDirect(NekoGui::dataStore->vpn_rule_process.split(QChar(0x0A), Qt::SkipEmptyParts));
+
+    connect(d, &DialogWhatBroke::fixRequested, this, [this](const QString &program) {
+        auto list = NekoGui::dataStore->vpn_rule_process.split(QChar(0x0A), Qt::SkipEmptyParts);
+        // Дважды не добавляем: список читает человек, и повтор в нём выглядит
+        // ошибкой, хотя вреда не несёт.
+        for (const auto &line: list) {
+            if (line.trimmed().compare(program, Qt::CaseInsensitive) == 0) return;
+        }
+        list << program;
+        NekoGui::dataStore->vpn_rule_process = list.join(QChar(0x0A));
+        NekoGui::dataStore->Save();
+        MW_show_log(tr("«%1» пойдёт напрямую, мимо туннеля.").arg(program));
+    });
+
+    connect(d, &DialogWhatBroke::reconnectRequested, this, [this] {
+        if (NekoGui::dataStore->started_id >= 0) neko_start(NekoGui::dataStore->started_id);
+    });
+
+    connect(d, &QObject::destroyed, this, [this] { what_broke = nullptr; });
+    what_broke = d;
+    d->show();
+}
+void MainWindow::open_greenrhythm_panel() {
+    DialogGreenRhythm d(this);
+
+    d.setBypassList(NekoGui::dataStore->vpn_rule_process);
+    d.setAutopilot(NekoGui::dataStore->connection_autopilot);
+
+    auto *running = NekoGui::dataStore->started_id >= 0
+                        ? NekoGui::profileManager->GetProfile(NekoGui::dataStore->started_id).get()
+                        : nullptr;
+    d.setConnectionState(running != nullptr,
+                         running != nullptr ? running->bean->DisplayName().left(40) : QString());
+
+    connect(&d, &DialogGreenRhythm::connectRequested, ui->menu_gr_connect, &QAction::trigger);
+    connect(&d, &DialogGreenRhythm::relayRequested, ui->menu_gr_relay, &QAction::trigger);
+    connect(&d, &DialogGreenRhythm::qrRequested, ui->menu_gr_qr, &QAction::trigger);
+    connect(&d, &DialogGreenRhythm::troubleRequested, this, [this] { open_what_broke(); });
+    connect(&d, &DialogGreenRhythm::diagnosticsRequested, ui->menu_gr_diag, &QAction::trigger);
+    connect(&d, &DialogGreenRhythm::buyRequested, ui->menu_gr_buy, &QAction::trigger);
+    connect(&d, &DialogGreenRhythm::telegramRequested, ui->menu_gr_telegram, &QAction::trigger);
+    connect(&d, &DialogGreenRhythm::fixNetRequested, ui->menu_gr_fixnet, &QAction::trigger);
+    connect(&d, &DialogGreenRhythm::adaptersRequested, ui->menu_gr_adapters, &QAction::trigger);
+
+    connect(&d, &DialogGreenRhythm::autopilotChanged, this, [this](bool on) {
+        // Через тот же пункт меню, а не полем напрямую: у пункта есть галка, и
+        // разошедшись, они показывали бы разное состояние одного переключателя.
+        ui->menu_gr_autopilot->setChecked(on);
+    });
+
+    connect(&d, &DialogGreenRhythm::bypassChanged, this, [this](const QString &text) {
+        if (NekoGui::dataStore->vpn_rule_process == text) return;
+        NekoGui::dataStore->vpn_rule_process = text;
+        NekoGui::dataStore->Save();
+        MW_show_log(tr("Список «мимо туннеля» сохранён. Начнёт действовать при следующем подключении."));
+    });
+
+    d.exec();
+}
 void MainWindow::show_about_greenrhythm() {
     auto title = tr("<b>Клиент сервиса «%1»</b>").arg(GreenRhythm::kServiceName);
     // Лицензия и ссылка на исходники — не украшение: GPL-3.0 требует сообщать
@@ -3776,6 +3903,27 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
 
     if (NekoGui::dataStore->flag_debug) qDebug() << arr;
 
+    // Разбор поломок кормится ДО отбора для таблицы: ему нужны и закрытые
+    // соединения, а таблица их не показывает. Пока окно закрыто — ни строчки
+    // лишней работы.
+    if (what_broke != nullptr && !what_broke->watching().isEmpty()) {
+        QList<GreenRhythm::Seen> batch;
+        batch.reserve(arr.size());
+        for (const auto &_item: arr) {
+            const auto item = _item.toObject();
+            GreenRhythm::Seen seen;
+            seen.process = item["Process"].toString();
+            seen.tag = item["Tag"].toString();
+            seen.network = item["Network"].toString();
+            seen.dest = item["Dest"].toString();
+            seen.rule = item["Rule"].toString();
+            seen.start = item["Start"].toInt();
+            seen.end = item["End"].toInt();
+            batch += seen;
+        }
+        what_broke->feed(batch);
+    }
+
     ui->tableWidget_conn->setRowCount(0);
 
     int nProxy = 0, nDirect = 0, nBlock = 0; // route-map tallies (active connections only)
@@ -3783,6 +3931,22 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
     for (const auto &_item: arr) {
         auto item = _item.toObject();
         if (NekoGui::dataStore->ignoreConnTag.contains(item["Tag"].toString())) continue;
+
+        // ЗАКРЫТЫЕ СОЕДИНЕНИЯ СЮДА НЕ ПОКАЗЫВАЕМ.
+        //
+        // Ядро теперь присылает и их — они нужны разбору поломок, потому что
+        // короткое соединение живёт меньше промежутка между опросами и в списке
+        // живых не появляется никогда. Но таблица перестраивается раз в секунду,
+        // и две сотни мёртвых строк в ней превратили бы рабочий экран в мельницу:
+        // строки ползли бы вверх по мере устаревания записей.
+        //
+        // Разбор читает тот же массив ДО этого отбора. Показывать историю в
+        // таблице — отдельное решение, и принимать его надо отдельно.
+        // Разбор поломок читает ВСЕ записи, включая закрытые, — именно в них
+        // короткие соединения, которых в живом списке не бывает никогда.
+        // Кормим до отбора, поэтому строка стоит здесь, а не ниже.
+
+        if (item["End"].toInt() != 0) continue;
 
         // Count active (not-yet-ended) connections per outbound for the route map.
         if (item["End"].toInt() == 0) {
