@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -275,6 +276,31 @@ func buildConnectionListJSON() string {
 	for i := range closed {
 		closed[i].ID = len(list) + i
 		list = append(list, closed[i])
+	}
+
+	// ПОРЯДОК ОБЯЗАН БЫТЬ ПОСТОЯННЫМ.
+	//
+	// Ядро отдаёт живые соединения в порядке обхода своей карты, а он у Go
+	// намеренно непостоянен: один и тот же набор приходит каждый раз в новом
+	// порядке. Таблица в клиенте перестраивается раз в секунду, и строки в ней
+	// прыгали — найти нужную программу было нельзя, взгляд не успевал за
+	// перестановкой. Это не косметика: список соединений смотрят как раз тогда,
+	// когда что-то не работает и надо разглядеть одну строку.
+	//
+	// Сортируем по времени начала: новое появляется снизу, а всё, что человек
+	// уже разглядывает, остаётся на месте. Совпадения разводим адресом и именем
+	// программы — иначе одинаковое время снова дало бы качели.
+	sort.SliceStable(list, func(i, j int) bool {
+		if list[i].Start != list[j].Start {
+			return list[i].Start < list[j].Start
+		}
+		if list[i].Process != list[j].Process {
+			return list[i].Process < list[j].Process
+		}
+		return list[i].Dest < list[j].Dest
+	})
+	for i := range list {
+		list[i].ID = i
 	}
 
 	b, err := json.Marshal(list)

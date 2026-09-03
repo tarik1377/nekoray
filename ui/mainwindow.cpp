@@ -3962,6 +3962,15 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
 
     if (NekoGui::dataStore->flag_debug) qDebug() << live;
 
+    // ПРОКРУТКУ И ВЫДЕЛЕНИЕ ВОЗВРАЩАЕМ НА МЕСТО.
+    //
+    // Таблица собирается заново раз в секунду. Без этого она каждый раз прыгает
+    // в начало, и человек, разглядывающий строку в середине списка, теряет её —
+    // а смотрят сюда именно тогда, когда что-то не работает. Постоянный порядок
+    // строк задаёт ядро; здесь остаётся вернуть взгляд туда, где он был.
+    const int keepScroll = ui->tableWidget_conn->verticalScrollBar()->value();
+    const int keepRow = ui->tableWidget_conn->currentRow();
+
     ui->tableWidget_conn->setRowCount(0);
 
     int nProxy = 0, nDirect = 0, nBlock = 0; // route-map tallies (active connections only)
@@ -4053,6 +4062,11 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
         }
 
         ui->tableWidget_conn->setItem(row, 3, f);
+    }
+
+    ui->tableWidget_conn->verticalScrollBar()->setValue(keepScroll);
+    if (keepRow >= 0 && keepRow < ui->tableWidget_conn->rowCount()) {
+        ui->tableWidget_conn->setCurrentCell(keepRow, 0, QItemSelectionModel::NoUpdate);
     }
 
     // Update the route-map strip.
