@@ -422,6 +422,7 @@ target_include_directories(tun_exclude_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # неисправимый блок, и виден он только тем, что что-то перестало открываться.
 # Разбор «что случилось с программой»: чистый счёт по записям ядра, без окон и
 # без сети. Потому и проверяется набором, а не ломанием собственной сети.
+
 add_executable(program_trouble_test EXCLUDE_FROM_ALL
         test/ProgramTroubleTest.cpp
         main/ProgramTrouble.cpp

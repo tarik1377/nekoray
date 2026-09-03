@@ -348,44 +348,74 @@ void MainWindow::neko_start(int _id) {
 
     auto neko_start_stage2 = [=] {
 #ifndef NKR_NO_GRPC
-        libcore::LoadConfigReq req;
-        req.set_core_config(QJsonObject2QString(result->coreConfig, false).toStdString());
-        req.set_enable_nekoray_connections(NekoGui::dataStore->connection_statistics);
-        if (NekoGui::dataStore->traffic_loop_interval > 0) {
-            req.add_stats_outbounds("proxy");
-            req.add_stats_outbounds("bypass");
-        }
+        // Копия указателя на собранный конфиг: при повторе она заменяется на
+        // свежую сборку, а сама лямбда остаётся не-mutable — её вызывают по
+        // константной ссылке, и mutable здесь не собирается.
+        auto cfg = result;
+        // ОТКАЗ ЗАНЯТЬ ПОРТ — НЕВЕЗЕНИЕ, А НЕ ПРИГОВОР.
         //
-        bool rpcOK;
-        QString error = defaultClient->Start(&rpcOK, req);
-        if (rpcOK && !error.isEmpty()) {
-            // ЧЕЛОВЕКУ — ЧЕЛОВЕЧЕСКОЕ. Отказ занять локальный порт приходит от
-            // системы по-английски и выглядит как «bind: An attempt was made to
-            // access a socket in a way forbidden by its access permissions». По
-            // этой строке нельзя догадаться ни что случилось, ни что делать, а
-            // случается она на машинах с Hyper-V, WSL или Docker: они держат за
-            // собой часть диапазона портов. Подключения при этом просто нет.
+        // Порты для наших локальных входов выбираются заранее и проверяются
+        // обоими способами, но между проверкой и занятием портом ядром есть
+        // зазор, а на машинах с Hyper-V, WSL или Docker часть диапазона держат
+        // за собой они. Предсказать доступность порта в Windows надёжно нельзя
+        // в принципе — значит надо переживать отказ, а не пытаться его угадать.
+        //
+        // Поэтому при таком отказе конфиг СОБИРАЕТСЯ ЗАНОВО: пересборка берёт
+        // новые номера. Раньше человек получал окно с ошибкой и оставался без
+        // подключения, хотя следующая же попытка почти наверняка удалась бы.
+        auto looksLikeBindFailure = [](const QString &e) {
+            if (!e.contains(QStringLiteral("bind"), Qt::CaseInsensitive)) return false;
+            return e.contains(QStringLiteral("forbidden"), Qt::CaseInsensitive) ||
+                   e.contains(QStringLiteral("permissions"), Qt::CaseInsensitive) ||
+                   e.contains(QStringLiteral("already in use"), Qt::CaseInsensitive);
+        };
+
+        bool rpcOK = false;
+        QString error;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            if (attempt > 0) {
+                auto retry = BuildConfig(ent, false, false);
+                if (!retry->error.isEmpty()) break;
+                cfg = retry;
+                MW_show_log(tr("Порт оказался занят системой — пробую другой."));
+            }
+
+            libcore::LoadConfigReq req;
+            req.set_core_config(QJsonObject2QString(cfg->coreConfig, false).toStdString());
+            req.set_enable_nekoray_connections(NekoGui::dataStore->connection_statistics);
+            if (NekoGui::dataStore->traffic_loop_interval > 0) {
+                req.add_stats_outbounds("proxy");
+                req.add_stats_outbounds("bypass");
+            }
+
+            error = defaultClient->Start(&rpcOK, req);
+            if (!rpcOK) return false;
+            if (error.isEmpty()) break;
+            if (!looksLikeBindFailure(error)) break;
+        }
+
+        if (!error.isEmpty()) {
+            // ЧЕЛОВЕКУ — ЧЕЛОВЕЧЕСКОЕ. Сюда доходит только то, что не помогли
+            // пережить три попытки. Строка от системы приходит по-английски и
+            // выглядит как «bind: An attempt was made to access a socket in a
+            // way forbidden by its access permissions»: по ней нельзя догадаться
+            // ни что случилось, ни что делать, а подключения при этом просто нет.
             QString human = error;
-            if (error.contains(QStringLiteral("bind"), Qt::CaseInsensitive) &&
-                (error.contains(QStringLiteral("forbidden"), Qt::CaseInsensitive) ||
-                 error.contains(QStringLiteral("permissions"), Qt::CaseInsensitive) ||
-                 error.contains(QStringLiteral("already in use"), Qt::CaseInsensitive))) {
+            if (looksLikeBindFailure(error)) {
                 human = tr("Не удалось занять локальный порт для подключения.\n\n"
-                           "Так бывает, когда часть портов держат за собой Hyper-V, WSL "
-                           "или Docker. Нажмите «Подключить» ещё раз — программа возьмёт "
-                           "другой порт. Если повторяется, помогает перезапуск компьютера.\n\n"
+                           "Программа взяла три разных порта, и все три система не отдала. "
+                           "Так бывает, когда их держат за собой Hyper-V, WSL или Docker. "
+                           "Обычно помогает перезапуск компьютера.\n\n"
                            "Ответ системы: %1")
                               .arg(error);
             }
             runOnUiThread([=] { MessageBoxWarning(software_name, human); });
             return false;
-        } else if (!rpcOK) {
-            return false;
         }
         //
-        NekoGui_traffic::trafficLooper->proxy = result->outboundStat.get();
-        NekoGui_traffic::trafficLooper->items = result->outboundStats;
-        NekoGui::dataStore->ignoreConnTag = result->ignoreConnTag;
+        NekoGui_traffic::trafficLooper->proxy = cfg->outboundStat.get();
+        NekoGui_traffic::trafficLooper->items = cfg->outboundStats;
+        NekoGui::dataStore->ignoreConnTag = cfg->ignoreConnTag;
         NekoGui_traffic::trafficLooper->loop_enabled = true;
 #endif
 
