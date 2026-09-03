@@ -281,6 +281,7 @@ namespace NekoGui {
         _add(new configItem("sub_auto_update_migrated", &sub_auto_update_migrated, itemType::boolean));
         _add(new configItem("conn_stat_migrated", &conn_stat_migrated, itemType::boolean));
         _add(new configItem("routing_quic_migrated", &routing_quic_migrated, itemType::boolean));
+        _add(new configItem("routing_games_migrated", &routing_games_migrated, itemType::boolean));
         _add(new configItem("log_ignore", &log_ignore, itemType::stringList));
         _add(new configItem("start_minimal", &start_minimal, itemType::boolean));
         _add(new configItem("max_log_line", &max_log_line, itemType::integer));
@@ -425,7 +426,7 @@ namespace NekoGui {
             //    "direct" still re-injects packets through the TUN adapter, which resets
             //    long-lived game connections. Every helper must share the game's exit IP
             //    or Xbox/Epic auth fails (seen as Sea of Thieves "Lavenderbeard").
-            custom = "{\"rules\":[{\"network\":\"udp\",\"port\":443,\"ip_cidr\":[\"8.8.8.8/32\",\"8.8.4.4/32\",\"1.1.1.1/32\",\"1.0.0.1/32\",\"9.9.9.9/32\",\"77.88.8.8/32\",\"77.88.8.1/32\"],\"outbound\":\"direct\"},{\"network\":\"udp\",\"port\":443,\"outbound\":\"block\"},{\"protocol\":\"quic\",\"outbound\":\"block\"},{\"outbound\":\"bypass\",\"process_name\":[\"SoTGame.exe\",\"SoTLauncher.exe\",\"UnrealCEFSubProcess.exe\",\"XboxPcAppFT.exe\",\"XboxPcApp.exe\",\"GameBarPresenceWriter.exe\",\"GamingServices.exe\",\"GamingServicesNet.exe\",\"XboxIdentityProvider.exe\",\"steam.exe\",\"steamwebhelper.exe\",\"steamservice.exe\",\"BsgLauncher.exe\",\"EscapeFromTarkov.exe\"]},{\"outbound\":\"proxy\",\"process_name\":[\"Discord.exe\",\"discord.exe\",\"Telegram.exe\",\"telegram.exe\",\"Codex.exe\",\"codex.exe\",\"Claude.exe\",\"claude.exe\",\"claude-code.exe\"]}]}";
+            custom = "{\"rules\":[{\"outbound\":\"bypass\",\"process_name\":[\"SquadGame-Win64-Shipping.exe\",\"SquadGame.exe\",\"Squad.exe\",\"EasyAntiCheat.exe\",\"EasyAntiCheat_EOS.exe\",\"EACLauncher.exe\",\"BEService.exe\",\"BEService_x64.exe\",\"EpicOnlineServicesUserHelper.exe\",\"EpicGamesLauncher.exe\",\"SoTGame.exe\",\"SoTLauncher.exe\",\"UnrealCEFSubProcess.exe\",\"XboxPcAppFT.exe\",\"XboxPcApp.exe\",\"GameBarPresenceWriter.exe\",\"GamingServices.exe\",\"GamingServicesNet.exe\",\"XboxIdentityProvider.exe\",\"steam.exe\",\"steamwebhelper.exe\",\"steamservice.exe\",\"BsgLauncher.exe\",\"EscapeFromTarkov.exe\"]},{\"outbound\":\"bypass\",\"process_path_regex\":[\"(?i)-Win64-Shipping\\\\.exe$\",\"(?i)-WinGDK-Shipping\\\\.exe$\"]},{\"network\":\"icmp\",\"outbound\":\"bypass\"},{\"network\":\"udp\",\"port\":443,\"ip_cidr\":[\"8.8.8.8/32\",\"8.8.4.4/32\",\"1.1.1.1/32\",\"1.0.0.1/32\",\"9.9.9.9/32\",\"77.88.8.8/32\",\"77.88.8.1/32\"],\"outbound\":\"direct\"},{\"network\":\"udp\",\"port\":443,\"outbound\":\"block\"},{\"protocol\":\"quic\",\"outbound\":\"block\"},{\"outbound\":\"proxy\",\"process_name\":[\"Discord.exe\",\"discord.exe\",\"Telegram.exe\",\"telegram.exe\",\"Codex.exe\",\"codex.exe\",\"Claude.exe\",\"claude.exe\",\"claude-code.exe\"]}]}";
         }
         if (!Preset::SingBox::DomainStrategy.contains(domain_strategy)) domain_strategy = "";
         if (!Preset::SingBox::DomainStrategy.contains(outbound_domain_strategy)) outbound_domain_strategy = "";
@@ -531,14 +532,135 @@ namespace NekoGui {
         return true;
     }
 
-    int Routing::MigrateAll() {
+    // ПОРЯДОК РЕШАЕТ. sing-box берёт первое совпавшее правило, а список игр «мимо
+    // туннеля» стоял ПОСЛЕ блокировки udp/443. Игре, которой этот порт нужен, обход
+    // не помогал вовсе: пакеты гасились раньше, чем доходили до списка. Так пропал
+    // список серверов в Squad — он берёт его через Epic Online Services, а те ходят
+    // по udp/443; на глаз это выглядит как «клиент не видит серверов», и никакая
+    // галка обхода этого не лечила.
+    //
+    // Осторожность та же, что и в MigrateOne: чужую цепочку, которую не удалось
+    // разобрать, не трогаем; ничего не удаляем; имена только дописываем.
+    bool Routing::MigrateGameBypass(Routing *r) {
+        if (r == nullptr) return false;
+        const QString original = r->custom.trimmed();
+        if (original.isEmpty()) return false;
+        auto obj = QString2QJsonObject(original);
+        if (!obj.contains("rules") || !obj["rules"].isArray()) return false;
+
+        auto rules = obj["rules"].toArray();
+        int firstBlock = -1;
+        for (int i = 0; i < rules.size(); i++) {
+            const auto o = rules[i].toObject();
+            if (isQuicRule(o) && o["outbound"].toString() == "block") {
+                firstBlock = i;
+                break;
+            }
+        }
+        if (firstBlock < 0) return false; // блокировки нет — переставлять нечего
+
+        // Имена и шаблоны берём из пресета, а не повторяем здесь: иначе следующая
+        // правка пресета оставит миграцию раздавать вчерашний список.
+        Routing preset(1);
+        bool changed = false;
+        for (const auto &v: QString2QJsonObject(preset.custom)["rules"].toArray()) {
+            const auto want = v.toObject();
+            if (want["outbound"].toString() != "bypass") continue;
+            QString field;
+            for (const auto &candidate: {QStringLiteral("process_name"),
+                                        QStringLiteral("process_path_regex"),
+                                        QStringLiteral("network")}) {
+                if (want.contains(candidate)) {
+                    field = candidate;
+                    break;
+                }
+            }
+            if (field.isEmpty()) continue;
+
+            // Значения дописываем только у правил по процессу. Правило по СЕТИ
+            // (оно нужно для ICMP: у него нет порта, процесс не определяется, и
+            // поймать его может лишь сеть) дописывать в чужое нельзя — «icmp»,
+            // подсунутый в чужое правило про udp, поменял бы его смысл. Такое
+            // правило либо уже есть, либо кладётся отдельным.
+            const bool mergeable = field != QStringLiteral("network");
+
+            // Своё правило ищем по ТОМУ ЖЕ полю. Имя и шаблон обязаны жить в разных
+            // правилах: внутри одного правила поля складываются по «И», и правило,
+            // требующее совпадения сразу обоих, не сработает никогда.
+            int at = -1;
+            for (int i = 0; i < rules.size(); i++) {
+                const auto o = rules[i].toObject();
+                if (o["outbound"].toString() != "bypass" || !o.contains(field)) continue;
+                if (!mergeable) {
+                    // Своим считаем только правило с ТЕМ ЖЕ значением, иначе
+                    // «нашлось» бы первое попавшееся правило про сеть.
+                    bool same = false;
+                    const auto mineValues = o[field].isArray() ? o[field].toArray()
+                                                               : QJsonArray{o[field]};
+                    for (const auto &n: mineValues) {
+                        if (n.toString() == want[field].toString()) same = true;
+                    }
+                    if (!same) continue;
+                }
+                at = i;
+                break;
+            }
+
+            if (at < 0) {
+                rules.insert(firstBlock, want);
+                firstBlock++;
+                changed = true;
+                continue;
+            }
+
+            if (!mergeable) {
+                // Нашлось и совпало по значению — переставить, если оно ниже блока.
+                if (at > firstBlock) {
+                    const auto mine = rules[at].toObject();
+                    rules.removeAt(at);
+                    rules.insert(firstBlock, mine);
+                    firstBlock++;
+                    changed = true;
+                }
+                continue;
+            }
+
+            auto mine = rules[at].toObject();
+            auto values = mine[field].toArray();
+            QSet<QString> have;
+            for (const auto &n: values) have.insert(n.toString());
+            for (const auto &n: want[field].toArray()) {
+                if (have.contains(n.toString())) continue;
+                values.append(n);
+                changed = true;
+            }
+            mine[field] = values;
+            if (at > firstBlock) {
+                rules.removeAt(at);
+                rules.insert(firstBlock, mine);
+                firstBlock++;
+                changed = true;
+            } else {
+                rules.replace(at, mine);
+            }
+        }
+
+        if (!changed) return false;
+        obj["rules"] = rules;
+        r->custom = QJsonObject2QString(obj, true);
+        return true;
+    }
+
+    // Обход всех схем — один на обе миграции: их две, а способ дойти до каждой
+    // схемы один и тот же, и расходиться этим двум обходам незачем.
+    static int migrateEach(bool (*fix)(Routing *)) {
         int changed = 0;
         const auto active = dataStore->active_routing;
-        for (const auto &name: List()) {
+        for (const auto &name: Routing::List()) {
             // The active scheme is already loaded in memory; patching the file underneath
             // it would be overwritten by the next Save().
             if (name == active && dataStore->routing != nullptr) {
-                if (MigrateOne(dataStore->routing.get())) {
+                if (fix(dataStore->routing.get())) {
                     dataStore->routing->Save();
                     changed++;
                 }
@@ -548,12 +670,20 @@ namespace NekoGui {
             other.load_control_must = true;
             other.fn = ROUTES_PREFIX + name;
             if (!other.Load()) continue;
-            if (MigrateOne(&other)) {
+            if (fix(&other)) {
                 other.Save();
                 changed++;
             }
         }
         return changed;
+    }
+
+    int Routing::MigrateAll() {
+        return migrateEach(&Routing::MigrateOne);
+    }
+
+    int Routing::MigrateGamesAll() {
+        return migrateEach(&Routing::MigrateGameBypass);
     }
 
     bool Routing::SetToActive(const QString &name) {

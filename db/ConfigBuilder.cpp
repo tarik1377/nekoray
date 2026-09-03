@@ -818,12 +818,27 @@ namespace NekoGui {
         if (UseInternalTun() && dataStore->spmode_vpn && !status->forTest) {
             auto match_out = dataStore->vpn_rule_white ? "proxy" : "bypass";
 
+            // КУДА кладём — зависит от смысла списка, и это не мелочь.
+            //
+            // «Мимо туннеля» (обычный режим) — человек назвал программу поимённо,
+            // и его выбор обязан решать РАНЬШЕ общих запретов из пресета. Иначе
+            // выходит сегодняшний случай: игра вписана, а весь её udp/443 гасится
+            // блокировкой, до которой очередь доходит первой, и обход не делает
+            // ничего, оставаясь на вид настроенным.
+            //
+            // «Только через туннель» (белый список) — наоборот, оставляем позади:
+            // там match_out = proxy, и вынос вперёд протащил бы в туннель QUIC,
+            // который пресет глушит намеренно, потому что тоннелированный QUIC
+            // молча встаёт и страницы не открываются.
+            auto &userRules = dataStore->vpn_rule_white ? status->routingRules
+                                                        : status->routingRulesFirst;
+
             QString process_name_rule = dataStore->vpn_rule_process.trimmed();
             if (!process_name_rule.isEmpty()) {
                 auto arr = SplitLinesSkipSharp(process_name_rule);
                 QJsonObject rule{{"outbound", match_out},
                                  {"process_name", QList2QJsonArray(arr)}};
-                status->routingRules += rule;
+                userRules += rule;
             }
 
             QString cidr_rule = dataStore->vpn_rule_cidr.trimmed();
@@ -831,7 +846,7 @@ namespace NekoGui {
                 auto arr = SplitLinesSkipSharp(cidr_rule);
                 QJsonObject rule{{"outbound", match_out},
                                  {"ip_cidr", QList2QJsonArray(arr)}};
-                status->routingRules += rule;
+                userRules += rule;
             }
 
             auto autoBypassExternalProcessPaths = getAutoBypassExternalProcessPaths(status->result);
@@ -856,7 +871,10 @@ namespace NekoGui {
         }
 
         // final add routing rule
-        auto routingRules = QString2QJsonObject(dataStore->routing->custom)["rules"].toArray();
+        // Порядок сборки: сначала поимённый выбор человека, затем цепочка пресета,
+        // затем его же общие правила, затем всё остальное.
+        auto routingRules = status->routingRulesFirst;
+        QJSONARRAY_ADD(routingRules, QString2QJsonObject(dataStore->routing->custom)["rules"].toArray())
         if (status->forTest) routingRules = {};
         if (!status->forTest) QJSONARRAY_ADD(routingRules, QString2QJsonObject(dataStore->custom_route_global)["rules"].toArray())
         QJSONARRAY_ADD(routingRules, status->routingRules)

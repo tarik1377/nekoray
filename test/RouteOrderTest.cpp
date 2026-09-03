@@ -24,6 +24,9 @@
 
 #include <QCoreApplication>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QString>
 
 #include <cstdio>
@@ -87,6 +90,96 @@ int main(int argc, char **argv) {
     // в списке нет: domain: покрывает поддомены, geosite: — тысячи чужих имён.
     is(QStringLiteral("признаком точности служит full:"),
        src.mid(picker, 400).contains(QStringLiteral("full:")));
+
+    // ---- ВТОРОЕ ОТНОШЕНИЕ: обход по процессу выше блокировок ----
+    //
+    // Тот же закон «первое совпадение решает», но в цепочке правил из пресета.
+    // Список игр «мимо туннеля» стоял ПОСЛЕ блокировки udp/443, и потому не
+    // работал для игр, которым этот порт нужен: пакет гасился раньше, чем
+    // доходил до списка. Так пропал список серверов в Squad — он берёт его
+    // через Epic Online Services, а те ходят по udp/443. Снаружи это выглядит
+    // как «клиент не видит серверов», и обход в настройках не помогает.
+    const QString gui = slurp(QStringLiteral("main/NekoGui.cpp"));
+    is(QStringLiteral("пресет маршрутизации прочитан"), !gui.isEmpty());
+
+    const int at = gui.indexOf(QStringLiteral("custom = \"{"));
+    is(QStringLiteral("цепочка правил найдена в пресете"), at >= 0);
+    if (at >= 0) {
+        QString line = gui.mid(at, gui.indexOf(QChar('\n'), at) - at);
+        line = line.mid(line.indexOf(QChar('"')) + 1);
+        line = line.left(line.lastIndexOf(QChar('"')));
+        // Снимаем экранирование C++ по-настоящему, а не вычёркиванием слэшей:
+        // в цепочке есть шаблон пути, где обратный слэш ЗНАЧАЩИЙ, и грубая
+        // чистка молча превратила бы "\." в "." — регулярное выражение осталось
+        // бы рабочим на вид и разъехалось бы по смыслу.
+        QString json;
+        for (int i = 0; i < line.size(); i++) {
+            if (line[i] == QChar('\\') && i + 1 < line.size()) {
+                json += line[++i];
+            } else {
+                json += line[i];
+            }
+        }
+        line = json;
+
+        const auto doc = QJsonDocument::fromJson(line.toUtf8());
+        const auto rules = doc.object().value(QStringLiteral("rules")).toArray();
+        is(QStringLiteral("цепочка разобралась"), !rules.isEmpty());
+
+        int bypassAt = -1;
+        int blockAt = -1;
+        bool squad = false;
+        bool squadExact = false;
+        int regexAt = -1;
+        int icmpAt = -1;
+        for (int i = 0; i < rules.size(); i++) {
+            const auto o = rules[i].toObject();
+            const auto out = o.value(QStringLiteral("outbound")).toString();
+            if (bypassAt < 0 && out == QStringLiteral("bypass")
+                && o.contains(QStringLiteral("process_name"))) {
+                bypassAt = i;
+                for (const auto &n: o.value(QStringLiteral("process_name")).toArray()) {
+                    const auto nm = n.toString();
+                    if (nm.startsWith(QStringLiteral("SquadGame"))) squad = true;
+                    if (nm == QStringLiteral("SquadGame-Win64-Shipping.exe")) squadExact = true;
+                }
+            }
+            if (regexAt < 0 && out == QStringLiteral("bypass")
+                && o.contains(QStringLiteral("process_path_regex"))) {
+                regexAt = i;
+            }
+            if (icmpAt < 0 && out == QStringLiteral("bypass")
+                && o.value(QStringLiteral("network")).toString() == QStringLiteral("icmp")) {
+                icmpAt = i;
+            }
+            if (blockAt < 0 && out == QStringLiteral("block")) blockAt = i;
+        }
+
+        is(QStringLiteral("правило «мимо туннеля» по процессу есть"), bypassAt >= 0);
+        is(QStringLiteral("блокировка в цепочке есть"), blockAt >= 0);
+        // ГЛАВНОЕ ОТНОШЕНИЕ.
+        is(QStringLiteral("обход по процессу идёт ДО блокировок"),
+           bypassAt >= 0 && blockAt > bypassAt);
+        is(QStringLiteral("Squad в списке обхода"), squad);
+        is(QStringLiteral("Squad записан настоящим именем сборки"), squadExact);
+        // Имя игры на Unreal нельзя знать заранее, поэтому рядом с поимённым
+        // списком стоит шаблон по суффиксу сборки — он и ловит будущие игры.
+        is(QStringLiteral("есть правило по шаблону пути"), regexAt >= 0);
+        is(QStringLiteral("шаблон тоже идёт ДО блокировок"),
+           regexAt >= 0 && blockAt > regexAt);
+        // Поля внутри одного правила складываются по «И» (rule_abstract.go:127):
+        // имя и шаблон в одном правиле не совпали бы одновременно никогда.
+        is(QStringLiteral("имя и шаблон стоят РАЗНЫМИ правилами"),
+           regexAt >= 0 && bypassAt >= 0 && regexAt != bypassAt);
+
+        // ICMP ловится ТОЛЬКО правилом по сети. У него нет порта, поэтому ядро не
+        // определяет процесс (ProcessPath пуст), и правила по имени и по шаблону
+        // отказывают первой же строкой, до сравнения. Пинг в браузере серверов
+        // идёт именно по ICMP — без этого правила он показывает прочерк, сколько
+        // имён процессов в список ни впиши.
+        is(QStringLiteral("есть правило «icmp — мимо туннеля»"), icmpAt >= 0);
+        is(QStringLiteral("оно идёт ДО блокировок"), icmpAt >= 0 && blockAt > icmpAt);
+    }
 
     std::fputs(QStringLiteral("\nпроверок %1, провалов %2\n").arg(checks).arg(fails).toUtf8().constData(),
                stdout);

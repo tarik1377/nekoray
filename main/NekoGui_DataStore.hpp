@@ -41,6 +41,13 @@ namespace NekoGui {
         static bool MigrateOne(Routing *r);
 
         static int MigrateAll();
+
+        // Второй ремонт, отдельно от первого: порядок правил. Список игр,
+        // стоящий ПОСЛЕ блокировки udp/443, не спасает игру, которой этот порт
+        // нужен, — её пакеты гасятся раньше, чем доходят до списка.
+        static bool MigrateGameBypass(Routing *r);
+
+        static int MigrateGamesAll();
     };
 
     class ExtraCore : public JsonStore {
@@ -148,6 +155,9 @@ namespace NekoGui {
         // And for the routing schemes: an existing routes_box file shadows the shipped
         // preset forever, so the QUIC block reached nobody who had already run the app.
         bool routing_quic_migrated = false;
+        // Порядок правил чинится своим флагом: у тех, кто уже обновлялся,
+        // предыдущий выставлен, и общий проход к ним второй раз не придёт.
+        bool routing_games_migrated = false;
 
         // Security
         bool skip_cert = false;
