@@ -174,13 +174,34 @@ func fetchManifest(ctx context.Context, client *http.Client, platform string) (*
 func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.UpdateResp, error) {
 	ret := &gen.UpdateResp{}
 
-	client := neko_common.CreateProxyHttpClient(neko_common.GetCurrentInstance())
+	// НАШ САЙТ БЕРЁМ НАПРЯМУЮ, А ЧЕРЕЗ ТУННЕЛЬ — ТОЛЬКО ЕСЛИ НАПРЯМУЮ НЕ ВЫШЛО.
+	//
+	// CreateProxyHttpClient маршрутизацию не спрашивает: он дёргает исходящий
+	// «proxy» напрямую, поэтому правило «российские домены — мимо туннеля» к
+	// обновлению не применялось НИКОГДА. Наш сайт стоит в России, и его тянули
+	// кругом через зарубежный выход — в журнале это видно как строку без номера
+	// соединения и без входящего. Кончалось это «net/http: TLS handshake
+	// timeout»: обновиться было нельзя, а причина выглядела поломкой сайта.
+	//
+	// Порядок именно такой. Прямой путь короче, дешевле и не зависит от того,
+	// поднят ли туннель вообще. Но у части людей наш сайт закрыт провайдером —
+	// для них остаётся прежний путь, вторым заходом.
+	client := &http.Client{Timeout: 30 * time.Second}
+	fallback := neko_common.CreateProxyHttpClient(neko_common.GetCurrentInstance())
 
 	if in.Action == gen.UpdateAction_Check { // Check update
 		ctx, cancel := context.WithTimeout(ctx, time.Second*10)
 		defer cancel()
 
 		m, err := fetchManifest(ctx, client, manifestPlatform())
+		if err != nil && fallback != nil {
+			// Прямой путь не вышел — пробуем через туннель, молча: человеку важен
+			// итог, а не то, какой дорогой мы его добыли.
+			m, err = fetchManifest(ctx, fallback, manifestPlatform())
+			if err == nil {
+				client = fallback
+			}
+		}
 		if err != nil {
 			// Именно ошибка, а не «вы актуальны». Несостоявшаяся проверка и
 			// отсутствие новой версии — разные вещи, и путать их нельзя: во
@@ -252,6 +273,16 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 
 		req, _ := http.NewRequestWithContext(ctx, "GET", update_download_url, nil)
 		resp, err := download.Do(req)
+		if err != nil && fallback != nil {
+			// Тот же запасной путь, что и у проверки. Скачивание приходит
+			// ОТДЕЛЬНЫМ вызовом, поэтому выбор, сделанный при проверке, сюда не
+			// доезжает — и без этой ветки человек, у которого наш сайт закрыт
+			// провайдером, увидел бы новую версию и не смог бы её взять.
+			viaTunnel := *fallback
+			viaTunnel.Timeout = 0
+			req2, _ := http.NewRequestWithContext(ctx, "GET", update_download_url, nil)
+			resp, err = viaTunnel.Do(req2)
+		}
 		if err != nil {
 			ret.Error = err.Error()
 			return ret, nil
