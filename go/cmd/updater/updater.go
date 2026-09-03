@@ -6,8 +6,48 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
+
+// waitForPreviousInstance ждёт, пока прежняя копия отпустит свои файлы.
+//
+// ЗАЧЕМ. Программа запускает обновлятор и лишь ПОТОМ начинает выходить, а её
+// ядро и xray живут ещё какое-то время. Обновлятор в этот момент уже переносит
+// файлы и получает от системы отказ: «rename ... xray.exe: Access is denied».
+// Человек видел окно «закройте работающую копию и запустите обновление снова» —
+// при том что закрывать было нечего: копия закрывалась сама, просто медленнее
+// нас. Совет вдобавок невыполним, обновлятор запускает сама программа.
+//
+// Проверяем не список процессов, а сам файл: открыть его на запись можно ровно
+// тогда, когда его отпустили. Это и есть нужное нам условие, и работает оно
+// одинаково на всех платформах.
+func waitForPreviousInstance(deadline time.Duration) {
+	locked := []string{"./xray.exe", "./greenrhythm_core.exe", "./greenrhythm.exe"}
+	start := time.Now()
+	for time.Since(start) < deadline {
+		busy := ""
+		for _, p := range locked {
+			if !Exist(p) {
+				continue
+			}
+			f, err := os.OpenFile(p, os.O_WRONLY, 0)
+			if err != nil {
+				busy = p
+				break
+			}
+			_ = f.Close()
+		}
+		if busy == "" {
+			return
+		}
+		log.Println("waiting for", busy, "to be released")
+		time.Sleep(500 * time.Millisecond)
+	}
+	// Не дождались — пробуем всё равно: отказ тогда будет назван честно, а ждать
+	// дольше значит держать человека перед окном, которое ничего не делает.
+	log.Println("previous instance still holds files, trying anyway")
+}
 func Updater() {
 	pre_cleanup := func() {
 		if runtime.GOOS == "linux" {
@@ -72,6 +112,9 @@ func Updater() {
 		log.Fatalln("no update folder found")
 	}
 
+	// Ждём, пока прежняя копия отпустит файлы, и только потом переносим.
+	waitForPreviousInstance(30 * time.Second)
+
 	log.Println("applying update from", updateDir)
 
 	// Consent-based config migration: keep server profiles always; optionally reset
@@ -81,7 +124,7 @@ func Updater() {
 
 	err := Mv(updateDir, "./")
 	if err != nil {
-		MessageBoxPlain("GreenRhythm Updater", "Update failed. Please close the running instance and run the updater again.\n\n"+err.Error())
+		MessageBoxPlain("GreenRhythm Updater", "Не удалось применить обновление: файлы всё ещё заняты.\n\nЗакройте программу полностью — значок в трее, «Выход», — и запустите updater.exe из папки установки.\n\n"+err.Error())
 		log.Fatalln(err.Error())
 	}
 
