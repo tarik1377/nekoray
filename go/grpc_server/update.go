@@ -78,15 +78,46 @@ func manifestPlatform() string {
 }
 
 /** Ответ /api/app/version/<platform>. Поля — как их отдаёт сайт. */
+// flexInt64 — целое, которое согласны получить и числом, и строкой.
+//
+// ЗАЧЕМ ТЕРПИМОСТЬ. Манифест приходит снаружи, и его поля собираются на другой
+// стороне из ответа базы. Postgres отдаёт bigint СТРОКОЙ, и стоило записи о
+// выпуске появиться с размером файла, как разбор манифеста стал падать целиком:
+// «json: cannot unmarshal string into Go struct field releaseManifest.sizeBytes
+// of type int64». Человек при этом видел не «обновлений нет» и не «сайт
+// недоступен», а строку на английском про Go — и обновиться не мог вовсе.
+//
+// Цена строгости здесь несоразмерна пользе: размер файла — справочное число,
+// а из-за его типа переставал работать весь путь обновления. Проверка
+// целостности держится на sha256, и она осталась строгой.
+type flexInt64 int64
+
+func (v *flexInt64) UnmarshalJSON(data []byte) error {
+	s := strings.TrimSpace(string(data))
+	if s == "null" || s == `""` || s == "" {
+		*v = 0
+		return nil
+	}
+	s = strings.Trim(s, `"`)
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return err
+	}
+	*v = flexInt64(n)
+	return nil
+}
+
 type releaseManifest struct {
-	VersionCode int    `json:"versionCode"`
-	Version     string `json:"version"`
-	Url         string `json:"url"`
-	Sha256      string `json:"sha256"`
-	SizeBytes   int64  `json:"sizeBytes"`
-	Notes       string `json:"notes"`
-	Mandatory   bool   `json:"mandatory"`
-	Platform    string `json:"platform"`
+	// versionCode тоже терпимый: он приходит из той же таблицы и однажды
+	// приедет строкой по той же причине.
+	VersionCode flexInt64 `json:"versionCode"`
+	Version     string    `json:"version"`
+	Url         string    `json:"url"`
+	Sha256      string    `json:"sha256"`
+	SizeBytes   flexInt64 `json:"sizeBytes"`
+	Notes       string    `json:"notes"`
+	Mandatory   bool      `json:"mandatory"`
+	Platform    string    `json:"platform"`
 }
 
 /**
