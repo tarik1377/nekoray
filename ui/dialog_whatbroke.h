@@ -67,6 +67,16 @@ public:
      */
     void setFixAvailable(bool can, const QString &whyNot);
 
+    /**
+     * Замечание о самой машине, если с ней что-то не так.
+     *
+     * Показывается ВСЕГДА, каким бы ни был приговор по программе: беда бывает
+     * не в программе и не в нас. Так, занятые системой номера портов ломают
+     * любую программу с жёстко заданным портом — игровой магазин, лаунчер,
+     * античит, — и жалуется она при этом на что угодно, только не на порт.
+     */
+    void setSystemNote(const QString &text) { systemNote = text; }
+
     /** Список программ, уже идущих мимо туннеля, — чтобы не чинить починенное. */
     void setAlreadyDirect(const QStringList &names) { alreadyDirect = names; }
 
@@ -102,4 +112,5 @@ private:
     bool applied = false;
     bool canFix = true;
     QString cannotFixWhy;
+    QString systemNote;
 };

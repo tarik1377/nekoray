@@ -206,7 +206,7 @@ jobs:
           # автонастройки для macOS (трафик уходит не туда).
           source libs/env_qtsdk.sh $PWD/qtsdk/Qt
           cd build
-          ninja relaytrace_test credentials_test pac_test relay_component_test tun_exclude_test tun_report_test route_order_test program_trouble_test
+          ninja relaytrace_test credentials_test pac_test relay_component_test tun_exclude_test tun_report_test route_order_test program_trouble_test port_health_test
           cd ..
           # Запуск из временного каталога: credentials_test пишет device.dat
           # рядом с собой, и делать это в дереве сборки незачем.
@@ -248,6 +248,7 @@ jobs:
           ./build/tun_report_test.exe
           ./build/route_order_test.exe
           ./build/program_trouble_test.exe
+          ./build/port_health_test.exe
 
       - name: Tar artifacts
         shell: bash
@@ -359,7 +360,7 @@ jobs:
         run: |
           set -o pipefail
           cd build
-          ninja relaytrace_test credentials_test pac_test relay_component_test tun_exclude_test tun_report_test route_order_test program_trouble_test 2>&1 | tee ../macos-tests-build.log
+          ninja relaytrace_test credentials_test pac_test relay_component_test tun_exclude_test tun_report_test route_order_test program_trouble_test port_health_test 2>&1 | tee ../macos-tests-build.log
           mkdir -p testrun
           cp relaytrace_test credentials_test pac_test relay_component_test testrun/
 
@@ -392,6 +393,9 @@ jobs:
 
       - name: Test the trouble finder — one connection must not count as thirty
         run: ./build/program_trouble_test 2>&1 | tee macos-test-programtrouble.log
+
+      - name: Test port health — the reservation that breaks other apps silently
+        run: ./build/port_health_test 2>&1 | tee macos-test-porthealth.log
 
       - name: Test — исполнение файла автонастройки
         shell: bash

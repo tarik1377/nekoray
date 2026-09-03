@@ -16,6 +16,9 @@
 #include "ui/dialog_manage_groups.h"
 #include "ui/dialog_greenrhythm.h"
 #include "ui/dialog_whatbroke.h"
+#include "main/PortHealth.hpp"
+
+#include <QProcess>
 #include "ui/dialog_manage_routes.h"
 #include "ui/dialog_vpn_settings.h"
 #include "ui/dialog_hotkey.h"
@@ -3501,6 +3504,31 @@ void MainWindow::open_what_broke() {
     } else {
         d->setFixAvailable(true, QString());
     }
+
+#ifdef Q_OS_WIN
+    // СОСТОЯНИЕ ПОРТОВ МАШИНЫ — спрашиваем систему один раз, при открытии.
+    //
+    // Windows умеет отдавать номера портов Hyper-V, WSL и Docker, и программа,
+    // попросившая такой номер, получает отказ доступа. Жалуется она при этом на
+    // что угодно, только не на порт: у нас это было «подключение не
+    // запускается», у чужого игрового лаунчера — «ошибка соединения» и сорванная
+    // установка. Увидеть это можно только спросив систему, и никто не спрашивал.
+    {
+        auto ask = [](const QStringList &args) {
+            QProcess p;
+            p.start(QStringLiteral("netsh"), args);
+            if (!p.waitForFinished(5000)) {
+                p.kill();
+                return QString();
+            }
+            return QString::fromLocal8Bit(p.readAllStandardOutput());
+        };
+        const auto health = GreenRhythm::parsePortHealth(
+            ask({"int", "ipv4", "show", "dynamicport", "tcp"}),
+            ask({"int", "ipv4", "show", "excludedportrange", "protocol=tcp"}));
+        d->setSystemNote(health.verdict());
+    }
+#endif
 
     connect(d, &DialogWhatBroke::fixRequested, this, [this](const QString &program) {
         auto list = NekoGui::dataStore->vpn_rule_process.split(QChar(0x0A), Qt::SkipEmptyParts);

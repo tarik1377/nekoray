@@ -253,6 +253,7 @@ set(PROJECT_SOURCES
 
         main/RunningPrograms.cpp
         ui/dialog_whatbroke.cpp
+        main/PortHealth.cpp
         main/ProgramTrouble.cpp
         ui/dialog_greenrhythm.cpp
         ui/dialog_manage_routes.cpp
@@ -422,6 +423,14 @@ target_include_directories(tun_exclude_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # неисправимый блок, и виден он только тем, что что-то перестало открываться.
 # Разбор «что случилось с программой»: чистый счёт по записям ядра, без окон и
 # без сети. Потому и проверяется набором, а не ломанием собственной сети.
+
+# Состояние портов машины: чистый разбор вывода системы, без запуска её самой.
+add_executable(port_health_test EXCLUDE_FROM_ALL
+        test/PortHealthTest.cpp
+        main/PortHealth.cpp
+)
+target_link_libraries(port_health_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+target_include_directories(port_health_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(program_trouble_test EXCLUDE_FROM_ALL
         test/ProgramTroubleTest.cpp

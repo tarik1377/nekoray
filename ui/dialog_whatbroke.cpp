@@ -276,5 +276,12 @@ void DialogWhatBroke::conclude() {
                                 "по программам нельзя."));
     }
 
+    // Замечание о машине — последним и всегда: оно не про названную программу,
+    // а про условия, в которых ломается любая. Сегодня именно оно и было
+    // ответом, а искали его полночи.
+    if (!systemNote.isEmpty()) {
+        verdictBody->setText(verdictBody->text() + QStringLiteral("\n\n— — —\n\n") + systemNote);
+    }
+
     pages->setCurrentIndex(2);
 }
