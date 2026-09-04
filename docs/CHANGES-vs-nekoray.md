@@ -23,10 +23,10 @@ git diff --shortstat upstream/main HEAD -- . ':(exclude)qtsdk' ':(exclude)build'
 
 | | |
 |---|---|
-| Files touched | 178 |
-| Lines added / removed | +19 026 / −1 001 |
-| Files added outright | 89 (11 864 lines) |
-| Files of theirs modified | 88 |
+| Files touched | 205 |
+| Lines added / removed | +23 633 / −1 449 |
+| Files added outright | 112 |
+| Files of theirs modified | 90 |
 
 There is no shared git history with upstream — the fork was re-imported — so
 comparison is done tree-to-tree rather than by ancestry. To check whether any
@@ -125,16 +125,20 @@ The largest edits, by line count:
 
 | File | +/− | What |
 |---|---|---|
-| `ui/mainwindow.cpp` | +2580 / −38 | diagnostics, network repair, autopilot reconnect, onboarding, scheme import |
+| `ui/mainwindow.cpp` and its parts | ~+2600 | diagnostics, network repair, autopilot reconnect, onboarding, scheme import |
 | `.github/workflows/build-nekoray-cmake.yml` | +665 / −138 | test steps, macOS job, pinned xray with a checksum |
 | `main/NekoGui.cpp` | +372 / −14 | routing preset and its migrations |
 | `go/grpc_server/update.go` | +332 / −55 | update checks and download |
 | `fmt/Bean2External.cpp` | +254 | external-core launch |
 | `db/ConfigBuilder.cpp` | +237 / −23 | rule ordering, DNS, tunnel exclusions |
 
-`ui/mainwindow.cpp` being that large is a defect, not an achievement: at 4 562
-lines it is well past this project's own 800-line limit, and splitting it is
-outstanding work.
+`ui/mainwindow.cpp` had grown to 4 602 lines — well past this project's own
+800-line limit — and has been split by subject: `NetworkRepair.cpp`,
+`LogAndConnections.cpp`, `Diagnostics.cpp`, `SubscriptionUi.cpp`,
+`Onboarding.cpp`, `Autopilot.cpp`. Only method bodies moved; the declarations in
+`mainwindow.h` are untouched, so no signal wiring changed. What is left is 2 484
+lines, still above the limit — the 700-line constructor is the next thing to
+take apart.
 
 ## Tests
 
@@ -143,8 +147,12 @@ There are no unit tests in it.
 
 | | |
 |---|---|
-| C++ suites | 12 files, 1 822 lines |
-| Go test files | 6 files, 1 018 lines |
+| C++ suites | 13 files, 1 988 lines |
+| Go test files | 8 files, 1 223 lines |
+
+`enable_testing()` and `add_test` are wired up, so `cmake --build . --target
+build-tests && ctest --output-on-failure` runs all of them from a fresh clone —
+and CI runs exactly that command rather than a hand-copied list of targets.
 
 They are not there for a coverage number. Each one stands in front of a failure
 that does not announce itself:
@@ -159,6 +167,10 @@ that does not announce itself:
 - `PacBuilderTest` — a wrong PAC file sends traffic somewhere else silently.
 - `extract_test.go` — an update archive must not be able to write outside its
   directory.
+- `verify_test.go` — an archive that did not arrive through the verified path
+  must not be applied.
+- `idle_test.go` — a slow download must finish; a stalled one must be cut,
+  and the two must not be confused.
 - `neko_config_transform_test.go`, `connections_test.go`, `update_test.go`.
 
 ## What we did not change
