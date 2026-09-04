@@ -49,7 +49,13 @@ void loadTranslate(const QString& locale) {
     }
 }
 
-#define LOCAL_SERVER_PREFIX "nekoraylocalserver-"
+// Имя местного канала, по которому второй запуск отдаёт ссылку первому.
+//
+// Менять его безопасно: канал живёт ровно столько, сколько запущена программа,
+// и на диске ничего не оставляет. Единственная цена — во время обновления
+// старый и новый экземпляр не увидят друг друга, и второй решит, что он первый.
+// Это одна минута на переустановку против имени чужого проекта навсегда.
+#define LOCAL_SERVER_PREFIX "greenrhythmlocalserver-"
 
 int main(int argc, char* argv[]) {
     // Core dump
@@ -133,7 +139,9 @@ int main(int argc, char* argv[]) {
     DS_cores->start();
 
     // RunGuard
-    RunGuard guard("nekoray" + wd.absolutePath());
+    // Тот же довод, что и у местного канала: страж одиночного запуска ничего не
+    // хранит между запусками.
+    RunGuard guard("greenrhythm" + wd.absolutePath());
     quint64 guard_data_in = GetRandomUint64();
     quint64 guard_data_out = 0;
     if (!NekoGui::dataStore->flag_many && !guard.tryToRun(&guard_data_in)) {
@@ -279,10 +287,37 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // ИМЯ ФАЙЛА НАСТРОЕК — НАШЕ, НО СТАРОЕ ПОДБИРАЕТСЯ.
+    //
+    // Файл назывался groups/nekobox.json — по имени проекта, из которого клиент
+    // вырос. Просто переименовать нельзя: у всех, кто уже поставил программу,
+    // настройки лежат под старым именем, и новая сборка нашла бы пустоту —
+    // пропали бы серверы, подписка, маршруты и всё остальное.
+    //
+    // Поэтому переход тихий и одноразовый: если нового файла ещё нет, а старый
+    // есть — копируем. Именно КОПИРУЕМ, а не переименовываем: откат на прежнюю
+    // сборку тогда останется возможным, и человек, которому новая не подошла,
+    // не окажется без настроек вовсе.
+    {
+        const QString modern = QStringLiteral("groups/greenrhythm.json");
+        const QString legacy = QStringLiteral("groups/nekobox.json");
+        if (!QFile::exists(modern) && QFile::exists(legacy)) {
+            if (QFile::copy(legacy, modern)) {
+                qInfo() << "settings migrated from" << legacy << "to" << modern;
+            } else {
+                // Не вышло — остаёмся на старом имени. Молча начать с пустых
+                // настроек хуже, чем сохранить прежнее имя файла.
+                qWarning() << "settings migration failed, keeping" << legacy;
+            }
+        }
+    }
+
     // Load dataStore
     switch (NekoGui::coreType) {
         case NekoGui::CoreType::SING_BOX:
-            NekoGui::dataStore->fn = "groups/nekobox.json";
+            NekoGui::dataStore->fn = QFile::exists(QStringLiteral("groups/greenrhythm.json"))
+                                         ? "groups/greenrhythm.json"
+                                         : "groups/nekobox.json";
             break;
         default:
             MessageBoxWarning("Error", "Unknown coreType.");

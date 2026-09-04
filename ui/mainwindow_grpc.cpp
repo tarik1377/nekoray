@@ -6,6 +6,7 @@
 #include "db/traffic/TrafficLooper.hpp"
 #include "rpc/gRPC.h"
 #include "ui/widget/MessageBoxTimer.h"
+#include "ui/MainShell.hpp"
 
 #include <QTimer>
 #include <QThread>
@@ -340,6 +341,11 @@ void MainWindow::neko_start(int _id) {
     auto group = NekoGui::profileManager->GetGroup(ent->gid);
     if (group == nullptr || group->archive) return;
 
+    // «Подключаюсь» показываем ДО сборки конфига: она может занять секунду, и
+    // всё это время кнопка стояла бы в положении «не подключено» — человек
+    // нажимал бы второй раз.
+    if (shell != nullptr) shell->setState(GreenRhythm::MainShell::State::Connecting);
+
     auto result = BuildConfig(ent, false, false);
     if (!result->error.isEmpty()) {
         MessageBoxWarning("BuildConfig return error", result->error);
@@ -409,7 +415,16 @@ void MainWindow::neko_start(int _id) {
                            "Ответ системы: %1")
                               .arg(error);
             }
-            runOnUiThread([=] { MessageBoxWarning(software_name, human); });
+            // Причина — на кнопку, коротко. Полный ответ системы остаётся в окне
+            // и в журнале: кнопке нужна не точность, а понятность.
+            const QString shortReason =
+                looksLikeBindFailure(error) ? tr("система не отдала порт") : tr("сервер не ответил");
+            runOnUiThread([=] {
+                if (shell != nullptr) {
+                    shell->setState(GreenRhythm::MainShell::State::Failed, shortReason);
+                }
+                MessageBoxWarning(software_name, human);
+            });
             return false;
         }
         //

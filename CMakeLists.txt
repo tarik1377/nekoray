@@ -253,6 +253,8 @@ set(PROJECT_SOURCES
 
         main/RunningPrograms.cpp
         ui/dialog_whatbroke.cpp
+        ui/ServerCardDelegate.cpp
+        ui/MainShell.cpp
         main/PortHealth.cpp
         main/ProgramTrouble.cpp
         ui/dialog_greenrhythm.cpp
@@ -484,6 +486,26 @@ target_link_libraries(relay_dialog_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widget
 # Снимок панели «Зелёный Ритм». Панель длинная и собирается кодом, а не из .ui,
 # поэтому увидеть её иначе как запуском клиента нельзя — а на машине владельца
 # поднят рабочий туннель, и второй экземпляр ради вёрстки того не стоит.
+# Снимок ГЛАВНОГО окна. До него правки внешнего вида шли вслепую: посмотреть на
+# окно можно было только запустив клиент поверх рабочего туннеля владельца.
+# Заголовок берётся тот же, что uic собрал для приложения, — второй AUTOUIC на
+# один .ui дал бы две расходящиеся вёрстки.
+add_executable(mainwindow_preview EXCLUDE_FROM_ALL
+        test/MainWindowPreview.cpp
+        ui/MainShell.cpp
+        ui/ServerCardDelegate.cpp
+        # Ресурсы: без них значки в колонке возьмутся из пустоты, и снимок
+        # покажет аккуратную вёрстку без единого значка — то есть соврёт.
+        res/neko.qrc
+)
+set_property(TARGET mainwindow_preview PROPERTY AUTORCC ON)
+set_property(TARGET mainwindow_preview PROPERTY AUTOMOC ON)
+add_dependencies(mainwindow_preview greenrhythm)
+target_include_directories(mainwindow_preview PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_BINARY_DIR}/greenrhythm_autogen/include)
+target_link_libraries(mainwindow_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+
 add_executable(greenrhythm_panel_preview EXCLUDE_FROM_ALL
         test/GreenRhythmPanelPreview.cpp
         ui/dialog_greenrhythm.cpp

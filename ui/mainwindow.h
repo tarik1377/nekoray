@@ -33,6 +33,10 @@ namespace NekoGui_sys {
     class CoreProcess;
 }
 
+namespace GreenRhythm {
+    class MainShell;
+}
+
 QT_BEGIN_NAMESPACE
 namespace Ui {
     class MainWindow;
@@ -72,6 +76,10 @@ public:
     // Окно разбора кормится тем же потоком соединений, что и таблица. Пока оно
     // закрыто — указатель пуст, и лишней работы не делается.
     class DialogWhatBroke *what_broke = nullptr;
+
+    // Оболочка окна: боковая колонка и страницы. Существующие виджеты живут
+    // внутри неё, поэтому все прежние указатели ui-> остаются рабочими.
+    GreenRhythm::MainShell *shell = nullptr;
 
     void RegisterHotkey(bool unregister);
 

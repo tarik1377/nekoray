@@ -3,6 +3,9 @@
         <file alias="icon/b-internet-web-browser.svg">icon/internet-web-browser.svg</file>
         <file alias="icon/b-system-run.svg">icon/system-run.svg</file>
         <file>icon/gr-panel.svg</file>
+        <file>icon/gr-nav-connect.svg</file>
+        <file>icon/gr-nav-servers.svg</file>
+        <file>icon/gr-nav-log.svg</file>
         <file alias="icon/b-preferences.svg">icon/preferences.svg</file>
         <file alias="icon/b-network-server.svg">icon/network-server.svg</file>
         <file alias="icon/b-dialog-question.svg">icon/dialog-question.svg</file>
@@ -16,7 +19,6 @@
         <file>icon/material/swap-horizontal.svg</file>
     </qresource>
     <qresource prefix="/neko">
-        <file alias="nekobox.png">public/nekobox.png</file>
         <file alias="greenrhythm.png">public/greenrhythm.png</file>
         <file>neko.css</file>
         <file>vpn/vpn-run-root.sh</file>

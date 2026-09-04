@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Подключение: узел и две связи. Линия, а не заливка — в 20 точек заливка
+     сливается в пятно, а линия остаётся читаемой. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-width="1.8"
+     stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="3"/>
+  <path d="M12 5 A7 7 0 0 1 18.5 9.2"/>
+  <path d="M12 19 A7 7 0 0 1 5.5 14.8"/>
+  <circle cx="12" cy="4" r="1.4" fill="currentColor" stroke="none"/>
+  <circle cx="12" cy="20" r="1.4" fill="currentColor" stroke="none"/>
+</svg>

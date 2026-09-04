@@ -8,11 +8,11 @@ set(PLATFORM_LIBRARIES wininet wsock32 ws2_32 user32 rasapi32 iphlpapi crypt32)
 include(cmake/windows/generate_product_version.cmake)
 generate_product_version(
         QV2RAY_RC
-        ICON "${CMAKE_SOURCE_DIR}/res/nekobox.ico"
+        ICON "${CMAKE_SOURCE_DIR}/res/greenrhythm.ico"
         NAME "GreenRhythm"
         BUNDLE "GreenRhythm"
         COMPANY_NAME "GreenRhythm"
-        COMPANY_COPYRIGHT "GreenRhythm"
+        COMPANY_COPYRIGHT "(C) 2025-2026 GreenRhythm. GPL-3.0. Based on nekoray by MatsuriDayo."
         FILE_DESCRIPTION "GreenRhythm"
 )
 add_definitions(-DUNICODE -D_UNICODE -DNOMINMAX)

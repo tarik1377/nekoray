@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Серверы: стопка. Точка слева в каждом ярусе — то же, чем помечена строка
+     в списке, чтобы связь между значком и содержимым читалась без слов. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-width="1.8"
+     stroke-linecap="round" stroke-linejoin="round">
+  <rect x="3.5" y="4.5" width="17" height="6" rx="2"/>
+  <rect x="3.5" y="13.5" width="17" height="6" rx="2"/>
+  <circle cx="7.5" cy="7.5" r="1.1" fill="currentColor" stroke="none"/>
+  <circle cx="7.5" cy="16.5" r="1.1" fill="currentColor" stroke="none"/>
+</svg>

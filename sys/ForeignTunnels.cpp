@@ -1,4 +1,5 @@
 #include "ForeignTunnels.hpp"
+#include "sys/WinShell.hpp"
 
 #include <QProcess>
 #include <QRegularExpression>
@@ -80,7 +81,7 @@ namespace NekoGui_sys {
              * присоединяются к ней. Плюс ifIndex выносится наружу: выключать
              * адаптер по имени нельзя — см. ForeignTunnel::ifIndex.
              */
-            const auto out = ask("powershell",
+            const auto out = ask(PowerShellPath(),
                                  {"-NoProfile", "-NonInteractive", "-Command",
                                   "$ad = @{}; "
                                   "Get-NetAdapter -ErrorAction SilentlyContinue | "
@@ -206,7 +207,7 @@ namespace NekoGui_sys {
         // (Up) значит, что им кто-то пользуется прямо сейчас; отключённый
         // остаток от прошлого запуска безвреден — wintun его переиспользует.
         QProcess p;
-        p.start("powershell",
+        p.start(PowerShellPath(),
                 {"-NoProfile", "-NonInteractive", "-Command",
                  "$a = Get-NetAdapter -Name 'neko-tun' -ErrorAction SilentlyContinue; "
                  "if ($a -and $a.Status -eq 'Up') { 'held' } else { 'free' }"});
@@ -237,7 +238,7 @@ namespace NekoGui_sys {
 #ifdef Q_OS_WIN
         // Одним заходом: состояние адаптера и сколько маршрутов через него.
         // Два запуска powershell стоили бы лишних секунд на ровном месте.
-        const auto raw = ask("powershell",
+        const auto raw = ask(PowerShellPath(),
                              {"-NoProfile", "-NonInteractive", "-Command",
                               "$a = Get-NetAdapter -Name 'neko-tun' -ErrorAction SilentlyContinue; "
                               "if (-not $a) { 'adapter=absent' } else { "

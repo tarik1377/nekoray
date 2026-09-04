@@ -17,8 +17,12 @@
 #include "ui/dialog_greenrhythm.h"
 #include "ui/dialog_whatbroke.h"
 #include "main/PortHealth.hpp"
+#include "db/traffic/TrafficLooper.hpp"
+#include "ui/MainShell.hpp"
+#include "ui/ServerCardDelegate.hpp"
 
 #include <QProcess>
+#include <QTemporaryDir>
 #include "ui/dialog_manage_routes.h"
 #include "ui/dialog_vpn_settings.h"
 #include "ui/dialog_hotkey.h"
@@ -30,6 +34,7 @@
 #include "3rdparty/VT100Parser.hpp"
 #include "3rdparty/qv2ray/v2/components/proxy/QvProxyConfigurator.hpp"
 #include "sys/ForeignTunnels.hpp"
+#include "sys/WinShell.hpp"
 #include "fmt/RelayBean.hpp"
 #include "ui/dialog_macos_mode.h"
 
@@ -290,6 +295,81 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         ui->horizontalLayout_2->insertWidget(0, panelButton);
     }
 
+    // НОВАЯ ОБОЛОЧКА: боковая колонка и страницы вместо ряда кнопок и таблицы
+    // во весь экран. Ставится ПОСЛЕ всей проводки — она не создаёт ни таблицы
+    // серверов, ни вкладок журнала, а забирает уже существующие и раскладывает
+    // по страницам. Поэтому сортировка, перетаскивание, контекстное меню, поиск
+    // и проверка задержки продолжают работать: это те же объекты, к которым
+    // привязан весь код выше.
+    {
+        shell = new GreenRhythm::MainShell(this);
+        shell->adopt(ui->tabWidget, ui->down_tab);
+
+        // ШУМНЫЕ КОЛОНКИ ПРЯЧУТСЯ, А НЕ УДАЛЯЮТСЯ. «Тип» у всех строк один и тот
+        // же, «Адрес» человеку не говорит ничего, а имя из-за них обрезалось до
+        // «Germanyyy…». Скрытие оставляет ячейки заполненными, поэтому поиск по
+        // адресу и сортировка по нему продолжают работать — удаление их бы
+        // сломало, причём молча.
+        ui->proxyListTable->setColumnHidden(0, true); // тип
+        ui->proxyListTable->setColumnHidden(1, true); // адрес
+
+        // Имени — всё свободное место. Ради него список и существует, а до
+        // сих пор оно обрезалось до «Germanyyy…», потому что ширину делили
+        // поровну между шестью колонками, из которых две человеку не нужны.
+        ui->proxyListTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+
+        // Строки рисуются карточками. Делегат меняет ТОЛЬКО отрисовку: модель,
+        // сортировка, перетаскивание, меню и поиск остаются теми же. Скрытые
+        // колонки он читает как данные — потому их и не удаляли.
+        ui->proxyListTable->setColumnHidden(3, true); // результат теста
+        ui->proxyListTable->setColumnHidden(4, true); // трафик
+        ui->proxyListTable->setItemDelegateForColumn(
+            2, new GreenRhythm::ServerCardDelegate(0, 1, 3, this));
+        ui->proxyListTable->verticalHeader()->setVisible(false);
+        ui->proxyListTable->horizontalHeader()->setVisible(false);
+        ui->proxyListTable->setShowGrid(false);
+
+        // Вкладки групп прячем, когда группа одна: полоса с единственной
+        // вкладкой занимает место и не даёт выбора.
+        ui->tabWidget->tabBar()->setVisible(ui->tabWidget->count() > 1);
+        setCentralWidget(shell);
+
+#ifdef Q_OS_WIN
+        // Полосу меню прячем: в современных клиентах её нет, а всё её содержимое
+        // теперь достижимо кнопкой «Ещё». На macOS не трогаем — там полоса
+        // системная, живёт вверху экрана и человек её там ждёт.
+        menuBar()->setVisible(false);
+#endif
+
+        connect(shell, &GreenRhythm::MainShell::connectToggled, this, [this] {
+            if (NekoGui::dataStore->started_id >= 0) {
+                neko_stop();
+            } else {
+                smart_connect_greenrhythm();
+            }
+        });
+        connect(shell, &GreenRhythm::MainShell::moreRequested, this,
+                [this](const QPoint &pos) {
+                    // Меню собирается из той же полосы, что была сверху: те же
+                    // объекты, та же проводка. Копировать пункты сюда значило бы
+                    // завести вторую правду, которая разойдётся с первой.
+                    QMenu more(this);
+                    for (auto *action: menuBar()->actions()) more.addAction(action);
+                    more.exec(pos);
+                });
+        connect(shell, &GreenRhythm::MainShell::troubleRequested, this,
+                [this] { open_what_broke(); });
+        connect(shell, &GreenRhythm::MainShell::bypassListRequested, this,
+                [this] { open_greenrhythm_panel(); });
+        connect(shell, &GreenRhythm::MainShell::renewRequested, this, [] {
+            QDesktopServices::openUrl(QUrl(GreenRhythm::kRenewUrl));
+        });
+        connect(shell, &GreenRhythm::MainShell::panelRequested, this,
+                [this] { open_greenrhythm_panel(); });
+        connect(shell, &GreenRhythm::MainShell::addServerRequested, ui->menu_add_from_clipboard,
+                &QAction::trigger);
+    }
+
     // Setup log UI
     ui->splitter->restoreState(DecodeB64IfValid(NekoGui::dataStore->splitter_state));
     qvLogDocument->setUndoRedoEnabled(false);
@@ -386,7 +466,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     if (auto *lay = qobject_cast<QVBoxLayout *>(ui->tab_2->layout())) lay->insertWidget(0, conn_route_summary);
     // Card-like rows: taller for breathing room, no gridlines (surface comes from
     // the theme's alternating rows + rounded selection). Columns/sort/drag intact.
-    ui->proxyListTable->verticalHeader()->setDefaultSectionSize(40);
+    // Высота под карточку. Задаётся здесь, а не подсказкой делегата: таблица
+    // берёт высоту из вертикального заголовка, и он перебивал sizeHint —
+    // карточки выходили сплюснутыми, а подпись под именем не помещалась.
+    ui->proxyListTable->verticalHeader()->setDefaultSectionSize(62);
     ui->proxyListTable->setShowGrid(false);
 
     build_onboarding_panel();
@@ -638,7 +721,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
             // Kill any leftover core before spawning ours (skip in multi-instance mode).
             if (!NekoGui::dataStore->flag_many) {
 #ifdef Q_OS_WIN
-                QProcess::execute("taskkill", {"/F", "/IM", "greenrhythm_core.exe"});
+                QProcess::execute(System32Exe("taskkill.exe"), {"/F", "/IM", "greenrhythm_core.exe"});
 #else
                 QProcess::execute("pkill", {"-9", "-f", "greenrhythm_core"});
 #endif
@@ -1180,6 +1263,30 @@ void MainWindow::refresh_status(const QString &traffic_update) {
     {
         const bool up = (running != nullptr);
         const QString nm = up ? running->bean->DisplayName().left(26) : QString();
+
+        // Та же правда — в новую оболочку. Состояние живёт в ОДНОМ месте: пилюля
+        // внизу осталась для тех, кто к ней привык, но главным теперь служит
+        // крупная кнопка, и расходиться этим двум нельзя.
+        if (shell != nullptr) {
+            QString latency;
+            if (up) {
+                const auto ms = running->latency;
+                if (ms > 0) latency = tr("%1 мс").arg(ms);
+            }
+            shell->setConnectionState(up, nm, latency);
+
+            // Метки под именем: протокол и транспорт. Берём у самого профиля, а
+            // не выдумываем — DisplayType() уже собирает это для таблицы.
+            QStringList tags;
+            if (up) {
+                const auto type = running->bean->DisplayType().trimmed();
+                if (!type.isEmpty()) tags << type;
+            }
+            shell->setServerTags(tags);
+
+            // Пустой список — не пустой экран.
+            shell->setEmpty(NekoGui::profileManager->profiles.empty());
+        }
         // Three states, not two: grey «Не запущено», amber «Подключено, нет трафика» when
         // the tunnel is up but the autopilot probe cannot pass traffic, green otherwise.
         // The amber state is the answer support could never see before.
@@ -2273,7 +2380,7 @@ void MainWindow::disable_extra_adapters() {
                             .arg(indexes.join(","));
 
     const auto rc = WinCommander::runProcessElevated(
-        "powershell", {"-NoProfile", "-NonInteractive", "-Command", script});
+        PowerShellPath(), {"-NoProfile", "-NonInteractive", "-Command", script});
 
     /*
      * ОТЧИТЫВАЕМСЯ ПО ФАКТУ, А НЕ ПО НАМЕРЕНИЮ.
@@ -2375,9 +2482,20 @@ void MainWindow::repair_macos_network() {
     flush.start("osascript",
                 {"-e", QStringLiteral("do shell script \"dscacheutil -flushcache; "
                                       "killall -HUP mDNSResponder\" with administrator privileges")});
-    flush.waitForFinished(30000);
-    report << (flush.exitCode() == 0 ? tr("Кэш имён сброшен.")
-                                     : tr("Кэш имён не сброшен — запрос прав не подтверждён."));
+    // Результат ожидания проверяется, а не выбрасывается: у незавершённого
+    // процесса exitCode() равен нулю, и отчёт бодро сообщал об успехе там, где
+    // система просто не ответила. Отчёту верят больше всего остального — после
+    // такой строки причину «сайты не открываются» ищут где угодно, только не в
+    // кэше имён.
+    const bool flushDone = flush.waitForFinished(30000);
+    if (!flushDone) flush.kill();
+    if (!flushDone) {
+        report << tr("Кэш имён — не дождались ответа системы.");
+    } else if (flush.exitStatus() == QProcess::NormalExit && flush.exitCode() == 0) {
+        report << tr("Кэш имён сброшен.");
+    } else {
+        report << tr("Кэш имён не сброшен — запрос прав не подтверждён.");
+    }
 
     report << QString();
     report << tr("Состояние системных настроек:");
@@ -2504,7 +2622,6 @@ if($u.Count){$u -join [Environment]::NewLine}
 )PS";
 
     static const char *const kAdminPs = R"PS(
-param([string]$Report)
 $ErrorActionPreference='SilentlyContinue'
 $log=@()
 $lsp=$false
@@ -2526,7 +2643,7 @@ $pfx=@(Get-NetRoute -InterfaceIndex $a.ifIndex -EA SilentlyContinue | Select-Obj
 if($a.ifIndex -in $defIdx){$m=' — через него идёт весь трафик'}elseif($pfx){$m=' — маршруты: '+($pfx -join ', ')}else{$m=''}
 $log+=('сторонний туннель (НЕ тронут): '+$a.Name+' ['+$a.InterfaceDescription+']'+$m)}
 foreach($i in Get-DnsClientServerAddress | Where-Object {$_.ServerAddresses -match '^127\.|^::1$|^fd01:db8:1111'}){$dead=@($i.ServerAddresses | Where-Object {$_ -match '^127\.|^::1$|^fd01:db8:1111'} | Where-Object { -not (Resolve-DnsName -Name 'dns.msftncsi.com' -Server $_ -DnsOnly -QuickTimeout -EA SilentlyContinue) }); if($dead){$log+=('мёртвый DNS '+($dead -join ',')+' сброшен: '+$i.InterfaceAlias); Set-DnsClientServerAddress -InterfaceIndex $i.InterfaceIndex -ResetServerAddresses}}
-$wf=Join-Path $env:TEMP 'gr_wfp.xml'; netsh wfp show state file="$wf"|Out-Null
+$wf=Join-Path (Split-Path -Parent $Report) 'gr_wfp.xml'; netsh wfp show state file="$wf"|Out-Null
 if(Test-Path $wf){try{$w=[xml](Get-Content $wf -Raw); $nm=@($w.wfpstate.providers.item|ForEach-Object{$_.displayData.name})+@($w.wfpstate.subLayers.item|ForEach-Object{$_.displayData.name}); foreach($x in ($nm|Where-Object{$_}|Sort-Object -Unique)){if($x -notmatch 'Microsoft|Windows|MPSSVC|NetIo|FWPM|Teredo|IPsec|WSH|sing-?(box|tun)|Hyper-V|WNV|WSL|Built-in'){$log+=('сетевой фильтр (НЕ удалён): '+$x)}}}catch{}; Remove-Item $wf -Force}
 if(Get-CimInstance Win32_SystemDriver | Where-Object {$_.Name -eq 'ndisrd' -and $_.State -eq 'Running'}){$log+='драйвер ndisrd (ProxiFyre/WireSock, НЕ удалён)'; $lsp=$true}
 Set-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' ProxyEnable 0 -EA SilentlyContinue
@@ -2541,45 +2658,65 @@ $out = if($log.Count){$log -join [Environment]::NewLine}else{'NOTHING'}
 Set-Content -LiteralPath $Report -Value $out -Encoding UTF8
 )PS";
 
-    const QString dir = QDir::tempPath();
-    const QString userPs = dir + "/gr_fixnet_user.ps1";
-    const QString adminPs = dir + "/gr_fixnet_admin.ps1";
-    const QString report = dir + "/gr_fixnet.txt";
-    QFile::remove(report);
-
-    auto writePs = [](const QString &path, const char *body) {
-        QFile pf(path);
-        if (!pf.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
-        pf.write("\xEF\xBB\xBF"); // UTF-8 BOM: PowerShell 5.1 reads .ps1 as ANSI otherwise
-        pf.write(QByteArray(body));
-        pf.close();
-        return true;
-    };
-    if (!writePs(userPs, kUserPs) || !writePs(adminPs, kAdminPs)) {
+    // НИ ОДНОГО ИСПОЛНЯЕМОГО ФАЙЛА НА ДИСКЕ.
+    //
+    // Прежде тела обоих скриптов писались в общий %TEMP% под постоянными
+    // именами (gr_fixnet_user.ps1, gr_fixnet_admin.ps1), и привилегированный
+    // запускался оттуда. Между записью и запуском проходило до МИНУТЫ — столько
+    // ждал непривилегированный проход выше. Всё это время файл, который вот-вот
+    // выполнится с правами администратора, лежал в каталоге, доступном на
+    // запись любой программе обычного пользователя. Ловить гонку не требовалось.
+    //
+    // -EncodedCommand принимает тело скрипта аргументом, поэтому подменять
+    // нечего: файла не существует. Отчёт остаётся файлом (перенаправить вывод
+    // из-под Start-Process -Verb RunAs нельзя), но лежит в каталоге со
+    // случайным именем, который создаётся одной операцией.
+    QTemporaryDir work;
+    if (!work.isValid()) {
         QMessageBox::warning(this, tr("Починить сеть Windows"),
                              tr("Не удалось подготовить очистку (нет доступа к временной папке)."));
         return;
     }
+    const QString report = work.filePath("report.txt");
+
+    // $Report перестал быть параметром: у -EncodedCommand нет привязки
+    // параметров, а param() обязан быть первой строкой скрипта. Путь
+    // подставляется в текст; одинарные кавычки удваиваются на случай пути с
+    // апострофом — в имени пользователя он встречается.
+    QString adminScript = QString::fromUtf8(kAdminPs);
+    QString reportLiteral = QDir::toNativeSeparators(report);
+    reportLiteral.replace(QStringLiteral("'"), QStringLiteral("''"));
+    adminScript.prepend(QStringLiteral("$Report='%1'\n").arg(reportLiteral));
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
 
     // Customer-context pass: runs as the logged-in user, so its HKCU proxy and AppData
     // browser paths are the right ones. Its stdout is the report, no file needed.
     QProcess up;
-    up.start("powershell", {"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", userPs});
-    up.waitForFinished(60000);
-    const QString userOut = QString::fromUtf8(up.readAllStandardOutput()).trimmed();
+    up.start(PowerShellPath(),
+             {"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand",
+              PowerShellEncode(QString::fromUtf8(kUserPs))});
+    // Результат ожидания проверяется, а не выбрасывается: при истечении срока
+    // вывод пуст, и «проход отработал и ничего не нашёл» стало бы неотличимо от
+    // «проход не дошёл до конца».
+    const bool userDone = up.waitForFinished(60000);
+    if (!userDone) up.kill();
+    const QString userOut =
+        userDone ? QString::fromUtf8(up.readAllStandardOutput()).trimmed() : QString();
 
-    // Elevated pass: the destructive work. Paths are quoted inside a single -ArgumentList
-    // string so a user name with spaces cannot split them.
+    // Elevated pass: the destructive work. Аргументы передаются массивом, а не
+    // одной строкой: так их нечем разделить, каким бы ни было содержимое.
     const QString launcher =
-        QString("Start-Process powershell -Verb RunAs -WindowStyle Hidden -Wait "
-                "-ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"%1\" -Report \"%2\"'")
-            .arg(QDir::toNativeSeparators(adminPs), QDir::toNativeSeparators(report));
+        QString("Start-Process -FilePath '%1' -Verb RunAs -WindowStyle Hidden -Wait "
+                "-ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',"
+                "'-EncodedCommand','%2'")
+            .arg(QDir::toNativeSeparators(PowerShellPath()), PowerShellEncode(adminScript));
 
     QProcess proc;
-    proc.start("powershell", {"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", launcher});
+    proc.start(PowerShellPath(),
+               {"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", launcher});
     if (!proc.waitForFinished(240000)) {
+        proc.kill();
         QApplication::restoreOverrideCursor();
         QMessageBox::warning(this, tr("Починить сеть Windows"),
                              tr("Очистка не завершилась вовремя. Попробуйте ещё раз."));
@@ -2593,8 +2730,8 @@ Set-Content -LiteralPath $Report -Value $out -Encoding UTF8
         rf.close();
         QFile::remove(report);
     }
-    QFile::remove(userPs);
-    QFile::remove(adminPs);
+    // Скриптов-файлов больше нет, убирать нечего; каталог отчёта уносит за собой
+    // QTemporaryDir при выходе из функции.
     QApplication::restoreOverrideCursor();
 
     // Set-Content -Encoding UTF8 prepends a BOM; strip it so 'NOTHING' and isEmpty() work.
@@ -2633,8 +2770,16 @@ Set-Content -LiteralPath $Report -Value $out -Encoding UTF8
             "отключите в ней Kill Switch / «постоянную защиту» и удалите её штатным деинсталлятором.");
     }
 
+    // «Ничего не найдено» нельзя утверждать, если половина проверок не
+    // дошла до конца: это разные новости, и вторая требует повторить.
+    if (!userDone) {
+        extra += tr("\n\nПроверка от вашей учётной записи не завершилась вовремя — "
+                    "часть сведений в отчёт не попала. Сделанное выше это не отменяет, "
+                    "но список найденного может быть неполным.");
+    }
+
     QString body =
-        nothingAll
+        (nothingAll && userDone)
             ? tr("Посторонних программ не найдено.\n\n"
                  "Сетевые настройки сброшены. Если подключение всё равно "
                  "не работает, перезагрузите компьютер и напишите в поддержку.")
@@ -2929,6 +3074,7 @@ void MainWindow::refresh_subscription_status() {
     if (gr == nullptr || gr->info.trimmed().isEmpty()) {
         ui->label_sub_status->clear();
         ui->label_sub_status->setVisible(false);
+        if (shell != nullptr) shell->setSubscription(QString(), false);
         return;
     }
 
@@ -2956,6 +3102,7 @@ void MainWindow::refresh_subscription_status() {
     if (parts.isEmpty()) {
         ui->label_sub_status->clear();
         ui->label_sub_status->setVisible(false);
+        if (shell != nullptr) shell->setSubscription(QString(), false);
         return;
     }
 
@@ -2969,6 +3116,10 @@ void MainWindow::refresh_subscription_status() {
     ui->label_sub_status->setText(text);
     ui->label_sub_status->setToolTip(tr("Подписка «Зелёный Ритм»"));
     ui->label_sub_status->setVisible(true);
+
+    // Та же правда — в боковую колонку. Строка внизу окна остаётся для тех, кто
+    // к ней привык, но искать остаток подписки там никто не догадывался.
+    if (shell != nullptr) shell->setSubscription(parts.join(QStringLiteral(" · ")), low);
 }
 
 // Small round status dot for a profile row (green connected / red last-test-failed / grey idle).
@@ -4097,6 +4248,23 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
         ui->tableWidget_conn->setCurrentCell(keepRow, 0, QItemSelectionModel::NoUpdate);
     }
 
+    // Те же числа — в колонку. Считать их второй раз незачем: карта маршрутов
+    // ниже уже прошла по всем строкам и посчитала.
+    if (shell != nullptr) {
+        // Трафик берём тот, что уже посчитал счётчик защищённого пути: колонка
+        // отвечает на вопрос «сколько ушло под защитой», а не на «сколько всего».
+        QString down, up;
+        if (auto *p = NekoGui_traffic::trafficLooper->proxy; p != nullptr) {
+            if (p->downlink + p->uplink > 0) {
+                down = ReadableSize(p->downlink);
+                up = ReadableSize(p->uplink);
+            }
+        }
+        shell->setLive(nProxy, nDirect, down, up);
+        shell->setBypassCount(
+            NekoGui::dataStore->vpn_rule_process.split(QChar(0x0A), Qt::SkipEmptyParts).size());
+    }
+
     // Update the route-map strip.
     if (conn_route_summary != nullptr) {
         const int total = nProxy + nDirect + nBlock;
@@ -4130,7 +4298,35 @@ void MainWindow::show_conn_context_menu(const QPoint &pos) {
     const QString host = destItem != nullptr ? destItem->data(Qt::UserRole).toString() : QString();
     if (host.isEmpty()) return;
 
+    // ПРОГРАММА ЦЕЛИКОМ, А НЕ ТОЛЬКО АДРЕС.
+    //
+    // Правило по адресу лечит один сайт, а человек жалуется обычно на ПРОГРАММУ:
+    // «игра не работает», «лаунчер не пускает». На телефоне это давно делается
+    // галочкой в списке приложений, а здесь надо было знать имя исполняемого
+    // файла и куда его вписать. Теперь достаточно найти строку в этой же
+    // таблице: имя программы в ней уже есть, и угадывать его не нужно — а
+    // угаданное имя не совпадает ни с чем и молча не делает ничего.
+    auto *procItem = ui->tableWidget_conn->item(cell->row(), 2);
+    const QString program = procItem != nullptr ? procItem->text().trimmed() : QString();
+    const bool knownProgram = !program.isEmpty() && program != QStringLiteral("—");
+    const auto bypassList =
+        NekoGui::dataStore->vpn_rule_process.split(QChar(0x0A), Qt::SkipEmptyParts);
+    bool alreadyDirect = false;
+    for (const auto &line: bypassList) {
+        if (line.trimmed().compare(program, Qt::CaseInsensitive) == 0) alreadyDirect = true;
+    }
+
     QMenu menu(this);
+    QAction *aProgramDirect = nullptr;
+    QAction *aProgramBack = nullptr;
+    if (knownProgram) {
+        if (alreadyDirect) {
+            aProgramBack = menu.addAction(tr("Вернуть «%1» под защиту").arg(program));
+        } else {
+            aProgramDirect = menu.addAction(tr("Пустить «%1» напрямую").arg(program));
+        }
+        menu.addSeparator();
+    }
     auto *aDirect = menu.addAction(QString::fromUtf8("\xF0\x9F\x87\xB7\xF0\x9F\x87\xBA ") + tr("Всегда напрямую: %1").arg(host));   // 🇷🇺
     auto *aProxy = menu.addAction(QString::fromUtf8("\xF0\x9F\x8C\x8D ") + tr("Всегда через прокси: %1").arg(host));               // 🌍
     auto *aBlock = menu.addAction(QString::fromUtf8("\xE2\x9B\x94 ") + tr("Блокировать: %1").arg(host));                          // ⛔
@@ -4138,6 +4334,26 @@ void MainWindow::show_conn_context_menu(const QPoint &pos) {
     auto *aCopy = menu.addAction(tr("Копировать адрес"));
     auto *chosen = menu.exec(ui->tableWidget_conn->viewport()->mapToGlobal(pos));
     if (chosen == nullptr) return;
+    if (chosen == aProgramDirect && aProgramDirect != nullptr) {
+        auto list = bypassList;
+        list << program;
+        NekoGui::dataStore->vpn_rule_process = list.join(QChar(0x0A));
+        NekoGui::dataStore->Save();
+        MW_show_log(tr("«%1» пойдёт напрямую. Начнёт действовать при следующем подключении.")
+                        .arg(program));
+        return;
+    }
+    if (chosen == aProgramBack && aProgramBack != nullptr) {
+        QStringList list;
+        for (const auto &line: bypassList) {
+            if (line.trimmed().compare(program, Qt::CaseInsensitive) != 0) list << line;
+        }
+        NekoGui::dataStore->vpn_rule_process = list.join(QChar(0x0A));
+        NekoGui::dataStore->Save();
+        MW_show_log(tr("«%1» снова под защитой. Начнёт действовать при следующем подключении.")
+                        .arg(program));
+        return;
+    }
     if (chosen == aCopy) {
         QApplication::clipboard()->setText(host);
     } else if (chosen == aDirect) {
@@ -4358,7 +4574,7 @@ bool MainWindow::StopVPNProcess(bool unconditional) {
         bool ok;
         core_process->processId();
 #ifdef Q_OS_WIN
-        auto ret = WinCommander::runProcessElevated("taskkill", {"/IM", "greenrhythm_core.exe",
+        auto ret = WinCommander::runProcessElevated(System32Exe("taskkill.exe"), {"/IM", "greenrhythm_core.exe",
                                                                  "/FI",
                                                                  "PID ne " + Int2String(core_process->processId())});
         ok = ret == 0;
