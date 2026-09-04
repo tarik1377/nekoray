@@ -1,0 +1,62 @@
+Subject: [PATCH] route/rule: guard LocalRuleSet.rules against concurrent reload
+
+A local rule-set reloads itself from disk on file change, replacing s.rules
+under s.access.Lock() (reloadRules). Matching reads the same field with no
+lock at all, from the routing goroutine, on every connection.
+
+    write  route/rule/rule_set_local.go:146  s.rules = rules   (fswatch callback)
+    read   route/rule/rule_set_local.go:215  range s.rules     (Match -> matchStates)
+
+Metadata() and ExtractIPSet() on the same type already take the read lock, so
+the omission looks accidental. Close() and Cleanup() nil the slice without the
+lock too, and a rule-set can be closed while a match is in flight.
+
+Reproduced with -race in about a second: create a local rule-set over a temp
+file, start the watcher, replace the file, and call Match in a loop.
+
+The match path takes a snapshot instead of holding the read lock throughout:
+a rule may reference another rule-set, so a nested RLock would deadlock once a
+reload has queued a writer between the two acquisitions. The rules are
+immutable once built — reloadRules constructs a new slice — so copying the
+slice header under the lock is sufficient.
+
+--- a/route/rule/rule_set_local.go
++++ b/route/rule/rule_set_local.go
+@@ -180,6 +180,8 @@ func (s *LocalRuleSet) DecRef() {
+ }
+
+ func (s *LocalRuleSet) Cleanup() {
++	s.access.Lock()
++	defer s.access.Unlock()
+ 	if s.refs.Load() == 0 {
+ 		s.rules = nil
+ 	}
+@@ -198,7 +200,9 @@ func (s *LocalRuleSet) UnregisterCallback(element *list.Element[adapter.RuleSetU
+ }
+
+ func (s *LocalRuleSet) Close() error {
++	s.access.Lock()
+ 	s.rules = nil
++	s.access.Unlock()
+ 	return common.Close(common.PtrOrNil(s.watcher))
+ }
+
+@@ -211,8 +215,17 @@ func (s *LocalRuleSet) matchStates(metadata *adapter.InboundContext) ruleMatchSt
+ }
+
+ func (s *LocalRuleSet) matchStatesWithBase(metadata *adapter.InboundContext, base ruleMatchState) ruleMatchStateSet {
++	// Snapshot under the lock, match outside it. Holding the read lock for the
++	// whole match would deadlock on nested rule-sets: a rule may reference
++	// another rule-set, and a second RLock blocks once a file reload has queued
++	// a writer between the two acquisitions. Snapshotting is enough because the
++	// rules themselves are immutable once built — reloadRules constructs a NEW
++	// slice and replaces the field wholesale.
++	s.access.RLock()
++	rules := s.rules
++	s.access.RUnlock()
+ 	var stateSet ruleMatchStateSet
+-	for _, rule := range s.rules {
++	for _, rule := range rules {
+ 		nestedMetadata := *metadata
+ 		nestedMetadata.ResetRuleMatchCache()
+ 		stateSet = stateSet.merge(matchHeadlessRuleStatesWithBase(rule, &nestedMetadata, base))

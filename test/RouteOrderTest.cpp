@@ -27,7 +27,9 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QString>
+#include <QStringList>
 
 #include <cstdio>
 
@@ -149,6 +151,7 @@ int main(int argc, char **argv) {
         bool epicBypassed = false;
         int regexAt = -1;
         int icmpAt = -1;
+        QStringList pathPatterns;
         for (int i = 0; i < rules.size(); i++) {
             const auto o = rules[i].toObject();
             const auto out = o.value(QStringLiteral("outbound")).toString();
@@ -165,6 +168,9 @@ int main(int argc, char **argv) {
             if (regexAt < 0 && out == QStringLiteral("bypass")
                 && o.contains(QStringLiteral("process_path_regex"))) {
                 regexAt = i;
+                for (const auto &p: o.value(QStringLiteral("process_path_regex")).toArray()) {
+                    pathPatterns += p.toString();
+                }
             }
             if (icmpAt < 0 && out == QStringLiteral("bypass")
                 && o.value(QStringLiteral("network")).toString() == QStringLiteral("icmp")) {
@@ -194,6 +200,44 @@ int main(int argc, char **argv) {
         is(QStringLiteral("имя и шаблон стоят РАЗНЫМИ правилами"),
            regexAt >= 0 && bypassAt >= 0 && regexAt != bypassAt);
 
+        // ---- ШАБЛОН ПРОВЕРЯЕТСЯ РАБОТОЙ, А НЕ НАЛИЧИЕМ ----
+        //
+        // Наличие шаблона ничего не обещает: прежний ловил только сам файл игры
+        // (-Win64-Shipping) и пропускал ВТОРОЙ исполняемый файл, который Unreal
+        // кладёт рядом, — лаунчер игры. У Wardogs это WardogsLauncher-Shipping.exe:
+        // суффикса платформы в имени нет, под шаблон он не подходил и уходил в
+        // туннель, пока сама игра шла мимо. Игра предъявляла один адрес, её лаунчер
+        // разговаривал с сервером античита с другого — и это вечный экран загрузки
+        // при полностью исправной сети.
+        //
+        // Поэтому здесь проверяется совпадение на настоящих путях. Список нарочно
+        // держит и старые случаи: перейдя на один общий суффикс, легко потерять то,
+        // ради чего заводились два прежних шаблона.
+        auto matchesAny = [&pathPatterns](const QString &path) {
+            for (const auto &p: pathPatterns) {
+                if (QRegularExpression(p).match(path).hasMatch()) return true;
+            }
+            return false;
+        };
+
+        is(QStringLiteral("шаблон вообще есть, что проверять"), !pathPatterns.isEmpty());
+        is(QStringLiteral("ловит сам файл игры (-Win64-Shipping)"),
+           matchesAny(QStringLiteral(R"(F:\SteamLibrary\steamapps\common\WARDOGS Playtest\Wardogs\Binaries\Win64\WardogsClient-Win64-Shipping.exe)")));
+        is(QStringLiteral("ловит ЛАУНЧЕР игры (-Shipping без платформы)"),
+           matchesAny(QStringLiteral(R"(F:\SteamLibrary\steamapps\common\WARDOGS Playtest\WardogsLauncher-Shipping.exe)")));
+        is(QStringLiteral("прежний случай Squad не потерян"),
+           matchesAny(QStringLiteral(R"(D:\Steam\steamapps\common\Squad\SquadGame\Binaries\Win64\SquadGame-Win64-Shipping.exe)")));
+        is(QStringLiteral("прежний случай сборки под Microsoft Store не потерян"),
+           matchesAny(QStringLiteral(R"(C:\XboxGames\Sea of Thieves\Content\SoTGame-WinGDK-Shipping.exe)")));
+        // Обратная сторона: шаблон обязан оставаться узким. «Мимо туннеля» — это
+        // отказ от защиты, и раздавать его чему попало нельзя.
+        is(QStringLiteral("не ловит системные программы"),
+           !matchesAny(QStringLiteral(R"(C:\Windows\System32\svchost.exe)")));
+        is(QStringLiteral("не ловит браузер"),
+           !matchesAny(QStringLiteral(R"(C:\Program Files\Mozilla Firefox\firefox.exe)")));
+        is(QStringLiteral("не ловит наше собственное ядро"),
+           !matchesAny(QStringLiteral(R"(C:\GreenRhythm\greenrhythm_core.exe)")));
+
         // ICMP ловится ТОЛЬКО правилом по сети. У него нет порта, поэтому ядро не
         // определяет процесс (ProcessPath пуст), и правила по имени и по шаблону
         // отказывают первой же строкой, до сравнения. Пинг в браузере серверов
@@ -202,6 +246,26 @@ int main(int argc, char **argv) {
         is(QStringLiteral("есть правило «icmp — мимо туннеля»"), icmpAt >= 0);
         is(QStringLiteral("оно идёт ДО блокировок"), icmpAt >= 0 && blockAt > icmpAt);
     }
+
+    // ---- ПРАВКА ПРЕСЕТА БЕЗ СВОЕГО ФЛАГА НЕ ДОХОДИТ НИ ДО КОГО ----
+    //
+    // Сохранённая схема заслоняет пресет навсегда, а проход по схемам ходит ровно
+    // один раз за флаг. Это ловушка с историей: из-за неё блокировка QUIC не
+    // досталась никому, кто уже открывал клиент, и понадобился второй флаг для
+    // порядка правил. Расширенный шаблон пути — третий такой случай.
+    //
+    // Флаг обязан быть заведён В ТРЁХ местах сразу, и половина связки хуже, чем
+    // ничего: объявлен, но не записан — проход побежит при каждом запуске;
+    // записан, но не прочитан — не побежит никогда. Отношение и проверяется.
+    const QString store = slurp(QStringLiteral("main/NekoGui_DataStore.hpp"));
+    const QString win   = slurp(QStringLiteral("ui/mainwindow.cpp"));
+    const QString flag  = QStringLiteral("routing_launcher_migrated");
+    is(QStringLiteral("объявление настроек прочитано"), !store.isEmpty());
+    is(QStringLiteral("окно прочитано"), !win.isEmpty());
+    is(QStringLiteral("флаг ремонта объявлен"), store.contains(flag));
+    is(QStringLiteral("флаг ремонта сохраняется в файл настроек"),
+       gui.contains(QStringLiteral("configItem(\"") + flag));
+    is(QStringLiteral("флаг ремонта читается при запуске"), win.contains(flag));
 
     std::fputs(QStringLiteral("\nпроверок %1, провалов %2\n").arg(checks).arg(fails).toUtf8().constData(),
                stdout);
