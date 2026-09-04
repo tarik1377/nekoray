@@ -257,8 +257,8 @@
         <translation>لینک های اشتراک گذاری نمایه را کپی کنید</translation>
     </message>
     <message>
-        <source>Copy profile share links (Neko Links)</source>
-        <translation>لینک های اشتراک گذاری نمایه را کپی کنید (لینک های Neko)</translation>
+        <source>Copy share links of all profiles (nekoray:// format)</source>
+        <translation>لینک های اشتراک گذاری نمایه را کپی کنید (قالب ‎nekoray://‎)</translation>
     </message>
     <message>
         <source>Warning</source>
@@ -734,7 +734,7 @@ https://matsuridayo.github.io/n-configuration/#vpn-tun</source>
     </message>
     <message>
         <source>Add a tun inbound to the profile startup, instead of using two processes.
-This needs to be run NekoBox with administrator privileges.</source>
+This needs GreenRhythm to be run with administrator privileges.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1271,8 +1271,8 @@ This needs to be run NekoBox with administrator privileges.</source>
         <translation>انتخاب همه</translation>
     </message>
     <message>
-        <source>Copy links of selected (Neko Links)</source>
-        <translation>کپی لینک های انتخاب شده (پیوندهای Neko)</translation>
+        <source>Copy share links of selected (nekoray:// format)</source>
+        <translation>کپی لینک های انتخاب شده (قالب ‎nekoray://‎)</translation>
     </message>
     <message>
         <source>Copy links of selected</source>
@@ -1441,8 +1441,8 @@ End: %2</source>
         <translation type="unfinished">تنظیمات تغییر کرد</translation>
     </message>
     <message>
-        <source>Please run NekoBox as admin</source>
-        <translation type="unfinished">لطفا Nekobox را با مجوز ادمین اجرا کنید</translation>
+        <source>Please run GreenRhythm as admin</source>
+        <translation type="unfinished">لطفا GreenRhythm را با مجوز ادمین اجرا کنید</translation>
     </message>
     <message>
         <source>Restart Proxy</source>

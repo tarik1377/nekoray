@@ -129,7 +129,7 @@
        <widget class="QCheckBox" name="single_core">
         <property name="toolTip">
          <string>Add a tun inbound to the profile startup, instead of using two processes.
-This needs to be run NekoBox with administrator privileges.</string>
+This needs GreenRhythm to be run with administrator privileges.</string>
         </property>
         <property name="text">
          <string>Internal Tun</string>

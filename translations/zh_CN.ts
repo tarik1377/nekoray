@@ -267,8 +267,8 @@
         <translation>复制成功</translation>
     </message>
     <message>
-        <source>Copy profile share links (Neko Links)</source>
-        <translation>复制分组内配置的分享链接 (Neko Links)</translation>
+        <source>Copy share links of all profiles (nekoray:// format)</source>
+        <translation>复制分组内配置的分享链接 (nekoray:// 格式)</translation>
     </message>
     <message>
         <source>Manually column width</source>
@@ -737,9 +737,9 @@ https://matsuridayo.github.io/n-configuration/#vpn-tun</translation>
     </message>
     <message>
         <source>Add a tun inbound to the profile startup, instead of using two processes.
-This needs to be run NekoBox with administrator privileges.</source>
+This needs GreenRhythm to be run with administrator privileges.</source>
         <translation>在配置文件启动时添加一个tun inbound，而不是使用两个进程。
-这需要以管理员权限运行NekoBox。</translation>
+这需要以管理员权限运行 GreenRhythm。</translation>
     </message>
 </context>
 <context>
@@ -1369,8 +1369,8 @@ End: %2</source>
         <translation>克隆 %1 个项目</translation>
     </message>
     <message>
-        <source>Copy links of selected (Neko Links)</source>
-        <translation>批量复制选中项目的分享链接 (Neko Links)</translation>
+        <source>Copy share links of selected (nekoray:// format)</source>
+        <translation>批量复制选中项目的分享链接 (nekoray:// 格式)</translation>
     </message>
     <message>
         <source>Allow other devices to connect</source>
@@ -1451,8 +1451,8 @@ Split by line.</source>
         <translation>重启程序生效。</translation>
     </message>
     <message>
-        <source>Please run NekoBox as admin</source>
-        <translation>请以管理员权限运行 NekoBox</translation>
+        <source>Please run GreenRhythm as admin</source>
+        <translation>请以管理员权限运行 GreenRhythm</translation>
     </message>
     <message>
         <source>Restart Proxy</source>

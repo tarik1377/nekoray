@@ -157,7 +157,7 @@
       <item>
        <widget class="QPushButton" name="copy_links_nkr">
         <property name="text">
-         <string>Copy profile share links (Neko Links)</string>
+         <string>Copy share links of all profiles (nekoray:// format)</string>
         </property>
        </widget>
       </item>

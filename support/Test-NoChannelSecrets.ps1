@@ -152,6 +152,26 @@ if (Test-Path -LiteralPath $tsDir) {
     }
 }
 
+# 4. Документация и витрина репозитория.
+#
+# Этой секции не было, и понадобилась она ровно в тот момент, когда появился
+# docs/CHANGES-vs-nekoray.md — описание форка для постороннего человека, то есть
+# самое сильное искушение объяснить, как устроен резервный канал. Заметки к
+# выпуску входят сюда намеренно: их читают все и раньше всего остального.
+$docs = @()
+foreach ($f in @('README.md', 'INTEGRATION.md', 'THIRD-PARTY-NOTICES.md')) {
+    $full = Join-Path $root $f
+    if (Test-Path -LiteralPath $full) { $docs += $full }
+}
+$docsDir = Join-Path $root 'docs'
+if (Test-Path -LiteralPath $docsDir) {
+    $docs += (Get-ChildItem -Path $docsDir -Filter *.md -Recurse -File | ForEach-Object { $_.FullName })
+}
+foreach ($d in $docs) {
+    $name = Split-Path -Leaf $d
+    foreach ($line in [System.IO.File]::ReadAllLines($d, [System.Text.Encoding]::UTF8)) { Check $name $line }
+}
+
 Write-Host ""
 if ($script:hits.Count -eq 0) {
     Write-Host "  ок - в текстах для человека про устройство канала ничего нет" -ForegroundColor Green

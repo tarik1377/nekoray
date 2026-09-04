@@ -267,8 +267,8 @@
         <translation>Скопировать ссылки на профиль</translation>
     </message>
     <message>
-        <source>Copy profile share links (Neko Links)</source>
-        <translation>Скопировать ссылки на профиль (Neko links)</translation>
+        <source>Copy share links of all profiles (nekoray:// format)</source>
+        <translation>Скопировать ссылки всех профилей (формат nekoray://)</translation>
     </message>
     <message>
         <source>Copied</source>
@@ -682,9 +682,9 @@ For more information, see the document &quot;Configuration/DNS&quot;.</source>
     </message>
     <message>
         <source>Add a tun inbound to the profile startup, instead of using two processes.
-This needs to be run NekoBox with administrator privileges.</source>
+This needs GreenRhythm to be run with administrator privileges.</source>
         <translation>Добавить inbound c Tun в конфигурацию профиля вместо того, чтобы использовать два отдельных процесса.
-Для этого необходимо запускать NekoBox c правами администратора.</translation>
+Для этого GreenRhythm нужно запускать с правами администратора.</translation>
     </message>
     <message>
         <source>Internal Tun</source>
@@ -1282,8 +1282,8 @@ https://github.com/tarik1377/nekoray/wiki/VPN-TUN</translation>
         <translation>Выбрать всё</translation>
     </message>
     <message>
-        <source>Copy links of selected (Neko Links)</source>
-        <translation>Скопировать ссылки для выбранных (Neko links)</translation>
+        <source>Copy share links of selected (nekoray:// format)</source>
+        <translation>Скопировать ссылки выбранных профилей (формат nekoray://)</translation>
     </message>
     <message>
         <source>Copy links of selected</source>
@@ -1359,8 +1359,8 @@ https://github.com/tarik1377/nekoray/wiki/VPN-TUN</translation>
         <translation>Импортирован(ы) %1 профиль(ей)</translation>
     </message>
     <message>
-        <source>Please run NekoBox as admin</source>
-        <translation>Пожалуйста, запустите NekoBox с правами администратора</translation>
+        <source>Please run GreenRhythm as admin</source>
+        <translation>Пожалуйста, запустите GreenRhythm с правами администратора</translation>
     </message>
     <message>
         <source>Current server is incompatible with Tun. Please stop the server first, enable Tun Mode, and then restart.</source>

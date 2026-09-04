@@ -24,11 +24,11 @@
 
 ## What is GreenRhythm?
 
-A cross-platform proxy client with Qt GUI, built on **sing-box 1.13.5** core. Designed for speed, privacy, and ease of use.
+A cross-platform proxy client with Qt GUI, built on the **sing-box 1.13.x** core. Designed for speed, privacy, and ease of use.
 
 ### Key Features
 
-- **sing-box 1.13.5** — latest stable core with VLESS+Reality performance
+- **sing-box core** — VLESS+Reality performance (exact version: see `go/cmd/nekobox_core/go.mod`)
 - **Smart routing** — RU sites direct, everything else through proxy
 - **TUN mode** — system-wide VPN with one click
 - **Auto config** — optimized defaults out of the box
@@ -129,15 +129,22 @@ Ad blocking:           geosite:category-ads-all
 ### Build
 
 ```bash
-# Build Go core
-cd go/cmd/nekobox_core
-go build -tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls"
+# libneko is wired in through a `replace` directive pointing next to the
+# repository, so it must be cloned first — `go build` fails without it.
+git clone --depth 1 https://github.com/MatsuriDayo/libneko.git ../libneko
 
-# Build Qt GUI
+# Build the Go core. Use the script rather than a bare `go build`: it sets the
+# output name the GUI looks for and stamps the sing-box version into the binary.
+GOOS=windows GOARCH=amd64 bash libs/build_go.sh
+
+# Build the Qt GUI
 mkdir build && cd build
 cmake -GNinja -DQT_VERSION_MAJOR=6 -DCMAKE_BUILD_TYPE=Release ..
 ninja
 ```
+
+Tests live in `test/` and `go/`; see [docs/CHANGES-vs-nekoray.md](docs/CHANGES-vs-nekoray.md)
+for what this fork adds on top of the original project.
 
 ---
 
@@ -146,7 +153,11 @@ ninja
 Built on the shoulders of giants:
 
 - [SagerNet/sing-box](https://github.com/SagerNet/sing-box) — core engine
-- [MatsuriDayo/nekoray](https://github.com/MatsuriDayo/nekoray) — original project (archived)
+- [MatsuriDayo/nekoray](https://github.com/MatsuriDayo/nekoray) — the original project this
+  client is forked from (archived upstream, last release 4.0.1). GreenRhythm is a derivative
+  work and stays under GPL-3.0; see [docs/CHANGES-vs-nekoray.md](docs/CHANGES-vs-nekoray.md)
+  for what we changed and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for everything else
+  we ship
 - [Qt](https://www.qt.io/) — GUI framework
 
 ---

@@ -1,2 +1,4 @@
-# Dependencies are now managed via go.mod (upstream sing-box v1.13.5).
-# No separate cloning of sing-box, sing-quic, or libneko is needed.
+# sing-box and sing-quic are managed via go.mod (the exact version lives there,
+# not here — hardcoding it once already left the binary reporting a stale one).
+# libneko is the exception: go.mod `replace`s it to a sibling directory, so it
+# must be cloned separately.
