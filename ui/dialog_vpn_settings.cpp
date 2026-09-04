@@ -143,7 +143,7 @@ void DialogVPNSettings::on_troubleshooting_clicked() {
     auto r = QMessageBox::information(this, tr("Troubleshooting"),
                                       tr("If you have trouble starting VPN, you can force reset greenrhythm_core process here.\n\n"
                                          "If still not working, see documentation for more information.\n"
-                                         "https://github.com/tarik1377/nekoray/wiki/VPN-TUN"),
+                                         "https://verdantvibe.ru"),
                                       tr("Reset"), tr("Cancel"), "",
                                       1, 1);
     if (r == 0) {

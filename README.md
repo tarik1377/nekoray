@@ -9,14 +9,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/tarik1377/nekoray/releases/latest">
-    <img src="https://img.shields.io/github/v/release/tarik1377/nekoray?style=for-the-badge&color=2ea043&label=Download" alt="Latest Release">
+  <a href="https://verdantvibe.ru/download">
+    <img src="https://img.shields.io/badge/Download-verdantvibe.ru-2ea043?style=for-the-badge" alt="Download">
   </a>
-  <a href="https://github.com/tarik1377/nekoray/releases">
-    <img src="https://img.shields.io/github/downloads/tarik1377/nekoray/total?style=for-the-badge&color=2ea043&label=Downloads" alt="Downloads">
-  </a>
-  <a href="https://github.com/tarik1377/nekoray/actions">
-    <img src="https://img.shields.io/github/actions/workflow/status/tarik1377/nekoray/build-nekoray-cmake.yml?style=for-the-badge&color=2ea043&label=Build" alt="Build">
+  <a href="https://t.me/VerdantVibeBot">
+    <img src="https://img.shields.io/badge/Telegram-VerdantVibeBot-2ea043?style=for-the-badge" alt="Telegram">
   </a>
 </p>
 
@@ -71,7 +68,7 @@ there is no lock-in and no telemetry.
 
 ### 1. Download
 
-Download the latest release from [**Releases**](https://github.com/tarik1377/nekoray/releases/latest).
+Download the latest release from [**verdantvibe.ru/download**](https://verdantvibe.ru/download).
 
 ### 2. Unzip & Run
 

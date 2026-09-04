@@ -717,11 +717,11 @@ For more information, see the document &quot;Configuration/DNS&quot;.</source>
         <source>If you have trouble starting VPN, you can force reset nekobox_core process here.
 
 If still not working, see documentation for more information.
-https://matsuridayo.github.io/n-configuration/#vpn-tun</source>
+https://verdantvibe.ru</source>
         <translation>如果您在启动 Tun 时遇到问题，您可以在此处强制重置 nekobox_core 进程。
 
 如果仍然无法正常工作，请参阅文档以获取更多信息。
-https://matsuridayo.github.io/n-configuration/#vpn-tun</translation>
+https://verdantvibe.ru</translation>
     </message>
     <message>
         <source>Reset</source>

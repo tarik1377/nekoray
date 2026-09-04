@@ -1147,11 +1147,11 @@ This needs GreenRhythm to be run with administrator privileges.</source>
         <source>If you have trouble starting VPN, you can force reset greenrhythm_core process here.
 
 If still not working, see documentation for more information.
-https://github.com/tarik1377/nekoray/wiki/VPN-TUN</source>
+https://verdantvibe.ru</source>
         <translation>Если возникли проблемы с запуском VPN, здесь можно принудительно перезапустить процесс greenrhythm_core.
 
 Если не помогло, см. документацию:
-https://github.com/tarik1377/nekoray/wiki/VPN-TUN</translation>
+https://verdantvibe.ru</translation>
     </message>
     <message>
         <source>Reset</source>
