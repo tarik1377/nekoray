@@ -282,6 +282,7 @@ namespace NekoGui {
         _add(new configItem("conn_stat_migrated", &conn_stat_migrated, itemType::boolean));
         _add(new configItem("routing_quic_migrated", &routing_quic_migrated, itemType::boolean));
         _add(new configItem("routing_games_migrated", &routing_games_migrated, itemType::boolean));
+        _add(new configItem("routing_launcher_migrated", &routing_launcher_migrated, itemType::boolean));
         _add(new configItem("log_ignore", &log_ignore, itemType::stringList));
         _add(new configItem("start_minimal", &start_minimal, itemType::boolean));
         _add(new configItem("max_log_line", &max_log_line, itemType::integer));
@@ -424,6 +425,8 @@ namespace NekoGui {
             //    which looks exactly like the bug we were trying to fix.
             // 2. Games and their auth/anti-cheat helpers go "bypass", not "direct":
             //    "direct" still re-injects packets through the TUN adapter, which resets
+            //    long-lived game connections. Every helper must share the game's exit IP
+            //    or Xbox/Epic auth fails (seen as Sea of Thieves "Lavenderbeard").
             // 3. НО ЛАУНЧЕР EPIC — НЕ ИГРА, И ЕМУ НАПРЯМУЮ НЕЛЬЗЯ. Сеть Epic не
             //    пускает с прямого адреса: лаунчер отвечает «ошибка соединения» и
             //    предлагает автономный режим. Проверено по журналу — все его
@@ -433,9 +436,25 @@ namespace NekoGui {
             //    Помощник EpicOnlineServicesUserHelper.exe убран по той же причине,
             //    а заодно потому, что за всё наблюдение не встретился ни разу: это
             //    было угаданное имя, а угаданные имена мы больше не возим.
-            //    long-lived game connections. Every helper must share the game's exit IP
-            //    or Xbox/Epic auth fails (seen as Sea of Thieves "Lavenderbeard").
-            custom = "{\"rules\":[{\"outbound\":\"bypass\",\"process_name\":[\"SquadGame-Win64-Shipping.exe\",\"SquadGame.exe\",\"Squad.exe\",\"EasyAntiCheat.exe\",\"EasyAntiCheat_EOS.exe\",\"EACLauncher.exe\",\"BEService.exe\",\"BEService_x64.exe\",\"SoTGame.exe\",\"SoTLauncher.exe\",\"UnrealCEFSubProcess.exe\",\"XboxPcAppFT.exe\",\"XboxPcApp.exe\",\"GameBarPresenceWriter.exe\",\"GamingServices.exe\",\"GamingServicesNet.exe\",\"XboxIdentityProvider.exe\",\"steam.exe\",\"steamwebhelper.exe\",\"steamservice.exe\",\"BsgLauncher.exe\",\"EscapeFromTarkov.exe\"]},{\"outbound\":\"bypass\",\"process_path_regex\":[\"(?i)-Win64-Shipping\\\\.exe$\",\"(?i)-WinGDK-Shipping\\\\.exe$\"]},{\"network\":\"icmp\",\"outbound\":\"bypass\"},{\"network\":\"udp\",\"port\":443,\"ip_cidr\":[\"8.8.8.8/32\",\"8.8.4.4/32\",\"1.1.1.1/32\",\"1.0.0.1/32\",\"9.9.9.9/32\",\"77.88.8.8/32\",\"77.88.8.1/32\"],\"outbound\":\"direct\"},{\"network\":\"udp\",\"port\":443,\"outbound\":\"block\"},{\"protocol\":\"quic\",\"outbound\":\"block\"},{\"outbound\":\"proxy\",\"process_name\":[\"Discord.exe\",\"discord.exe\",\"Telegram.exe\",\"telegram.exe\",\"Codex.exe\",\"codex.exe\",\"Claude.exe\",\"claude.exe\",\"claude-code.exe\"]}]}";
+            // 4. ШАБЛОН ЛОВИТ «-Shipping.exe», А НЕ «-Win64-Shipping.exe».
+            //    Раньше здесь стояли две узкие строки — -Win64-Shipping и
+            //    -WinGDK-Shipping, — и они ловили только сам исполняемый файл игры.
+            //    У игры на Unreal рядом с ним стоит второй, СВОЙ лаунчер, и суффикс
+            //    платформы в его имени отсутствует: у Wardogs это
+            //    WardogsLauncher-Shipping.exe. Под старый шаблон он не подходил и
+            //    уходил В ТУННЕЛЬ, тогда как сама игра шла мимо него.
+            //
+            //    Ровно этот раскол пункт 2 и запрещает. Лаунчер разговаривал с
+            //    сервером античита с зарубежного адреса, игра предъявляла
+            //    российский — и снаружи это выглядит как вечный экран загрузки, где
+            //    жаловаться не на что: сеть цела, сервер жив, обход «настроен».
+            //    Дописать имя игры руками в таком положении бесполезно вдвойне —
+            //    имя и так уже ловилось шаблоном, а ломала не игра, а её лаунчер.
+            //
+            //    Суффикс -Shipping — это конфигурация сборки Unreal, а не имя
+            //    платформы, и он есть у обоих. Одна строка вместо двух покрывает и
+            //    прежние два случая, и лаунчеры игр, которых мы ещё не видели.
+            custom = "{\"rules\":[{\"outbound\":\"bypass\",\"process_name\":[\"SquadGame-Win64-Shipping.exe\",\"SquadGame.exe\",\"Squad.exe\",\"EasyAntiCheat.exe\",\"EasyAntiCheat_EOS.exe\",\"EACLauncher.exe\",\"BEService.exe\",\"BEService_x64.exe\",\"SoTGame.exe\",\"SoTLauncher.exe\",\"UnrealCEFSubProcess.exe\",\"XboxPcAppFT.exe\",\"XboxPcApp.exe\",\"GameBarPresenceWriter.exe\",\"GamingServices.exe\",\"GamingServicesNet.exe\",\"XboxIdentityProvider.exe\",\"steam.exe\",\"steamwebhelper.exe\",\"steamservice.exe\",\"BsgLauncher.exe\",\"EscapeFromTarkov.exe\"]},{\"outbound\":\"bypass\",\"process_path_regex\":[\"(?i)-Shipping\\\\.exe$\"]},{\"network\":\"icmp\",\"outbound\":\"bypass\"},{\"network\":\"udp\",\"port\":443,\"ip_cidr\":[\"8.8.8.8/32\",\"8.8.4.4/32\",\"1.1.1.1/32\",\"1.0.0.1/32\",\"9.9.9.9/32\",\"77.88.8.8/32\",\"77.88.8.1/32\"],\"outbound\":\"direct\"},{\"network\":\"udp\",\"port\":443,\"outbound\":\"block\"},{\"protocol\":\"quic\",\"outbound\":\"block\"},{\"outbound\":\"proxy\",\"process_name\":[\"Discord.exe\",\"discord.exe\",\"Telegram.exe\",\"telegram.exe\",\"Codex.exe\",\"codex.exe\",\"Claude.exe\",\"claude.exe\",\"claude-code.exe\"]}]}";
         }
         if (!Preset::SingBox::DomainStrategy.contains(domain_strategy)) domain_strategy = "";
         if (!Preset::SingBox::DomainStrategy.contains(outbound_domain_strategy)) outbound_domain_strategy = "";

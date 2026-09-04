@@ -701,6 +701,20 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
             MW_show_log(tr("Маршрутизация обновлена: игры и звонки теперь идут мимо туннеля раньше блокировок (схем: %1).").arg(migrated));
     }
 
+    // Третий одноразовый ремонт, и снова свой флаг. Проход тот же самый: он
+    // дописывает в схему недостающие значения из пресета. Новым стало значение —
+    // шаблон пути расширен до «-Shipping.exe», потому что прежний ловил только
+    // сам файл игры и пропускал лаунчер, который Unreal кладёт рядом с ней.
+    // Игра шла мимо туннеля, лаунчер — через него, и разъехавшиеся адреса давали
+    // вечную загрузку при полностью исправной сети.
+    if (!NekoGui::dataStore->routing_launcher_migrated) {
+        const int migrated = NekoGui::Routing::MigrateGamesAll();
+        NekoGui::dataStore->routing_launcher_migrated = true;
+        NekoGui::dataStore->Save();
+        if (migrated > 0)
+            MW_show_log(tr("Маршрутизация обновлена: лаунчеры игр теперь идут тем же путём, что и сама игра (схем: %1).").arg(migrated));
+    }
+
     TM_auto_update_subsctiption = new QTimer;
     TM_auto_update_subsctiption_Reset_Minute = [&](int m) {
         TM_auto_update_subsctiption->stop();
