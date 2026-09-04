@@ -39,6 +39,20 @@ static void is(const QString &what, bool ok) {
                stdout);
 }
 
+/**
+ * Тело функции целиком: от заголовка до закрывающей скобки в нулевой колонке.
+ *
+ * Прежде здесь бралось фиксированное число символов — 320 для Go и 2600 для
+ * C++, — подобранное под тогдашний вид файлов. Набор, который стережёт тихое
+ * расхождение двух копий правила, умирал бы ровно тем же способом: молча и с
+ * зелёными проверками, стоит функции подрасти или переехать.
+ */
+static QString functionBody(const QString &src, int at) {
+    if (at < 0) return {};
+    const int end = src.indexOf(QStringLiteral("\n}"), at);
+    return end < 0 ? src.mid(at) : src.mid(at, end - at);
+}
+
 static QString slurp(const QString &path) {
     for (const QString &prefix: {QStringLiteral(""), QStringLiteral("../"), QStringLiteral("../../")}) {
         QFile f(prefix + path);
@@ -51,9 +65,20 @@ int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
 
     const QString go = slurp(QStringLiteral("go/cmd/nekobox_core/neko_config_transform.go"));
-    const QString ui = slurp(QStringLiteral("ui/mainwindow.cpp"));
+    // Файл ищется по содержимому, а не по имени: mainwindow.cpp разрезан на
+    // части, и диагностика уехала в свою. Набор, привязанный к имени файла,
+    // сломался бы при следующем таком переезде — и это уже случилось.
+    QString ui;
+    for (const QString &candidate: {QStringLiteral("ui/Diagnostics.cpp"),
+                                    QStringLiteral("ui/mainwindow.cpp")}) {
+        const QString text = slurp(candidate);
+        if (text.contains(QStringLiteral("MainWindow::tun_diagnostics_block"))) {
+            ui = text;
+            break;
+        }
+    }
     is(QStringLiteral("исходник ядра прочитан"), !go.isEmpty());
-    is(QStringLiteral("исходник окна прочитан"), !ui.isEmpty());
+    is(QStringLiteral("исходник с блоком отчёта найден"), !ui.isEmpty());
     if (go.isEmpty() || ui.isEmpty()) {
         std::fputs("не нашёл исходники — запускать из дерева сборки\n", stdout);
         return 1;
@@ -62,7 +87,7 @@ int main(int argc, char **argv) {
     // Что ядро подменяет: тело normalizeTunStack.
     const int at = go.indexOf(QStringLiteral("func normalizeTunStack"));
     is(QStringLiteral("normalizeTunStack найдена в ядре"), at >= 0);
-    const QString fn = at < 0 ? QString() : go.mid(at, 320);
+    const QString fn = functionBody(go, at);
 
     const bool goMapsGvisor = fn.contains(QStringLiteral("\"gvisor\"")) && fn.contains(QStringLiteral("\"mixed\""));
     is(QStringLiteral("ядро подменяет gvisor на mixed"), goMapsGvisor);
@@ -73,7 +98,7 @@ int main(int argc, char **argv) {
     // Та же подмена обязана быть в отчёте.
     const int ub = ui.indexOf(QStringLiteral("MainWindow::tun_diagnostics_block"));
     is(QStringLiteral("блок отчёта найден в окне"), ub >= 0);
-    const QString block = ub < 0 ? QString() : ui.mid(ub, 2600);
+    const QString block = functionBody(ui, ub);
 
     is(QStringLiteral("отчёт знает про подмену gvisor на mixed"),
        block.contains(QStringLiteral("\"gvisor\"")) && block.contains(QStringLiteral("\"mixed\"")));

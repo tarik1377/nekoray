@@ -226,65 +226,32 @@ jobs:
           cd ..
           ./libs/deploy_windows64.sh
 
+      # ОДИН СПИСОК НАБОРОВ, И ОН ЖИВЁТ В CMakeLists.
+      #
+      # Прежде цели перечислялись руками здесь и ещё в двух местах этого файла.
+      # Заведи кто-нибудь новый набор и забудь одну из строк — он не выполнился
+      # бы ни разу, и никто бы не узнал: непройденная проверка неотличима от
+      # отсутствующей. Ровно так тест на обход каталога в обновлении и пролежал
+      # невыполненным.
+      #
+      # ctest называет каждый набор поимённо, поэтому причина отказа по-прежнему
+      # видна без чтения журнала — ради этого их когда-то и развели по шагам.
       - name: Run test suites
         shell: bash
         env:
           DL_QT_VER: "6.7"
         run: |
-          # Наборы собираются и гоняются здесь, а не «когда-нибудь руками».
-          # Каждый из них закрывает место, где ошибка не отказывает, а молчит:
-          # разбор вывода резервного канала (утечка в журнал), хранилище
-          # реквизитов (потеря идентификатора устройства) и сборка файла
-          # автонастройки для macOS (трафик уходит не туда).
           source libs/env_qtsdk.sh $PWD/qtsdk/Qt
-          cd build
-          ninja relaytrace_test credentials_test pac_test relay_component_test tun_exclude_test tun_report_test route_order_test program_trouble_test port_health_test
-          cd ..
-          # Запуск из временного каталога: credentials_test пишет device.dat
-          # рядом с собой, и делать это в дереве сборки незачем.
-          mkdir -p build/testrun
-          cp build/relaytrace_test.exe build/credentials_test.exe build/pac_test.exe build/relay_component_test.exe build/testrun/
-          cd build/testrun
-          ./relaytrace_test.exe
-          ./credentials_test.exe
-          ./pac_test.exe
-          ./relay_component_test.exe
-          # Файл автонастройки исполняется настоящим движком: разбор текста не
-          # отвечает на вопрос, разбирается ли он вообще и что возвращает.
-          node ../../support/Test-Pac.js pac-sample.pac
+          cmake --build build --target build-tests
+          cd build && ctest --output-on-failure
 
-      # ОТДЕЛЬНЫМ ШАГОМ И ИЗ КОРНЯ — так же, как на macOS, где он проходит.
-      #
-      # Внутри общего шага он звался из build/testrun и дважды подряд ронял
-      # работу, а по имени шага «Run test suites» причина не отличалась от любой
-      # другой. Набор читает файлы дерева; запускать его оттуда, где лежат
-      # остальные, значит держать лишнюю переменную ради ничего.
-      - name: Test the tunnel exclusions against our own ranges
+      # Файл автонастройки исполняется настоящим движком: разбор текста не
+      # отвечает на вопрос, разбирается ли он вообще и что возвращает.
+      # pac-sample.pac оставляет после себя pac_test.
+      - name: Test — исполнение файла автонастройки
         shell: bash
-        env:
-          DL_QT_VER: "6.7"
-        run: |
-          source libs/env_qtsdk.sh $PWD/qtsdk/Qt
-          ./build/tun_exclude_test.exe
+        run: node support/Test-Pac.js build/pac-sample.pac
 
-      # СВОИМ ШАГОМ, как и на маке. Внутри соседнего он уже стоял, и это
-      # повторяло ошибку, от которой предостерегает комментарий выше:
-      # упади он там — в списке шагов значилось бы «tunnel exclusions», и
-      # причина не отличалась бы от чужой.
-      - name: Test the TUN report against the core's stack rule
-        shell: bash
-        env:
-          DL_QT_VER: "6.7"
-        run: |
-          source libs/env_qtsdk.sh $PWD/qtsdk/Qt
-          ./build/tun_report_test.exe
-          ./build/route_order_test.exe
-          ./build/program_trouble_test.exe
-          ./build/port_health_test.exe
-
-      # Оба только читают дерево: ни сети, ни прав администратора. До этого
-      # они лежали в support/ и не вызывались ниоткуда, то есть стерегли
-      # ровно ничего — включая запрет описывать устройство канала в текстах.
       - name: Сторожа исходников
         shell: pwsh
         run: |
@@ -392,61 +359,28 @@ jobs:
           cmake -GNinja -DQT_VERSION_MAJOR=6 -DCMAKE_BUILD_TYPE=Release .. 2>&1 | tee ../macos-cmake.log
           ninja -j3 2>&1 | tee ../macos-build.log
 
-      # ШАГИ РАЗВЕДЕНЫ ПОИМЁННО. Один общий шаг сообщал только «Run test suites
-      # -> failure», и по этому нельзя понять, что именно случилось: не собрался
-      # набор, упала проверка или не нашёлся node. Имя шага видно в API прогона,
-      # а вот журнал — нет: он требует прав на репозиторий.
-      - name: Build test suites
+      # ТОТ ЖЕ СПИСОК, ЧТО И НА WINDOWS, И ЖИВЁТ ОН В CMakeLists.
+      #
+      # Прежде здесь стояло девять отдельных шагов с перечисленными руками
+      # целями, и шесть из них не могли упасть: без "shell: bash" GitHub даёт
+      # bash без pipefail, статус шага равнялся статусу tee, то есть нулю при
+      # любом исходе. Проверки маршрутизации, исключений туннеля и здоровья
+      # портов на маке не проверяли ничего.
+      #
+      # ctest возвращает ненулевой код при первом же провале и называет набор
+      # поимённо — то, ради чего шаги когда-то и разводили.
+      - name: Run test suites
         shell: bash
         run: |
-          set -o pipefail
-          cd build
-          ninja relaytrace_test credentials_test pac_test relay_component_test tun_exclude_test tun_report_test route_order_test program_trouble_test port_health_test 2>&1 | tee ../macos-tests-build.log
-          mkdir -p testrun
-          cp relaytrace_test credentials_test pac_test relay_component_test testrun/
+          set -eo pipefail
+          cmake --build build --target build-tests
+          cd build && ctest --output-on-failure 2>&1 | tee ../macos-tests.log
 
-      - name: Test — разбор вывода резерва
-        shell: bash
-        run: cd build/testrun && ./relaytrace_test 2>&1 | tee ../../macos-test-relaytrace.log
-
-      # На маке запечатка своя (от идентификатора машины), и набор проверяет
-      # именно её: «на диске нет читаемых ключей» на разных платформах держится
-      # на разном коде.
-      - name: Test — хранилище реквизитов
-        shell: bash
-        run: cd build/testrun && ./credentials_test 2>&1 | tee ../../macos-test-credentials.log
-
-      - name: Test — сборка файла автонастройки
-        shell: bash
-        run: cd build/testrun && ./pac_test 2>&1 | tee ../../macos-test-pac.log
-
-      - name: Test the relay component contract
-        shell: bash
-        run: cd build/testrun && ./relay_component_test 2>&1 | tee ../../macos-test-component.log
-
-      - name: Test the tunnel exclusions against our own ranges
-        shell: bash
-        run: ./build/tun_exclude_test 2>&1 | tee macos-test-tunexclude.log
-
-      - name: Test the TUN report against the core's stack rule
-        shell: bash
-        run: ./build/tun_report_test 2>&1 | tee macos-test-tunreport.log
-
-      - name: Test the routing order — an explicit exception beats a category
-        shell: bash
-        run: ./build/route_order_test 2>&1 | tee macos-test-routeorder.log
-
-      - name: Test the trouble finder — one connection must not count as thirty
-        shell: bash
-        run: ./build/program_trouble_test 2>&1 | tee macos-test-programtrouble.log
-
-      - name: Test port health — the reservation that breaks other apps silently
-        shell: bash
-        run: ./build/port_health_test 2>&1 | tee macos-test-porthealth.log
-
+      # Файл автонастройки исполняется настоящим движком: разбор текста не
+      # отвечает на вопрос, разбирается ли он вообще и что возвращает.
       - name: Test — исполнение файла автонастройки
         shell: bash
-        run: cd build/testrun && node ../../support/Test-Pac.js pac-sample.pac
+        run: node support/Test-Pac.js build/pac-sample.pac
 
       - name: Download Go artifacts
         uses: actions/download-artifact@v4
@@ -638,7 +572,7 @@ jobs:
           # ограниченное число, и первый же прогон это показал: весь запас
           # съел хвост успешного журнала конфигурации, а настоящая причина —
           # падение набора проверок — не поместилась вовсе.
-          for f in macos-cmake.log macos-build.log macos-tests-build.log                    macos-test-relaytrace.log macos-test-credentials.log macos-test-pac.log                    macos-test-component.log macos-test-tunexclude.log macos-test-tunreport.log macos-test-routeorder.log macos-deploy.log; do
+          for f in macos-cmake.log macos-build.log macos-tests.log macos-deploy.log; do
             [ -f "$f" ] || continue
             hits=$(grep -nE "error:|Error|FAILED|fatal|ПЛОХО|undefined|No such file" "$f" | head -8 || true)
             if [ -n "$hits" ]; then
@@ -652,7 +586,7 @@ jobs:
           # Раньше брался самый свежий по времени, и это давало не тот файл:
           # успешный набор проверок пишется позже, чем падает сборка.
           last=""
-          for f in macos-cmake.log macos-build.log macos-tests-build.log                    macos-test-relaytrace.log macos-test-credentials.log                    macos-test-pac.log macos-test-component.log macos-test-tunexclude.log macos-test-tunreport.log macos-test-routeorder.log macos-deploy.log; do
+          for f in macos-cmake.log macos-build.log macos-tests.log macos-deploy.log; do
             [ -f "$f" ] && last="$f"
           done
           if [ -n "$last" ]; then

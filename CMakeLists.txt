@@ -202,6 +202,16 @@ set(PROJECT_SOURCES
 
         ui/mainwindow_grpc.cpp
         ui/mainwindow.cpp
+        # Части главного окна. Выделены из mainwindow.cpp: он дорос до 4600
+        # строк при принятом здесь пределе в 800. Переехали тела методов,
+        # объявления остались в mainwindow.h.
+        ui/NetworkRepair.cpp
+        ui/Diagnostics.cpp
+        ui/Autopilot.cpp
+        ui/Onboarding.cpp
+        ui/LogAndConnections.cpp
+        ui/SubscriptionUi.cpp
+        ui/mainwindow_common.hpp
         ui/mainwindow.h
         ui/mainwindow.ui
 
@@ -539,3 +549,68 @@ target_include_directories(macos_mode_preview PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_BINARY_DIR}/greenrhythm_autogen/include)
 target_link_libraries(macos_mode_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+
+# ЗАПУСК ПРОВЕРОК: один список, а не четыре.
+#
+# Наборов девять, и все они EXCLUDE_FROM_ALL — то есть `ninja` их не собирает, а
+# `ctest` не запускал вовсе: ни enable_testing, ни add_test здесь не было.
+# Список целей при этом был перепечатан руками в CI, в двух разных местах.
+# Заведи кто-нибудь десятый набор и забудь про одну из тех строк — набор не
+# выполнится ни разу, и никто об этом не узнает: непройденная проверка выглядит
+# точно так же, как отсутствующая.
+#
+# Теперь список живёт здесь. `ninja build-tests && ctest --output-on-failure`
+# собирает и гоняет всё; CI зовёт то же самое.
+enable_testing()
+
+set(GR_TEST_TARGETS
+        relaytrace_test
+        credentials_test
+        relay_component_test
+        pac_test
+        tun_exclude_test
+        tun_report_test
+        route_order_test
+        program_trouble_test
+        port_health_test
+)
+
+add_custom_target(build-tests DEPENDS ${GR_TEST_TARGETS})
+
+# Рабочий каталог оставлен по умолчанию — каталогом сборки, и это не мелочь.
+# Наборы, читающие файлы дерева (TunReportTest сверяет правило между Go и C++),
+# сами пробуют префиксы "", "../", "../../" и оттуда всё находят. А вот
+# pac_test пишет рядом с собой pac-sample.pac, который потом исполняет
+# support/Test-Pac.js, и credentials_test пишет device.dat: запусти мы их из
+# корня — они бы мусорили в исходниках.
+# Наборам нужен Qt рядом. Запуская их руками, про это помнишь; ctest про это не
+# знает, и без подсказки все девять падают с «библиотека не найдена» — то есть
+# выглядят как сломанные, ничего не проверив.
+set(GR_TEST_QT_BIN "")
+if (WIN32)
+    get_target_property(GR_QT_CORE_DLL Qt${QT_VERSION_MAJOR}::Core IMPORTED_LOCATION_RELEASE)
+    if (NOT GR_QT_CORE_DLL)
+        get_target_property(GR_QT_CORE_DLL Qt${QT_VERSION_MAJOR}::Core IMPORTED_LOCATION)
+    endif ()
+    if (GR_QT_CORE_DLL)
+        get_filename_component(GR_TEST_QT_BIN "${GR_QT_CORE_DLL}" DIRECTORY)
+    endif ()
+endif ()
+
+foreach (gr_test IN LISTS GR_TEST_TARGETS)
+    add_test(NAME ${gr_test} COMMAND ${gr_test})
+    if (GR_TEST_QT_BIN)
+        if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.22)
+            # Дописывает к существующему PATH, ничего не затирая.
+            set_tests_properties(${gr_test} PROPERTIES
+                    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${GR_TEST_QT_BIN}")
+        else ()
+            # На старом CMake свойство ENVIRONMENT задаёт переменную целиком,
+            # поэтому системный PATH приходится дописывать самим. Точка с запятой
+            # для CMake — разделитель списка, отсюда экранирование.
+            string(REPLACE ";" "\;" GR_SYS_PATH "$ENV{PATH}")
+            set_tests_properties(${gr_test} PROPERTIES
+                    ENVIRONMENT "PATH=${GR_TEST_QT_BIN}\;${GR_SYS_PATH}")
+        endif ()
+    endif ()
+endforeach ()
