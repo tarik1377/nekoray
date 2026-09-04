@@ -315,6 +315,9 @@
             </item>
             <item>
              <widget class="QComboBox" name="language">
+              <property name="toolTip">
+               <string>Полностью переведён только русский интерфейс. Остальные языки унаследованы от исходного проекта и покрывают меньше половины строк.</string>
+              </property>
               <item>
                <property name="text">
                 <string notr="true">System</string>

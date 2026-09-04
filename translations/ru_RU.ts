@@ -217,7 +217,19 @@
     </message>
     <message>
         <source>Mixed (SOCKS+HTTP) Listen Port</source>
-        <translation type="unfinished"></translation>
+        <translation>Порт локального входа (SOCKS+HTTP)</translation>
+    </message>
+    <message>
+        <source>Auto-failover (fastest server)</source>
+        <translation>Автопереход на самый быстрый сервер</translation>
+    </message>
+    <message>
+        <source>Connect to the fastest server in the current group and automatically switch over if it dies (sing-box urltest). Internal protocols only.</source>
+        <translation>Подключаться к самому быстрому серверу текущей группы и переходить на другой, если он перестал отвечать (urltest в sing-box). Только для встроенных протоколов.</translation>
+    </message>
+    <message>
+        <source>Disabling TLS verification exposes subscription downloads to interception on hostile networks. Only enable this if you trust your connection.</source>
+        <translation>Без проверки TLS загрузку подписки можно перехватить в чужой сети. Включайте, только если доверяете подключению.</translation>
     </message>
 </context>
 <context>
@@ -449,6 +461,221 @@
         <source>Confirm</source>
         <translation>Подтвердить</translation>
     </message>
+    <message>
+        <source>http path (ws/http/masked http)
+serviceName (gRPC)
+key (QUIC)</source>
+        <translation>путь http (ws/http/маскировка под http)
+serviceName (gRPC)
+key (QUIC)</translation>
+    </message>
+    <message>
+        <source>http host (ws/http/masked http)
+security (QUIC)</source>
+        <translation>хост http (ws/http/маскировка под http)
+security (QUIC)</translation>
+    </message>
+    <message>
+        <source>header masking type (tcp/quic)</source>
+        <translation>тип маскировки заголовка (tcp/quic)</translation>
+    </message>
+</context>
+<context>
+    <name>DialogGreenRhythm</name>
+    <message>
+        <source>Зелёный Ритм</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не подключено</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подключение</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Быстрое подключение</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Выберет сервер сам и подключится — не заглядывая в список.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подключить</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Резервное подключение</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Запасной путь на случай, когда обычные серверы перестают отвечать. Скорость ниже обычной; игры и звонки через него не идут.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Открыть…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Автопилот: сам сменит сервер, если этот перестал отвечать</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Игры и звонки мимо туннеля</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Игры и звонки через туннель работают плохо, и это не поломка. Их пакеты идут кругом через другую страну, а игровые службы не любят, когда адрес меняется на полпути: список серверов может не грузиться, пинг — показываться прочерком.
+
+Отмеченные здесь программы пойдут напрямую, со своим настоящим адресом.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Пока пусто — нажмите «Выбрать из запущенных…»</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Выбрать из запущенных…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Запустите игру, потом откройте список: имя файла у каждой игры своё, и вписанное наугад не совпадёт ни с чем.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подписка</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Продлить или сменить тариф</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Откроется страница оплаты в браузере.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Открыть</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Перенести на телефон</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Код на экране — навести камерой из приложения на телефоне.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Показать код</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Если что-то не работает</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Что-то не работает</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Назовите программу — посмотрю, что с ней происходит, и предложу лечение. Ничего вписывать не нужно.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Разобраться</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Диагностика</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Проверит интернет, имена, сервер и проход трафика — и скажет, что именно сломалось, вместо общего «нет соединения».</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Проверить</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Починить сеть</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Вернёт системные настройки, сбросит кэш имён и покажет сторонние туннели. Система спросит пароль администратора.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Вернёт системные настройки и сбросит кэш имён. Чужие туннели не трогает.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Починить</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сторонние туннели</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Покажет чужие туннели и их маршруты. Ничего не выключается.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Показать</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Поддержка в Telegram</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Напишите нам. Отчёт диагностики попросят первым делом — соберите его заранее.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Написать</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Изменения вступят в силу при следующем подключении.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сохранить</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Закрыть</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подключено</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Запущенные программы</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Отмеченные пойдут мимо туннеля. Здесь только то, что запущено прямо сейчас, — поэтому игру надо запустить до открытия списка.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Поиск по названию</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Добавить отмеченные</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Отмена</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>DialogHotkey</name>
@@ -471,6 +698,77 @@
     <message>
         <source>System Proxy</source>
         <translation>Режим системного прокси</translation>
+    </message>
+</context>
+<context>
+    <name>DialogMacosMode</name>
+    <message>
+        <source>Как вести трафик</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Выберите, как вести трафик</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Поменять можно в любой момент — это не разовое решение.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Туннель</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Через канал идёт всё</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>ничего не проходит мимо — ни игры, ни терминал</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>работает так же, как на Windows</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Цена: macOS спрашивает пароль администратора при каждом включении и выключении. Это ограничение системы — кэша прав между запусками там нет.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Включить туннель</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Системный прокси</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Через канал — браузеры и обычные программы</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>пароль не спрашивается вовсе</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>домашняя сеть и принтер остаются доступны</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Цена: терминал (curl, git, ssh), Docker и часть игр пойдут МИМО канала — они системный прокси не уважают.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Включить прокси</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Если рядом поднят туннель до дома или до работы — мы его не выключаем. Приложение покажет найденное в «Диагностике соединения» и ничего не тронет без вашего согласия.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Решу позже</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -625,11 +923,11 @@
     </message>
     <message>
         <source>Bypass LAN and China</source>
-        <translation>Пропускать LAN и китайские ресурсы</translation>
+        <translation type="vanished">Пропускать LAN и китайские ресурсы</translation>
     </message>
     <message>
         <source>Global</source>
-        <translation>Глобально</translation>
+        <translation type="vanished">Глобально</translation>
     </message>
     <message>
         <source>Load</source>
@@ -663,10 +961,133 @@
         <source>This is especially important and it is recommended to use the default value of &quot;localhost&quot;.
 If the default value does not work, try changing it to &quot;223.5.5.5&quot;.
 For more information, see the document &quot;Configuration/DNS&quot;.</source>
-        <translation type="unfinished"></translation>
+        <translation>Здесь важно оставить значение по умолчанию — «localhost».
+Если оно не работает, попробуйте «223.5.5.5».
+Подробности — в документации, раздел «Configuration/DNS».</translation>
     </message>
     <message>
         <source>Final DNS Out</source>
+        <translation>Конечный выход для DNS</translation>
+    </message>
+    <message>
+        <source>Россия: прямой RU-трафик, блок QUIC</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Всё через прокси</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>DialogRelayActivate</name>
+    <message>
+        <source>Резервное подключение</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Возьмите код в личном кабинете. Он одноразовый и живёт 5 минут.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>КОД</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Получить код на сайте</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Резервное подключение работает там, где обычные серверы перестают проходить. Сайты, почта и переписка идут через него; звонки и игры — нет, он переносит данные слишком медленно для разговора. Для них есть отдельная галка в настройках профиля.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Отключить</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Активировать</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Закрыть</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Введите код из личного кабинета.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Взять код</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Проверяем…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Проверяем код…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Готово, но профиль завести не удалось — добавьте его вручную.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Всё на месте, установлена последняя версия.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Готово. Резервное подключение добавлено в список.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подписка подтверждена, профиль добавлен.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Нажмите «Загрузить компонент», чтобы повторить.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Загрузка компонента: %1%</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Отключить резервное подключение</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ключи этого устройства будут забыты. Чтобы включить снова, понадобится новый код из личного кабинета.
+
+Отключить?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Отмена</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Отключено. Ключи этого устройства забыты.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не удалось стереть ключи — они остались на этом устройстве. Попробуйте ещё раз.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Продлить</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Управлять устройствами</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Загрузить компонент</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Проверить обновления</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -739,6 +1160,155 @@ https://github.com/tarik1377/nekoray/wiki/VPN-TUN</translation>
     <message>
         <source>Cancel</source>
         <translation>Отмена</translation>
+    </message>
+    <message>
+        <source>Не заводить в туннель (маршруты ОС)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сети, которые останутся доступны в обход туннеля: домашний VPN, рабочая сеть, NAS. Это таблица маршрутов системы, а не правило внутри туннеля.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подставить из обнаруженных</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сторонних туннелей не найдено.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Через %1 идёт весь трафик. Два полных туннеля на одной машине несовместимы: его сети не подставлены, и включать наш туннель вместе с ним не стоит.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>DialogWhatBroke</name>
+    <message>
+        <source>Что-то не работает</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Закрыть</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Что именно не работает?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Выберите программу, с которой беда. Запустите её заранее — здесь показано только то, что работает прямо сейчас.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Поиск по названию</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Посмотреть, что с ней происходит</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Переключитесь в программу и нажмите в ней то, что не выходит: обновите список серверов, наберите собеседника, откройте страницу.
+
+Это окно можно свернуть — наблюдение не прервётся. Возвращайтесь, когда попробуете.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Я попробовал — покажите, что видно</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>
+
+Переподключаемся. Потом снова нажмите в программе то, что не выходило.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Переподключить</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Готово — осталось переподключиться</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>«%1» больше не будет выходить через VPN. Правила задаются в момент подключения, поэтому нужно переподключиться — связь прервётся на пару секунд.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Выбрать другую программу</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Смотрю, что делает «%1»</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Пока ничего не замечено.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Замечено попыток связаться: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ничего не увидел</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>За это время «%1» ни разу не пыталась связаться. Скорее всего она ещё не пробовала — вернитесь в неё и нажмите то, что не выходит.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>
+
+Зато через VPN сейчас выходят: %1. Может быть, дело в одной из них?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>С нашей стороны всё в порядке</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>«%1» и так выходит в интернет напрямую, минуя нас: %2 попыток, и ни одна не шла через VPN. Значит причина не в подключении — стоит проверить саму программу, её сервер или интернет.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Нашёл причину</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>«%1» выходит в интернет через VPN — %2 попыток из %3. Её пакеты идут кругом через другую страну, и службы, которым важен постоянный адрес, на это отвечают плохо.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>
+
+Причём через VPN идёт и живой обмен с сервером (%1) — у игр от этого не грузится список серверов и не считается пинг.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>
+
+Но эта программа уже в списке тех, кто выходит напрямую. Значит менять нечего — похоже, изменения ещё не вступили в силу: переподключитесь.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>
+
+Можно пустить её напрямую, со своим настоящим адресом. Остальное останется под защитой.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Пустить эту программу напрямую</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>
+
+Если в игре не считается пинг — это чинится отдельно и сразу для всех программ: у проверок связи нет владельца, и разобрать их по программам нельзя.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -839,11 +1409,11 @@ https://github.com/tarik1377/nekoray/wiki/VPN-TUN</translation>
     </message>
     <message>
         <source>Disable logs</source>
-        <translation type="unfinished"></translation>
+        <translation>Не вести журнал</translation>
     </message>
     <message>
         <source>Turn on this option if your connection is lost after a while</source>
-        <translation type="unfinished"></translation>
+        <translation>Включите, если подключение пропадает через некоторое время</translation>
     </message>
 </context>
 <context>
@@ -914,6 +1484,73 @@ https://github.com/tarik1377/nekoray/wiki/VPN-TUN</translation>
     </message>
     <message>
         <source>Force use external core</source>
+        <translation>Всегда использовать внешнее ядро</translation>
+    </message>
+</context>
+<context>
+    <name>EditRelay</name>
+    <message>
+        <source>Доступ</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Активировать…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Российские сайты</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>напрямую, мимо резервного подключения</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Экономит трафик подписки: то, что и так открывается, идёт обычным путём.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Звонки и игры</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Через резервное подключение звонки и игры не идут — оно переносит данные слишком медленно для разговора. Включите, чтобы они шли в обход него, напрямую. Цена: собеседник увидит ваш настоящий адрес. Если звонки блокируют в вашей сети, это не поможет.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>DNS</source>
+        <translation type="unfinished">DNS</translation>
+    </message>
+    <message>
+        <source>по умолчанию</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Через запятую. Пусто — выбираются сами.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Локальный порт</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>выбрать свободный</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Нужен, только если рядом стоит программа, которой порт прописан руками. Ноль или пусто — выберется сам.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Доступ активен.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Изменить…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не активировано на этом устройстве.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -964,6 +1601,14 @@ https://github.com/tarik1377/nekoray/wiki/VPN-TUN</translation>
     <message>
         <source>Password</source>
         <translation>Пароль</translation>
+    </message>
+    <message>
+        <source>Core</source>
+        <translation type="unfinished">Ядро</translation>
+    </message>
+    <message>
+        <source>Use Xray core (for Reality servers not compatible with sing-box)</source>
+        <translation>Использовать ядро Xray (для серверов Reality, несовместимых с sing-box)</translation>
     </message>
 </context>
 <context>
@@ -1023,6 +1668,14 @@ https://github.com/tarik1377/nekoray/wiki/VPN-TUN</translation>
         <source>Remove %1?</source>
         <translation>Удалить %1?</translation>
     </message>
+    <message>
+        <source>Подписка недоступна — возможно, срок истёк.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Продлить</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>JsonEditor</name>
@@ -1072,6 +1725,137 @@ https://github.com/tarik1377/nekoray/wiki/VPN-TUN</translation>
     </message>
 </context>
 <context>
+    <name>MainShell</name>
+    <message>
+        <source>Зелёный Ритм</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подключение</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Серверы</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Журнал</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>СЕЙЧАС</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>через VPN</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>напрямую</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>трафик</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>мимо VPN: нет программ</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>ПОДПИСКА</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Продлить</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Что-то не работает</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ещё</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Панель</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>+  Добавить сервер</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Нажмите для подключения</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>ТЕКУЩИЙ СЕРВЕР</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сервер не выбран</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Выберите его на вкладке «Серверы»</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Серверов пока нет</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Вставьте ссылку подписки — профили соберутся сами.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>задержка не измерена</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>задержка %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подключаюсь…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подключено — нажмите, чтобы отключить</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не удалось подключиться</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не удалось подключиться: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>мимо VPN: %1 %2</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>программа</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>программы</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>программ</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Продлить сейчас</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>MainWindow</name>
     <message>
         <source>Program</source>
@@ -1087,7 +1871,7 @@ https://github.com/tarik1377/nekoray/wiki/VPN-TUN</translation>
     </message>
     <message>
         <source>Ads</source>
-        <translation>Реклама</translation>
+        <translation type="vanished">Реклама</translation>
     </message>
     <message>
         <source>Document</source>
@@ -1496,10 +2280,785 @@ End: %2</source>
     </message>
     <message>
         <source>Stop Testing</source>
+        <translation>Остановить проверку</translation>
+    </message>
+    <message>
+        <source>Подписка</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>URL Test</source>
+        <source>Обновить подписку</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Панель</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open the Clash dashboard (live connections, traffic, proxy switching). Requires Clash API enabled in Core Options.</source>
+        <translation>Открыть панель Clash: живые соединения, трафик, переключение прокси. Нужен включённый Clash API в настройках ядра.</translation>
+    </message>
+    <message>
+        <source>Тест</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Программа</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Зелёный Ритм</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Быстрое подключение</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Показать QR подписки</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Диагностика соединения</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Починить сеть Windows</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Убрать следы других VPN и утилит обхода: службы, драйверы-перехватчики, прокси, DNS</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Как вести трафик…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Два режима и честная цена каждого</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Отключить лишние сетевые адаптеры…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Показать сторонние TAP/TUN-адаптеры и их маршруты. Ничего не выключается без вашего согласия.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Автопилот соединения</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Следить за туннелем и автоматически восстанавливать: обновить подписку, переподключиться, сменить сервер</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Резервное подключение…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Купить/продлить подписку</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Поддержка в Telegram</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>О программе</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Enable the Clash API first in Preferences -&gt; Core Options, then restart the core.</source>
+        <translation>Сначала включите Clash API в «Настройки → Ядро», затем перезапустите ядро.</translation>
+    </message>
+    <message>
+        <source>Починить сеть</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Вернуть системные настройки, сбросить кэш имён и показать сторонние туннели</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сторонние туннели…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Показать чужие туннели и их маршруты. Ничего не выключается.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Нет активных соединений</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Маршрутизация обновлена: блокировка QUIC и локальный DNS (схем: %1).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Маршрутизация обновлена: игры и звонки теперь идут мимо туннеля раньше блокировок (схем: %1).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не удалось включить системный прокси. Возможно, настройками сети управляет организация.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Туннель уже поднят другой копией программы.
+
+Закройте её полностью и попробуйте снова. Две копии не могут пользоваться одним туннелем: трафик делится между ними, и тогда подключение выглядит исправным, но страницы не открываются.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1 мс</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не запущено</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подключено, нет трафика</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подключено</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>резервное подключение</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Соединение с сервером есть, но сайты не грузятся. Частые причины: QUIC/DoH в браузере, DPI, посторонний перехватчик. Попробуйте «Диагностику».</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source> Или «Починить сеть Windows».</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Скрыть</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Добро пожаловать в GreenRhythm</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Вставьте ссылку подписки — или получите доступ за пару минут</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ссылка подписки или профиля…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Импорт</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Вставить из буфера</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Нет подписки? Получить</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Импорт по ссылке</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ссылка не добавлена: %1.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Зелёный Ритм — импорт</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Добавить подписку с %1 и загрузить список серверов?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подписка недоступна — возможно, срок истёк.
+Продлить: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подписка добавлена (профилей: %1). Подключиться сейчас?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Добавить профиль сервера %1?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Профиль добавлен. Подключиться сейчас?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Нет серверов. Импортируйте подписку «Зелёный Ритм».</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>QR подписки</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Нет группы-подписки. Импортируйте подписку «Зелёный Ритм».</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Самопроверка QR-кода не прошла — код не показан.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>QR подписки: самопроверка декодирования пройдена.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Отсканируйте в мобильном клиенте — одна подписка на всех устройствах.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Копировать ссылку</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Добавлено серверов: %1. Подключиться сейчас?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Системный прокси: часть правил в этом режиме не применяется — %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Эти правила работают только в режиме туннеля.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Системный прокси включён. Браузеры и обычные программы пойдут через канал; терминал, Docker и часть игр — мимо. Полный охват даёт режим туннеля.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Системный прокси: не удалось поднять локальную выдачу настроек.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Проверка соединения…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Нет интернета — проверьте подключение к сети.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Интернет есть, но DNS не отвечает — попробуйте сменить DNS-сервер.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сеть в порядке. Сервер не выбран — импортируйте подписку и выберите сервер.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сервер недоступен из вашей сети — возможно, блокировка провайдера или сервер выключен. Попробуйте другой сервер.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сервер отвечает, но TLS не проходит — вероятна фильтрация (DPI). Попробуйте другой сервер или порт 443.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>VPN подключён, но трафик через него не проходит. Частые причины: QUIC/DoH в браузере или посторонний перехватчик (Zapret/GoodbyeDPI/WARP).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source> Нажмите «Починить сеть Windows» в меню «Зелёный Ритм».</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source> Проверьте, не запущен ли рядом другой VPN, и отключите его.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Всё работает — трафик идёт через VPN, внешний IP: %1.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сеть и сервер доступны. Нажмите «Подключиться», чтобы пустить трафик через VPN.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Интернет: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>DNS: %1</source>
+        <translation>DNS: %1</translation>
+    </message>
+    <message>
+        <source>Сервер (TCP): %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>TLS-соединение: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Трафик через VPN: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Внешний IP: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Скопировать отчёт</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Написать в поддержку</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сторонние туннели</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сторонних туннелей не найдено.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>  —  через него идёт ВЕСЬ трафик; с нашим туннелем он ужиться не сможет</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>  —  маршруты: </source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Найдено:
+
+%1
+
+Мы их не трогаем. Выключить туннель можно только в той программе, которая его подняла.
+
+Если он вам нужен, перечислите его сети в «Не заводить в туннель» — тогда они останутся доступны в обход канала.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сетевые адаптеры</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Эта функция пока доступна только в Windows и macOS.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Отключить лишние сетевые адаптеры</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ниже — сетевые адаптеры, созданные не нами. Среди них может быть ваш туннель до дома или до работы: если через адаптер идут маршруты, он, скорее всего, нужен вам.
+
+Отметьте только те, которые точно лишние.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>  —  через него идёт ВЕСЬ трафик, это почти наверняка ваш VPN</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>  —  маршрутов нет, похоже на остаток удалённой программы</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Отключить отмеченные</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Отмена</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ни один адаптер не отключён.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ничего не отключено — запрос прав администратора не подтверждён.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ничего не отключено. Возможно, адаптером управляет другая программа.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Отключены сетевые адаптеры: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Отключено: %1.
+
+Включить обратно можно в «Сетевых подключениях» Windows или командой Enable-NetAdapter.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>
+
+Не удалось отключить: %1.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Будет сделано:
+
+• системные настройки прокси вернутся к тому, что было до нас;
+• сбросится кэш имён (DNS);
+• найденные сторонние туннели будут показаны — и НЕ тронуты.
+
+Чужой прокси, если он настроен не нами, не трогается.
+
+Для сброса кэша имён система спросит пароль. Продолжить?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Починить</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Настройки прокси возвращены к прежним.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Вернуть настройки прокси не удалось — возможно, ими управляет организация.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Наших настроек прокси в системе не осталось — возвращать нечего.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Кэш имён — не дождались ответа системы.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Кэш имён сброшен.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Кэш имён не сброшен — запрос прав не подтверждён.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Состояние системных настроек:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Выключить их можно только в той программе, которая их подняла.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Эта функция доступна только в Windows.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Другие программы обхода блокировок (Zapret, GoodbyeDPI, WARP) и посторонние VPN перехватывают трафик раньше нашего клиента — из-за этого подключение есть, а сайты не открываются.
+
+Будут убраны:
+• драйверы-перехватчики (WinDivert и подобные);
+• их службы, задания и записи автозапуска;
+• зависший прокси, мёртвый DNS и кэш DNS.
+
+Другие VPN НЕ отключаются: если рядом поднят туннель до дома или до работы, он продолжит работать. Найденные туннели будут просто перечислены в отчёте.
+
+Ваши файлы, пароли и файл hosts НЕ затрагиваются.
+
+Нужны права администратора и перезагрузка. Продолжить?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не удалось подготовить очистку (нет доступа к временной папке).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Очистка не завершилась вовремя. Попробуйте ещё раз.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Очистка не выполнена — не были выданы права администратора.
+
+Попробуйте ещё раз и подтвердите запрос Windows.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>
+
+Проверка от вашей учётной записи не завершилась вовремя — часть сведений в отчёт не попала. Сделанное выше это не отменяет, но список найденного может быть неполным.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Посторонних программ не найдено.
+
+Сетевые настройки сброшены. Если подключение всё равно не работает, перезагрузите компьютер и напишите в поддержку.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сделано:
+
+%1
+
+Сетевые настройки сброшены.
+
+Чтобы изменения вступили в силу, нужна перезагрузка: драйверы-перехватчики остаются в памяти до неё.
+
+Адаптеры только отключены, не удалены. Если какой-то из них нужен для работы, включите его обратно в «Сетевые подключения» (Win+R → ncpa.cpl → правой кнопкой → Включить).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Перезагрузить сейчас</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Позже</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Автопилот: проверка соединения не прошла (%1/2).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Автопилот: основной сервер отвечает (%1/2).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Автопилот: основной сервер вернулся — возвращаюсь на него.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Возвращаюсь на основной сервер</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Автопилот: восстановить не удалось — запустите «Диагностику соединения» в меню «Зелёный Ритм».</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не удалось восстановить соединение — откройте «Диагностику соединения».</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Автопилот: обычные серверы не отвечают — перехожу на резервное подключение.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Перехожу на резервное подключение</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Автопилот: обновляю подписку и переподключаюсь…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Соединение потеряно — восстанавливаю…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Автопилот: сервер недоступен, переключаюсь на «%1»…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Переключаюсь на %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1 дн.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Продлить</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подписка «Зелёный Ритм»</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Но пустить её напрямую сейчас нельзя: поимённый выбор действует только при включённом режиме VPN. Включите его и загляните сюда снова.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Но сейчас список работает наоборот: в нём перечислены те, кого пускают через VPN, а не мимо. Пока так, увести программу отсюда нельзя.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>«%1» пойдёт напрямую, мимо туннеля.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Список «мимо туннеля» сохранён. Начнёт действовать при следующем подключении.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Клиент сервиса «%1»&lt;/b&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Версия: %1&lt;br&gt;&lt;br&gt;Сайт: &lt;a href=&quot;%2&quot;&gt;%2&lt;/a&gt;&lt;br&gt;Поддержка: &lt;a href=&quot;%3&quot;&gt;%4&lt;/a&gt;&lt;br&gt;&lt;br&gt;Лицензия GPL-3.0 · исходный код: &lt;a href=&quot;%5&quot;&gt;%5&lt;/a&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сохранить лог в файл…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сохранить лог</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Текст (*.txt)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не удалось записать файл.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Лог сохранён:
+%1
+
+Прикрепите этот файл в поддержку.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Показать папку</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Прокси</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Напрямую</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Блокировка</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Прокси: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Напрямую: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Блок: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Вернуть «%1» под защиту</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Пустить «%1» напрямую</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Всегда напрямую: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Всегда через прокси: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Блокировать: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Копировать адрес</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>«%1» пойдёт напрямую. Начнёт действовать при следующем подключении.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>«%1» снова под защитой. Начнёт действовать при следующем подключении.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>напрямую</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>через прокси</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>в блокировку</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Правило уже есть: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Правило добавлено: %1 → %2</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Правило добавлено</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>«%1» теперь идёт %2. Перезапустить подключение, чтобы применить?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не удалось запустить туннель.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Скорее всего, запрос прав администратора был отменён. Попробуйте снова и подтвердите его.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>процесс туннеля завершился сразу</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Туннель запустился и сразу закрылся.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подробности — в журнале приложения, раздел «tun».</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Порт оказался занят системой — пробую другой.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не удалось занять локальный порт для подключения.
+
+Программа взяла три разных порта, и все три система не отдала. Так бывает, когда их держат за собой Hyper-V, WSL или Docker. Обычно помогает перезапуск компьютера.
+
+Ответ системы: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>система не отдала порт</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>сервер не ответил</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1525,7 +3084,7 @@ End: %2</source>
     <name>QObject</name>
     <message>
         <source>Core not found: %1</source>
-        <translation>Ядро не найдено: %1</translation>
+        <translation type="vanished">Ядро не найдено: %1</translation>
     </message>
     <message>
         <source>Unavailable</source>
@@ -1639,7 +3198,7 @@ Release note:
     </message>
     <message>
         <source>Update is ready, restart to install?</source>
-        <translation>Обновление готово, перезапуститься для установки?</translation>
+        <translation type="vanished">Обновление готово, перезапуститься для установки?</translation>
     </message>
     <message>
         <source>Used: %1 Remain: %2 Expire: %3</source>
@@ -1651,6 +3210,237 @@ Release note:
     </message>
     <message>
         <source>The last speed test did not exit completely, please wait. If it persists, please restart the program.</source>
+        <translation>Прошлый замер скорости ещё не завершился — подождите. Если это не проходит, перезапустите программу.</translation>
+    </message>
+    <message>
+        <source>Ядро «%1» не найдено.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source> Оно входит в комплект (xray.exe рядом с программой). Скорее всего, его удалил антивирус — восстановите файл из архива GreenRhythm или добавьте программу в исключения антивируса.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source> Укажите путь к ядру в Настройках → Extra cores.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не хватает файлов с базой сетевых адресов — сборка пришла неполной. Переустановите приложение, скачав его заново.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Резервное подключение</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Компонент резервного подключения не установлен. Откройте «Зелёный Ритм» → «Резервное подключение» и нажмите «Загрузить компонент».</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Резервное подключение не активировано. Откройте «Зелёный Ритм → Резервное подключение…» и введите код из личного кабинета.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Резерв</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Nowhere to write the download</source>
+        <translation>Некуда сохранить загруженный файл</translation>
+    </message>
+    <message>
+        <source>The file is longer than announced</source>
+        <translation>Файл оказался длиннее объявленного</translation>
+    </message>
+    <message>
+        <source>Could not write to disk</source>
+        <translation>Не удалось записать на диск</translation>
+    </message>
+    <message>
+        <source>Перетащите GreenRhythm в папку «Программы»</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Пока приложение запускается из «Загрузок», macOS открывает его копию только для чтения — и оно не сможет запомнить ни серверы, ни вход.
+
+Это обычное поведение системы для программ, скачанных из интернета, а не ошибка.
+
+Перенесите GreenRhythm в «Программы» и запустите оттуда.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Windows держит за собой %1 сетевых номеров — их забрали Hyper-V, WSL или Docker.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>
+
+Причина в том, что диапазон, из которого система их берёт, расширен: с %1 вместо обычного 49152. Из-за этого занятыми оказываются и те номера, на которые рассчитывают программы — игровые магазины, лаунчеры, античиты. Такая программа не жалуется на порт: она отвечает «ошибка соединения» или просто не запускается.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>
+
+Это чинится двумя командами в PowerShell от имени администратора:
+  netsh int ipv4 set dynamicport tcp start=49152 num=16384
+  netsh int ipv4 set dynamicport udp start=49152 num=16384
+затем «net stop winnat» и «net start winnat», либо перезагрузка.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Резервное подключение для этой системы пока не собрано</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сначала введите код из личного кабинета</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Резервное подключение готово</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не удалось создать папку для компонента</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не удалось записать файл на диск</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Загрузка оборвалась. Повторите попытку</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Скачанный файл повреждён. Повторите попытку</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не удалось подготовить компонент к запуску</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сначала отключитесь: компонент сейчас занят</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не удалось установить компонент</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Резервное подключение готово (версия %1)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не удалось связаться с сайтом. Проверьте интернет и повторите</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Резервное подключение входит в действующую подписку</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Резервное подключение пока недоступно. Мы его готовим</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Введите код из личного кабинета заново</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Для этой системы резерв ещё готовится</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Сайт ответил непонятно. Повторите позже</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source> — через него идёт ВЕСЬ трафик; с нашим туннелем он ужиться не сможет</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source> — маршруты: </source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Найдены сторонние туннели (не тронуты): </source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не удалось прочитать список сетевых служб.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1: автонастройка выключена</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1: включена НАША автонастройка</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1: включена ЧУЖАЯ автонастройка — не трогаем</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подключено к вашей подписке</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Подписка закончилась</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Достигнут лимит устройств по тарифу</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Пока не открыто для вашего аккаунта</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Не активировано на этом устройстве</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>неизвестный формат ссылки</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>слишком длинная ссылка</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>недопустимые символы</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>поддерживаются только https-ссылки подписок и vless-профили</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Speedtest finished.</source>
+        <translation>Замер скорости завершён.</translation>
+    </message>
+    <message>
+        <source>Загрузка обновления…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Обновление</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Загрузка обновления… %1 МБ</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Обновление загружено. Перезапустить для установки?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>не проверен</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

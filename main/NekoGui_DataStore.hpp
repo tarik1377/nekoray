@@ -125,7 +125,7 @@ namespace NekoGui {
         bool auto_failover = false; // urltest: auto-pick fastest server in the group + fail over
         bool connection_autopilot = true; // watchdog: probe the live tunnel, self-heal (sub refresh / server switch)
         QString theme = "4"; // GreenRhythm Modern by default; existing installs keep their saved choice
-        int language = 0;
+        int language = 4; // Русский, см. NekoGui.cpp
         QString mw_size = "";
         bool check_include_pre = false;
         QString system_proxy_format = "";
