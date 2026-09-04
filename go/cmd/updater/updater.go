@@ -20,10 +20,20 @@ import (
 // нас. Совет вдобавок невыполним, обновлятор запускает сама программа.
 //
 // Проверяем не список процессов, а сам файл: открыть его на запись можно ровно
-// тогда, когда его отпустили. Это и есть нужное нам условие, и работает оно
-// одинаково на всех платформах.
+// тогда, когда его отпустили.
+//
+// Имена собираются по платформе. Прежде в списке стояли только .exe, то есть
+// вне Windows цикл был пуст и функция возвращалась немедленно — при
+// комментарии, обещавшем работу на всех платформах. На POSIX блокировка файла
+// не обязательна, и ожидание там менее надёжно; но пустой список не надёжен
+// вовсе.
 func waitForPreviousInstance(deadline time.Duration) {
-	locked := []string{"./xray.exe", "./greenrhythm_core.exe", "./greenrhythm.exe"}
+	locked := []string{"./xray", "./greenrhythm_core", "./greenrhythm"}
+	if runtime.GOOS == "windows" {
+		for i := range locked {
+			locked[i] += ".exe"
+		}
+	}
 	start := time.Now()
 	for time.Since(start) < deadline {
 		busy := ""
@@ -64,15 +74,20 @@ func Updater() {
 		updatePackagePath = "./greenrhythm.zip"
 	} else if Exist("./greenrhythm.tar.gz") {
 		updatePackagePath = "./greenrhythm.tar.gz"
-	} else if Exist("./nekoray.zip") {
-		updatePackagePath = "./nekoray.zip"
-	} else if Exist("./nekoray.tar.gz") {
-		updatePackagePath = "./nekoray.tar.gz"
 	} else {
 		MessageBoxPlain("GreenRhythm Updater", "No update package found.")
 		log.Fatalln("no update package found")
 	}
 	log.Println("updating from", updatePackagePath)
+
+	// Проверяем ДО распаковки: распаковщик пишет на диск, и разбирать потом,
+	// что он успел разложить, дороже, чем не начинать.
+	if err := verifyArchive(updatePackagePath); err != nil {
+		os.Remove(updatePackagePath)
+		os.Remove(updatePackagePath + ".sha256")
+		MessageBoxPlain("GreenRhythm Updater", err.Error())
+		log.Fatalln(err.Error())
+	}
 
 	// extract update package
 	extractDir := "./greenrhythm_update"
@@ -131,9 +146,9 @@ func Updater() {
 	// cleanup
 	os.RemoveAll(extractDir)
 	os.Remove("./greenrhythm.zip")
+	os.Remove("./greenrhythm.zip.sha256")
 	os.Remove("./greenrhythm.tar.gz")
-	os.Remove("./nekoray.zip")
-	os.Remove("./nekoray.tar.gz")
+	os.Remove("./greenrhythm.tar.gz.sha256")
 
 	// clean up old binaries from previous versions
 	os.Remove("./nekoray.exe")

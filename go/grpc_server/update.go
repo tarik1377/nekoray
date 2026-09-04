@@ -265,13 +265,19 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		 *
 		 * Копия клиента с обнулённым Timeout: транспорт (а с ним и маршрут через
 		 * туннель) остаётся прежним, снимается только потолок на весь ответ.
-		 * Ограничение сверху при этом не исчезает — им остаётся ctx, который
-		 * отменяется вместе с запросом от интерфейса.
+		 *
+		 * Прежде здесь было написано, что границей остаётся ctx. Это было
+		 * неправдой: срока ему никто не ставил, и на замершем (не разорванном)
+		 * сервере чтение висело бы бесконечно. Границей стала ПАУЗА между
+		 * байтами — см. idle.go: медленная закачка проходит, заглохшая нет.
 		 */
 		download := *client
 		download.Timeout = 0
 
-		req, _ := http.NewRequestWithContext(ctx, "GET", update_download_url, nil)
+		dlCtx, cancelDownload := context.WithCancel(ctx)
+		defer cancelDownload()
+
+		req, _ := http.NewRequestWithContext(dlCtx, "GET", update_download_url, nil)
 		resp, err := download.Do(req)
 		if err != nil && fallback != nil {
 			// Тот же запасной путь, что и у проверки. Скачивание приходит
@@ -280,7 +286,7 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 			// провайдером, увидел бы новую версию и не смог бы её взять.
 			viaTunnel := *fallback
 			viaTunnel.Timeout = 0
-			req2, _ := http.NewRequestWithContext(ctx, "GET", update_download_url, nil)
+			req2, _ := http.NewRequestWithContext(dlCtx, "GET", update_download_url, nil)
 			resp, err = viaTunnel.Do(req2)
 		}
 		if err != nil {
@@ -306,11 +312,22 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		// Сумма считается на лету: файл под шестьдесят мегабайт, и читать его
 		// вторым проходом ради того же числа незачем.
 		h := sha256.New()
-		_, err = io.Copy(io.MultiWriter(f, h), resp.Body)
+		// Полторы минуты тишины при живом соединении — это не медленный канал,
+		// а зависший ответ. Порог с запасом: на самом плохом мобильном интернете
+		// байты идут чаще.
+		guard, stopGuard := newIdleGuard(resp.Body, 90*time.Second, cancelDownload)
+		_, err = io.Copy(io.MultiWriter(f, h), guard)
+		stopGuard()
 		if err != nil {
 			f.Close()
 			os.Remove(zipPath)
-			ret.Error = err.Error()
+			if guard.timedOut() {
+				// Иначе человек увидел бы «context canceled» и решил, что
+				// отменил обновление сам.
+				ret.Error = "сервер перестал отвечать во время скачивания — обновление отменено"
+			} else {
+				ret.Error = err.Error()
+			}
 			return ret, nil
 		}
 		f.Sync()
@@ -336,6 +353,18 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 			f.Close()
 			os.Remove(zipPath)
 			ret.Error = "контрольная сумма пакета не сошлась — обновление отменено"
+			return ret, nil
+		}
+
+		// Сумма кладётся рядом с архивом, потому что применяет его ДРУГОЙ
+		// процесс — updater, — и до сих пор он применял любой архив, какой
+		// найдёт. Проверка на стороне, которая ничего не применяет, не
+		// защищает применяющего. Предел у этого тот же, что описан выше, и
+		// так же назван в go/cmd/updater/verify.go: это не подпись.
+		if err := os.WriteFile(zipPath+".sha256", []byte(got), 0644); err != nil {
+			f.Close()
+			os.Remove(zipPath)
+			ret.Error = "не удалось записать контрольную сумму рядом с пакетом: " + err.Error()
 			return ret, nil
 		}
 	}

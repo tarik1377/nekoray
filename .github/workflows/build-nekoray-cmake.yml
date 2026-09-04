@@ -28,6 +28,19 @@ on:
 permissions:
   contents: write
 
+# ЯДРО КЛИЕНТА ПРИБИТО КОММИТОМ.
+#
+# libneko линкуется в ядро через `replace` в go.mod и до сих пор клонировался
+# с чужой ветки по умолчанию в момент сборки: два прогона одного тега давали
+# разные бинари, и заметить это было нечем — go.sum такую зависимость не
+# накрывает. Рядом, в шаге про xray, стоит объяснение, почему версия и sha256
+# обязательны; здесь тот же довод и та же цена ошибки.
+#
+# 1c47a3a — то, на чём собраны текущие выпуски и, на момент правки, вершина
+# ветки по умолчанию: закрепление ничего не меняет сегодня и защищает завтра.
+env:
+  LIBNEKO_COMMIT: 1c47a3af71990a7b2192e03292b4d246c308ef0b
+
 jobs:
   build-go:
     strategy:
@@ -52,7 +65,10 @@ jobs:
       - name: Clone libneko dependency
         if: matrix.cross_os != 'public_res'
         run: |
-          git clone --depth 1 https://github.com/MatsuriDayo/libneko.git ../libneko
+          git init ../libneko
+          git -C ../libneko remote add origin https://github.com/MatsuriDayo/libneko.git
+          git -C ../libneko fetch --depth 1 origin "$LIBNEKO_COMMIT"
+          git -C ../libneko checkout FETCH_HEAD
 
       - name: Build Go
         if: matrix.cross_os != 'public_res'
@@ -68,6 +84,10 @@ jobs:
         run: |
           (cd go/grpc_server && go test ./...)
           (cd go/cmd/nekobox_core && go test -tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api" ./...)
+          # Свой модуль, поэтому в перечисление выше он не попадал. Здесь
+          # лежит проверка на обход каталога при распаковке обновления:
+          # не запущенная, она неотличима от отсутствующей.
+          (cd go/cmd/updater && go test ./...)
 
       - name: Build public resources
         if: matrix.cross_os == 'public_res'
@@ -75,12 +95,20 @@ jobs:
 
       - name: Download rule-set files
         if: matrix.cross_os == 'public_res'
+        shell: bash
         run: |
+          set -e
           mkdir -p deployment/public_res
-          curl -sL -o deployment/public_res/geosite-category-ads-all.srs \
+          curl -fLso deployment/public_res/geosite-category-ads-all.srs \
             "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs"
-          curl -sL -o deployment/public_res/geoip-ru.srs \
+          curl -fLso deployment/public_res/geoip-ru.srs \
             "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs"
+          # Пустой файл curl создаёт и при отказе, поэтому проверяем размер —
+          # так же, как в шаге «Fetch geo data». Без -f и без этой проверки
+          # страница ошибки уехала бы в выпуск набором правил маршрутизации.
+          for f in geosite-category-ads-all.srs geoip-ru.srs; do
+            test -s "deployment/public_res/$f" || { echo "пустой или отсутствует: $f"; exit 1; }
+          done
 
       - name: Tar artifacts
         run: tar czvf artifacts.tgz ./deployment
@@ -119,7 +147,11 @@ jobs:
           go-version: "^1.24"
 
       - name: Clone libneko dependency
-        run: git clone --depth 1 https://github.com/MatsuriDayo/libneko.git ../libneko
+        run: |
+          git init ../libneko
+          git -C ../libneko remote add origin https://github.com/MatsuriDayo/libneko.git
+          git -C ../libneko fetch --depth 1 origin "$LIBNEKO_COMMIT"
+          git -C ../libneko checkout FETCH_HEAD
 
       - name: Build Go
         shell: bash
@@ -249,6 +281,15 @@ jobs:
           ./build/route_order_test.exe
           ./build/program_trouble_test.exe
           ./build/port_health_test.exe
+
+      # Оба только читают дерево: ни сети, ни прав администратора. До этого
+      # они лежали в support/ и не вызывались ниоткуда, то есть стерегли
+      # ровно ничего — включая запрет описывать устройство канала в текстах.
+      - name: Сторожа исходников
+        shell: pwsh
+        run: |
+          ./support/Test-NoChannelSecrets.ps1
+          ./support/Test-ForeignAdapters.ps1
 
       - name: Tar artifacts
         shell: bash
@@ -380,21 +421,27 @@ jobs:
         run: cd build/testrun && ./pac_test 2>&1 | tee ../../macos-test-pac.log
 
       - name: Test the relay component contract
+        shell: bash
         run: cd build/testrun && ./relay_component_test 2>&1 | tee ../../macos-test-component.log
 
       - name: Test the tunnel exclusions against our own ranges
+        shell: bash
         run: ./build/tun_exclude_test 2>&1 | tee macos-test-tunexclude.log
 
       - name: Test the TUN report against the core's stack rule
+        shell: bash
         run: ./build/tun_report_test 2>&1 | tee macos-test-tunreport.log
 
       - name: Test the routing order — an explicit exception beats a category
+        shell: bash
         run: ./build/route_order_test 2>&1 | tee macos-test-routeorder.log
 
       - name: Test the trouble finder — one connection must not count as thirty
+        shell: bash
         run: ./build/program_trouble_test 2>&1 | tee macos-test-programtrouble.log
 
       - name: Test port health — the reservation that breaks other apps silently
+        shell: bash
         run: ./build/port_health_test 2>&1 | tee macos-test-porthealth.log
 
       - name: Test — исполнение файла автонастройки

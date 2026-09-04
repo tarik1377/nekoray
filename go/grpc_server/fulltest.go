@@ -122,13 +122,22 @@ func DoFullTest(ctx context.Context, in *gen.TestReq, instance interface{}) (out
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(in.FullSpeedTimeout))
 		result := make(chan string, 1) // buffered so the goroutine never leaks on timeout
-		var bodyClose io.Closer
 
+		// ЗАКРЫВАТЕЛЬ ТЕЛА СЮДА НЕ ВЫНОСИТСЯ.
+		//
+		// Здесь стояла переменная bodyClose: горутина её писала, а главная
+		// читала после select — без синхронизации, то есть гонка, и `go test
+		// -race` показывал бы её первым же прогоном. Причём ровно под
+		// комментарием о том, что горутина больше не течёт.
+		//
+		// Выносить её не нужно вовсе: тело закрывает defer внутри самой
+		// горутины, а прерывает чтение ctx, переданный в запрос. По истечении
+		// срока cancel() обрывает io.Copy, defer закрывает тело — то же самое,
+		// что делала внешняя переменная, только без общего состояния.
 		go func() {
 			req, _ := http.NewRequestWithContext(ctx, "GET", in.FullSpeedUrl, nil)
 			resp, err := httpClient.Do(req)
 			if err == nil && resp != nil && resp.Body != nil {
-				bodyClose = resp.Body
 				defer resp.Body.Close()
 
 				timeStart := time.Now()
@@ -152,9 +161,6 @@ func DoFullTest(ctx context.Context, in *gen.TestReq, instance interface{}) (out
 		}
 
 		cancel()
-		if bodyClose != nil {
-			bodyClose.Close()
-		}
 	}
 
 	fr := make([]string, 0)
