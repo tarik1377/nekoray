@@ -18,10 +18,25 @@ GreenRhythm распространяется на условиях **GPL-3.0**. 
 | Xray-core (`xray`) | MPL-2.0 | https://github.com/XTLS/Xray-core |
 | OpenSSL (`libcrypto`, `libssl`) | Apache-2.0 | https://github.com/openssl/openssl |
 | wintun (`wintun.dll`, только Windows) | GPL-2.0 / собственная | https://www.wintun.net/ |
+| qrcodegen (`3rdparty/qrcodegen.cpp`) | MIT | https://www.nayuki.io/page/qr-code-generator-library |
+| Qv2ray (`3rdparty/qv2ray/`) | GPL-3.0 | https://github.com/Qv2ray/Qv2ray |
 | QHotkey | BSD-3-Clause | https://github.com/Skycoder42/QHotkey |
 | zxing-cpp | Apache-2.0 | https://github.com/nu-book/zxing-cpp |
 | yaml-cpp | MIT | https://github.com/jbeder/yaml-cpp |
 | protobuf | BSD-3-Clause | https://github.com/protocolbuffers/protobuf |
+
+Три первых из этого списка собираются прямо в наш бинарь из каталога
+`3rdparty/`, а не подключаются готовой библиотекой: qrcodegen рисует QR-код
+подписки, семь файлов из Qv2ray отвечают за редактор конфигурации, автодополнение
+и чтение баз geosite. Их не было в этой таблице, хотя в бинарнике они есть.
+
+`wintun.dll` лежит в дереве двоичным файлом. Чтобы по репозиторию можно было
+проверить, что это именно он:
+
+```
+размер   427552 байт
+sha256   e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce
+```
 
 ## Данные о сетях
 

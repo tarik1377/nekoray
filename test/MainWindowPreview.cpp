@@ -75,9 +75,9 @@ int main(int argc, char *argv[]) {
     // Данные — настоящие, с машины владельца: те же имена и адреса. Выдуманные
     // «Server 1, Server 2» скрыли бы ровно то, на что он жалуется: имя теряется
     // между протоколом и адресом.
-    addServer(ui.proxyListTable, "VLESS", "92.42.99.161:443", "Germanyyy-admin", "");
-    addServer(ui.proxyListTable, "VLESS", "185.237.218.9:443", "elvin", "");
-    addServer(ui.proxyListTable, "VLESS", "51.250.99.2:443", "lockdowner", "");
+    addServer(ui.proxyListTable, "VLESS", "203.0.113.30:443", "Germanyyy-admin", "");
+    addServer(ui.proxyListTable, "VLESS", "203.0.113.20:443", "elvin", "");
+    addServer(ui.proxyListTable, "VLESS", "203.0.113.10:443", "lockdowner", "");
     addServer(ui.proxyListTable, "VLESS", "31.77.129.38:443", "Germany-admin", "");
     addServer(ui.proxyListTable, "VLESS", "192.124.181.171:443", "tarik", "32 ms");
     addServer(ui.proxyListTable, "VLESS", "orsana.adshkola.ru:443", "orsana-admin", "106 ms");

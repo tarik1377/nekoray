@@ -89,7 +89,7 @@ int main(int argc, char *argv[]) {
     }
     if (qss.isOpen()) d.setStyleSheet(QString::fromUtf8(qss.readAll()));
 
-    d.setConnectionState(connected, connected ? QStringLiteral("Германия · 92.42.99.161") : QString());
+    d.setConnectionState(connected, connected ? QStringLiteral("Германия · 203.0.113.30") : QString());
     d.setAutopilot(true);
     d.setBypassList(QStringLiteral("SquadGame-Win64-Shipping.exe\nEasyAntiCheat_EOS.exe"));
 

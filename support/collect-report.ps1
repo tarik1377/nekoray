@@ -46,7 +46,7 @@ Get-NetRoute -AddressFamily IPv4 |
 
 Sec "Маршрут до VPN-сервера"
 # Если сюда попадает neko-tun, туннель заворачивает сам себя - это и есть обрыв.
-$srv = Read-Host " Введите IP сервера из приложения (например 185.237.218.9)"
+$srv = Read-Host " Введите IP сервера из приложения (например 203.0.113.20)"
 Add " сервер: $srv"
 if ($srv) {
     Get-NetRoute -ErrorAction SilentlyContinue |

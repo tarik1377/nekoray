@@ -24,10 +24,10 @@ is imported.
 
 ### Examples
 
-Subscription link `https://51.250.99.2:2096/suber/abc123`:
+Subscription link `https://203.0.113.10:2096/suber/abc123`:
 
 ```
-greenrhythm://import/https%3A%2F%2F51.250.99.2%3A2096%2Fsuber%2Fabc123
+greenrhythm://import/https%3A%2F%2F203.0.113.10%3A2096%2Fsuber%2Fabc123
 ```
 
 Single profile:
