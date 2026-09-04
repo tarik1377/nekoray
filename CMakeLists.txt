@@ -516,6 +516,23 @@ target_include_directories(mainwindow_preview PRIVATE
         ${CMAKE_BINARY_DIR}/greenrhythm_autogen/include)
 target_link_libraries(mainwindow_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
+# СТОРОЖ ВРЕМЕНИ ЖИЗНИ ВИДЖЕТОВ. Нужен заголовок, собранный uic для
+# приложения, и оболочка — как у предпросмотра выше, по той же причине: второй
+# AUTOUIC на один .ui дал бы две расходящиеся вёрстки.
+add_executable(widget_lifetime_test EXCLUDE_FROM_ALL
+        test/WidgetLifetimeTest.cpp
+        ui/MainShell.cpp
+        ui/ServerCardDelegate.cpp
+        res/neko.qrc
+)
+set_property(TARGET widget_lifetime_test PROPERTY AUTORCC ON)
+set_property(TARGET widget_lifetime_test PROPERTY AUTOMOC ON)
+add_dependencies(widget_lifetime_test greenrhythm)
+target_include_directories(widget_lifetime_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_BINARY_DIR}/greenrhythm_autogen/include)
+target_link_libraries(widget_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+
 add_executable(greenrhythm_panel_preview EXCLUDE_FROM_ALL
         test/GreenRhythmPanelPreview.cpp
         ui/dialog_greenrhythm.cpp
@@ -573,6 +590,7 @@ set(GR_TEST_TARGETS
         route_order_test
         program_trouble_test
         port_health_test
+        widget_lifetime_test
 )
 
 add_custom_target(build-tests DEPENDS ${GR_TEST_TARGETS})
