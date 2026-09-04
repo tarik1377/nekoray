@@ -132,10 +132,19 @@ func TestLiveRuleSetReloadsWithoutRestart(t *testing.T) {
 		t.Fatalf("абсолютный путь: %v", err)
 	}
 
-	const alpha = `C:\games\Alpha\Alpha-Win64-Shipping.exe`
-	const beta = `C:\games\Beta\BetaLauncher-Shipping.exe`
+	// ПУТИ СОБИРАЮТСЯ filepath.Join, А НЕ ПИШУТСЯ РУКАМИ.
+	//
+	// Правило по имени сравнивает filepath.Base(путь), а разделитель у Base
+	// свой на каждой системе. Записанный руками путь с обратными слэшами на
+	// Linux не делится вовсе: база равна всей строке, имя не совпадает никогда,
+	// и набор падает на первой же проверке. Сборка гоняет go test на ubuntu —
+	// то есть именно там, где такой путь и не работает.
+	const alphaExe = "Alpha-Win64-Shipping.exe"
+	const betaExe = "BetaLauncher-Shipping.exe"
+	alpha := filepath.Join(dir, "Alpha", alphaExe)
+	beta := filepath.Join(dir, "Beta", betaExe)
 
-	if err := os.WriteFile(path, []byte(seedFor("Alpha-Win64-Shipping.exe")), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(seedFor(alphaExe)), 0o644); err != nil {
 		t.Fatalf("семя: %v", err)
 	}
 
@@ -170,7 +179,7 @@ func TestLiveRuleSetReloadsWithoutRestart(t *testing.T) {
 	}
 
 	// ---- ГЛАВНОЕ: подмена файла при живом наборе ----
-	writeAtomic(t, path, seedFor("BetaLauncher-Shipping.exe"))
+	writeAtomic(t, path, seedFor(betaExe))
 
 	if !waitMatch(t, set, beta, true) {
 		t.Fatal("новое имя не подхватилось за пять секунд — живой подмены нет")
@@ -197,7 +206,7 @@ func TestLiveRuleSetReloadsWithoutRestart(t *testing.T) {
 	//
 	// Наблюдатель, замолчавший после первой неудачи, дал бы худшее из положений:
 	// на вид всё цело, а изменения больше не доезжают.
-	writeAtomic(t, path, seedFor("Alpha-Win64-Shipping.exe"))
+	writeAtomic(t, path, seedFor(alphaExe))
 	if !waitMatch(t, set, alpha, true) {
 		t.Fatal("после битого файла наблюдение больше не работает")
 	}
