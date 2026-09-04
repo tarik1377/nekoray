@@ -538,12 +538,12 @@ jobs:
               ls -lt ~/Library/Logs/DiagnosticReports 2>/dev/null | head -5 || true
               for r in $(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -1); do
                   echo "--- $r ---"
-                  head -60 "$r"
-                  # Первые строки .ips несут имя упавшего потока и адрес — то,
-                  # с чего начинается любой разбор падения.
-                  head -25 "$r" | while IFS= read -r line; do
-                      echo "::error::crash: $line"
-                  done
+                  cat "$r"
+                  # Разбор — отдельным файлом, и это не вкусовщина: .ips несёт
+                  # заголовок первой строкой, а дальше ОДИН json целиком.
+                  # Прежний head -25 отдавал в аннотации одну шапку и ни одного
+                  # кадра, то есть ровно ничего о месте падения.
+                  python3 support/parse_ips.py "$r" || true
               done
               exit 1
           fi
