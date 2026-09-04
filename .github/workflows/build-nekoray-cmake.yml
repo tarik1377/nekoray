@@ -507,15 +507,43 @@ jobs:
               echo "--- что оно успело напечатать ---"
               cat launch.log || true
           else
-              wait "$PID" 2>/dev/null
-              CODE=$?
-              echo "::error::приложение завершилось само, код $CODE — пакет не собрался в рабочее целое"
+              # КОД ЗАБИРАЕТСЯ ЧЕРЕЗ `|| CODE=$?`, И ЭТО НЕ СТИЛЬ.
+              #
+              # `shell: bash` в Actions запускает `bash --noprofile --norc -eo
+              # pipefail`, то есть -e включён, чего этот шаг не учитывал. Голое
+              # `wait "$PID"` возвращает код погибшего приложения — и -e убивал
+              # шаг прямо на этой строке, ДО присваивания, до ::error:: и до
+              # отчёта о падении. Снаружи оставалось «Process completed with
+              # exit code 139» и ни слова о причине, а в аннотации попадал хвост
+              # чужого журнала выкладки — строки про подпись, к делу не
+              # относящиеся. Ровно на них разбор и уходил в сторону.
+              CODE=0
+              wait "$PID" 2>/dev/null || CODE=$?
+              # Через if, а не через `[ … ] && …`: под -e такая связка при
+              # ЛОЖНОМ условии сама возвращает единицу и убивает шаг — ровно та
+              # ошибка, которую этот блок и чинит, только этажом ниже.
+              SIG=""
+              if [ "$CODE" -gt 128 ]; then SIG=" (сигнал $((CODE - 128)))"; fi
+              echo "::error::приложение завершилось само, код $CODE$SIG — пакет не собрался в рабочее целое"
               echo "--- вывод приложения ---"
               cat launch.log || true
+              # В аннотации тоже: журнал прогона открыт не всем, а причина нужна
+              # именно тому, у кого прав нет.
+              if [ -s launch.log ]; then
+                  tail -12 launch.log | while IFS= read -r line; do
+                      echo "::error::launch: $line"
+                  done
+              fi
               echo "--- отчёты о падении ---"
               ls -lt ~/Library/Logs/DiagnosticReports 2>/dev/null | head -5 || true
               for r in $(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -1); do
-                  echo "--- $r ---"; head -60 "$r"
+                  echo "--- $r ---"
+                  head -60 "$r"
+                  # Первые строки .ips несут имя упавшего потока и адрес — то,
+                  # с чего начинается любой разбор падения.
+                  head -25 "$r" | while IFS= read -r line; do
+                      echo "::error::crash: $line"
+                  done
               done
               exit 1
           fi
@@ -572,7 +600,14 @@ jobs:
           # ограниченное число, и первый же прогон это показал: весь запас
           # съел хвост успешного журнала конфигурации, а настоящая причина —
           # падение набора проверок — не поместилась вовсе.
-          for f in macos-cmake.log macos-build.log macos-tests.log macos-deploy.log; do
+          # launch.log В СПИСКЕ, И ЭТО ГЛАВНОЕ ДОБАВЛЕНИЕ.
+          #
+          # Его здесь не было, а пишет его единственный шаг, который запускает
+          # приложение по-настоящему. Когда падал именно он, отчёт перебирал
+          # четыре журнала СБОРКИ, ничего в них не находил (сборка-то прошла) и
+          # выдавал хвост последнего — журнала выкладки, со строками про
+          # подпись. Разбор уходил к Gatekeeper, тогда как ломалось приложение.
+          for f in macos-cmake.log macos-build.log macos-tests.log macos-deploy.log launch.log; do
             [ -f "$f" ] || continue
             hits=$(grep -nE "error:|Error|FAILED|fatal|ПЛОХО|undefined|No such file" "$f" | head -8 || true)
             if [ -n "$hits" ]; then
@@ -586,7 +621,7 @@ jobs:
           # Раньше брался самый свежий по времени, и это давало не тот файл:
           # успешный набор проверок пишется позже, чем падает сборка.
           last=""
-          for f in macos-cmake.log macos-build.log macos-tests.log macos-deploy.log; do
+          for f in macos-cmake.log macos-build.log macos-tests.log macos-deploy.log launch.log; do
             [ -f "$f" ] && last="$f"
           done
           if [ -n "$last" ]; then
