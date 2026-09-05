@@ -16,19 +16,27 @@
 #include <QVBoxLayout>
 
 #include "main/Interference.hpp"
+#include "main/NekoGui.hpp"
 #include "sys/WinShell.hpp"
 #include "ui/mainwindow.h"
 
 /**
- * «Что мешает подключению» — окно со списком и галочками.
+ * «Что мешает подключению» — окно, которое сначала объясняет, а потом
+ * предлагает.
+ *
+ * ГЛАВНОЕ ОТЛИЧИЕ ОТ ПЕРВОЙ ВЕРСИИ. Та показывала все чужие туннели одним
+ * списком с галочкой «приостановить». На машине владельца это были три рабочих
+ * OpenVPN, которые с нашим туннелем уживаются сами (см. Interference.hpp), и
+ * предложение читалось как «сломайте себе работу». Теперь строки разложены по
+ * исходам, и у тех, кто уживается, галочки нет вовсе.
  *
  * ЭТО ТРЕТИЙ ПУТЬ, а не замена «Починить сеть». Та кнопка сносит навсегда и
  * права на это имеет: она разбирает брошенный zapret, который человек ставил
  * полгода назад. Здесь — работающие чужие программы, которые нужны своему
- * хозяину, и трогать их можно только на время и только с возвратом.
+ * хозяину.
  *
  * ПОЧЕМУ РАЗВЕДКА И ДЕЙСТВИЕ РАЗДЕЛЕНЫ. Список читается обычным пользователем
- * (Get-Service, Get-NetAdapter, Get-Process), поэтому окно открывается без
+ * (Get-Service, Get-NetAdapter, Get-NetRoute), поэтому окно открывается без
  * единого запроса прав. UAC спрашивается ровно один раз и только если человек
  * поставил галочку и нажал. Посмотреть, что мешает, не должно быть действием.
  */
@@ -75,7 +83,7 @@ namespace GreenRhythm {
 
         QString kindWord(Meddler k) {
             switch (k) {
-                case Meddler::Adapter: return QObject::tr("сетевой адаптер");
+                case Meddler::Adapter: return QObject::tr("туннель");
                 case Meddler::Driver: return QObject::tr("драйвер");
                 case Meddler::Process: return QObject::tr("программа");
                 case Meddler::Filter: return QObject::tr("сетевой фильтр");
@@ -94,7 +102,9 @@ namespace GreenRhythm {
                            .arg(QString(QDir::toNativeSeparators(QApplication::applicationDirPath()
                                                                  + QStringLiteral("/dpi")))
                                     .replace(QChar('\''), QStringLiteral("''"))));
-        return parseScan(runPlain(script, 30000));
+        auto found = parseScan(runPlain(script, 30000));
+        classify(found, tunnelExcludes());
+        return found;
 #endif
     }
 
@@ -160,16 +170,10 @@ void MainWindow::on_menu_interference_triggered() {
 
     QDialog dlg(this);
     dlg.setWindowTitle(tr("Что мешает подключению"));
-    dlg.resize(620, 480);
+    dlg.resize(680, 560);
     auto *box = new QVBoxLayout(&dlg);
 
-    auto *head = new QLabel(
-        tr("Эти программы работают с сетью так же, как мы, и могут мешать. Отметьте те, "
-           "которые стоит <b>приостановить на время</b>.<br><br>"
-           "Ничего не удаляется. Прежнее состояние записывается до остановки и возвращается, "
-           "когда вы отключите VPN, закроете клиент — или при следующем запуске, если клиент "
-           "закрылся неожиданно."),
-        &dlg);
+    auto *head = new QLabel(&dlg);
     head->setWordWrap(true);
     box->addWidget(head);
 
@@ -177,60 +181,140 @@ void MainWindow::on_menu_interference_triggered() {
     area->setWidgetResizable(true);
     auto *inner = new QWidget(area);
     auto *list = new QVBoxLayout(inner);
-    QList<QCheckBox *> boxes;
 
-    for (const auto &m: found) {
-        auto *cb = new QCheckBox(inner);
-        QString text = QStringLiteral("<b>%1</b> — %2").arg(m.title.toHtmlEscaped(), kindWord(m.kind));
-        if (!m.detail.isEmpty()) text += QStringLiteral("<br><span>%1</span>").arg(m.detail.toHtmlEscaped());
-        if (!m.risk.isEmpty()) text += QStringLiteral("<br><b>%1</b>").arg(m.risk.toHtmlEscaped());
-        if (!m.reversible) {
-            // Правило 3: чего не умеем вернуть — то без галочки. Предложить
-            // кнопку и не суметь откатить хуже, чем не предлагать вовсе.
-            text += QStringLiteral("<br><i>%1</i>")
-                        .arg(tr("вернуть автоматически не сможем — закройте сами, если решите"));
-            cb->setEnabled(false);
+    // Разложено по ИСХОДАМ, а не по видам. Человеку важно не «служба это или
+    // адаптер», а «мне что-то делать или нет».
+    struct Section {
+        Cure cure;
+        QString title;
+        QString hint;
+        bool checkable;
+        bool checkedByDefault;
+    };
+    const QList<Section> sections{
+        {Cure::Pause, tr("Мешают: забирают весь трафик"),
+         tr("Два маршрута по умолчанию не уживаются — кто-то должен уступить. "
+            "Приостановка обратима: вернём, когда отключите VPN или закроете клиент."),
+         true, false},
+        {Cure::Separate, tr("Можно развести по адресам"),
+         tr("Останавливать не нужно. Их подсети допишутся в «мимо туннеля», и оба туннеля "
+            "будут работать одновременно."),
+         true, true},
+        {Cure::Manual, tr("Только вашими руками"),
+         tr("Сюда мы не лезем: корпоративные клиенты и запущенное вручную. "
+            "Вернуть автоматически не сможем, поэтому и останавливать не предлагаем."),
+         false, false},
+        {Cure::Nothing, tr("Уживаются — делать ничего не надо"),
+         tr("Нашли, посмотрели маршруты, убедились, что нашему туннелю они не мешают."), false, false},
+    };
+
+    QList<QCheckBox *> boxes;
+    QList<Meddling> rows;
+    int actionable = 0;
+
+    for (const auto &sec: sections) {
+        QList<Meddling> mine;
+        for (const auto &m: found) {
+            if (m.cure == sec.cure) mine << m;
         }
-        cb->setText(text);
-        cb->setChecked(false); // правило 1: ничего не трогаем без галочки
-        list->addWidget(cb);
-        boxes << cb;
+        if (mine.isEmpty()) continue;
+
+        auto *caption = new QLabel(QStringLiteral("<h3>%1</h3><p>%2</p>").arg(sec.title, sec.hint), inner);
+        caption->setWordWrap(true);
+        list->addWidget(caption);
+
+        for (const auto &m: mine) {
+            QString text = QStringLiteral("<b>%1</b> — %2").arg(m.title.toHtmlEscaped(), kindWord(m.kind));
+            if (!m.detail.isEmpty()) text += QStringLiteral("<br>%1").arg(m.detail.toHtmlEscaped());
+            if (!m.advice.isEmpty()) text += QStringLiteral("<br>%1").arg(m.advice.toHtmlEscaped());
+            if (!m.risk.isEmpty()) text += QStringLiteral("<br><b>%1</b>").arg(m.risk.toHtmlEscaped());
+
+            if (sec.checkable) {
+                auto *cb = new QCheckBox(text, inner);
+                cb->setChecked(sec.checkedByDefault);
+                list->addWidget(cb);
+                boxes << cb;
+                rows << m;
+                actionable++;
+            } else {
+                auto *lbl = new QLabel(QStringLiteral("• ") + text, inner);
+                lbl->setWordWrap(true);
+                lbl->setContentsMargins(18, 0, 0, 6);
+                list->addWidget(lbl);
+            }
+        }
     }
     list->addStretch();
     area->setWidget(inner);
     box->addWidget(area, 1);
 
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-    buttons->button(QDialogButtonBox::Ok)->setText(tr("Приостановить отмеченные"));
-    buttons->button(QDialogButtonBox::Cancel)->setText(tr("Ничего не делать"));
+    head->setText(actionable > 0
+                      ? tr("Посмотрели маршруты каждого чужого туннеля и разложили по тому, "
+                           "<b>что с ними делать</b>. Ничего не удаляется и ничего не делается без галочки.")
+                      : tr("Чужие VPN на машине есть, но <b>ни один из них нам не мешает</b>: "
+                           "каждый несёт только свои подсети, а наш туннель их не трогает. "
+                           "Делать ничего не надо."));
+
+    auto *buttons = new QDialogButtonBox(
+        actionable > 0 ? (QDialogButtonBox::Ok | QDialogButtonBox::Cancel) : QDialogButtonBox::Close, &dlg);
+    if (actionable > 0) {
+        buttons->button(QDialogButtonBox::Ok)->setText(tr("Применить отмеченное"));
+        buttons->button(QDialogButtonBox::Cancel)->setText(tr("Ничего не делать"));
+    }
     QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     box->addWidget(buttons);
 
-    if (dlg.exec() != QDialog::Accepted) return;
+    if (dlg.exec() != QDialog::Accepted || actionable == 0) return;
 
-    QList<Meddling> chosen;
-    for (int i = 0; i < found.size() && i < boxes.size(); ++i) {
-        if (boxes[i]->isChecked() && found[i].reversible) chosen << found[i];
+    QList<Meddling> toPause;
+    QStringList toSeparate;
+    QStringList separateNames;
+    for (int i = 0; i < rows.size() && i < boxes.size(); ++i) {
+        if (!boxes[i]->isChecked()) continue;
+        if (rows[i].cure == Cure::Separate) {
+            toSeparate << rows[i].overlap;
+            separateNames << rows[i].title;
+        } else if (rows[i].cure == Cure::Pause && rows[i].reversible) {
+            toPause << rows[i];
+        }
     }
-    if (chosen.isEmpty()) return;
 
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-    const bool ok = runElevated(pauseScript(chosen, QDir::toNativeSeparators(snapshotPath())), 120000);
-    QApplication::restoreOverrideCursor();
-
-    if (!ok || !interferencePaused()) {
-        QMessageBox::warning(this, tr("Что мешает подключению"),
-                             tr("Не получилось приостановить. Ничего не изменилось."));
-        return;
+    // РАЗВЕДЕНИЕ ПО АДРЕСАМ — ПЕРВЫМ, потому что оно ничего не ломает и часто
+    // снимает нужду в остановке вовсе.
+    if (!toSeparate.isEmpty()) {
+        auto lines = NekoGui::dataStore->vpn_route_exclude_extra.split(QChar('\n'));
+        for (const auto &p: toSeparate) {
+            if (!lines.contains(p)) lines << p;
+        }
+        lines.removeAll(QString());
+        NekoGui::dataStore->vpn_route_exclude_extra = lines.join(QChar('\n'));
+        show_log_impl(tr("Мимо туннеля добавлены адреса чужих туннелей: %1 (для %2)")
+                          .arg(toSeparate.join(QStringLiteral(", ")), separateNames.join(QStringLiteral(", "))));
+        // Исключения читаются при старте ядра, поэтому без перезапуска ничего
+        // не изменится — RouteChanged об этом и спросит.
+        MW_dialog_message("", "UpdateDataStore,RouteChanged");
     }
-    show_log_impl(tr("Приостановлено на время работы: %1")
-                      .arg([&] {
-                          QStringList names;
-                          for (const auto &m: chosen) names << m.title;
-                          return names.join(QStringLiteral(", "));
-                      }()));
-    QMessageBox::information(this, tr("Что мешает подключению"),
-                             tr("Приостановили. Вернём как было, когда вы отключите VPN или закроете клиент."));
+
+    if (!toPause.isEmpty()) {
+        QApplication::setOverrideCursor(Qt::WaitCursor);
+        const bool ok = runElevated(pauseScript(toPause, QDir::toNativeSeparators(snapshotPath())), 120000);
+        QApplication::restoreOverrideCursor();
+        if (!ok || !interferencePaused()) {
+            QMessageBox::warning(this, tr("Что мешает подключению"),
+                                 tr("Не получилось приостановить. Ничего не изменилось."));
+            return;
+        }
+        QStringList names;
+        for (const auto &m: toPause) names << m.title;
+        show_log_impl(tr("Приостановлено на время работы: %1").arg(names.join(QStringLiteral(", "))));
+        QMessageBox::information(
+            this, tr("Что мешает подключению"),
+            tr("Приостановили. Вернём как было, когда вы отключите VPN или закроете клиент."));
+    } else if (!toSeparate.isEmpty()) {
+        QMessageBox::information(this, tr("Что мешает подключению"),
+                                 tr("Развели по адресам. Ничего не выключено — оба туннеля будут "
+                                    "работать одновременно."));
+    }
 #endif
 }

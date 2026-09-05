@@ -564,7 +564,9 @@ add_executable(interference_test EXCLUDE_FROM_ALL
         test/InterferenceTest.cpp
         main/Interference.cpp
 )
-target_link_libraries(interference_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+# Qt::Network — ради QHostAddress: вложенность префиксов считается разбором
+# адреса, а не строк, иначе 172.32.0.0/16 «попал бы» в 172.16.0.0/12.
+target_link_libraries(interference_test PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network)
 target_include_directories(interference_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(dpi_plan_test EXCLUDE_FROM_ALL
