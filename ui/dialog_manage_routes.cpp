@@ -1,4 +1,5 @@
 #include "dialog_manage_routes.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_dialog_manage_routes.h"
 
 #include "3rdparty/qv2ray/v2/ui/widgets/editors/w_JsonEditor.hpp"
@@ -18,6 +19,7 @@
 
 DialogManageRoutes::DialogManageRoutes(QWidget *parent) : QDialog(parent), ui(new Ui::DialogManageRoutes) {
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
     title_base = windowTitle();
 
     QStringList qsValue = {""};

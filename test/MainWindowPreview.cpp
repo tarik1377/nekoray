@@ -65,6 +65,12 @@ int main(int argc, char *argv[]) {
     } else {
         qWarning("перевод не загрузился — подписи будут английскими");
     }
+    // И перевод самого Qt — иначе «OK» и «Cancel» на снимке останутся
+    // английскими, каких у человека уже нет.
+    QTranslator qt;
+    if (qt.load(QStringLiteral("qtbase_ru.qm"), QCoreApplication::applicationDirPath())) {
+        QCoreApplication::installTranslator(&qt);
+    }
 
     QMainWindow w;
     Ui::MainWindow ui;

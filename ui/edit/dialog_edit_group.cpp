@@ -1,4 +1,5 @@
 #include "dialog_edit_group.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_dialog_edit_group.h"
 
 #include "db/Database.hpp"
@@ -10,6 +11,7 @@
 
 DialogEditGroup::DialogEditGroup(const std::shared_ptr<NekoGui::Group> &ent, QWidget *parent) : QDialog(parent), ui(new Ui::DialogEditGroup) {
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
     this->ent = ent;
 
     connect(ui->type, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this, [=](int index) {

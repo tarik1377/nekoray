@@ -1,4 +1,5 @@
 #include "edit_trojan_vless.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_edit_trojan_vless.h"
 
 #include "fmt/TrojanVLESSBean.hpp"
@@ -6,6 +7,7 @@
 
 EditTrojanVLESS::EditTrojanVLESS(QWidget *parent) : QWidget(parent), ui(new Ui::EditTrojanVLESS) {
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
 }
 
 EditTrojanVLESS::~EditTrojanVLESS() {

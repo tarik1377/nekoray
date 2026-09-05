@@ -71,10 +71,11 @@ QPushButton:pressed {
     background-color: #22262c;
 }
 
+/* Без жирного: ряд стандартных кнопок меряет их обычным шрифтом, и жирная
+   «Готово» резала себе первую букву — та же ловушка, что у переключателя. */
 QPushButton:default {
     background-color: #2ea043;
     color: #08170c;
-    font-weight: 600;
 }
 
 QPushButton:default:hover {
@@ -334,20 +335,41 @@ QCheckBox:disabled, QRadioButton:disabled {
     color: #6a7078;
 }
 
+/* Коробка — карточка с подписью НАД ней, а не рамка с заголовком в разрыве
+   линии. Подпись капителью делает DialogPolish; здесь — только вид. */
 QGroupBox {
-    border: 1px solid #2f343b;
+    background-color: #262a30;
+    border: none;
     border-radius: 12px;
-    margin-top: 14px;
-    padding-top: 8px;
+    margin-top: 24px;
+    padding-top: 6px;
     color: #e4e6eb;
 }
 
 QGroupBox::title {
     subcontrol-origin: margin;
     subcontrol-position: top left;
-    left: 12px;
-    padding: 0 6px;
+    left: 2px;
+    top: 2px;
+    padding: 0 2px;
     color: #9aa0a8;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    background: transparent;
+}
+
+QGroupBox QLineEdit, QGroupBox QComboBox, QGroupBox QAbstractSpinBox,
+QGroupBox QPlainTextEdit, QGroupBox QTextEdit {
+    background-color: #1e2126;
+}
+
+QGroupBox QPushButton {
+    background-color: #2e333a;
+}
+
+QGroupBox QPushButton:hover {
+    background-color: #363c44;
 }
 
 /* ── Прокрутка: тонкая, без стрелок — всех четырёх ─────────────────────── */

@@ -1,4 +1,5 @@
 #include "dialog_edit_profile.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_dialog_edit_profile.h"
 
 #include "ui/edit/edit_socks_http.h"
@@ -26,6 +27,7 @@ DialogEditProfile::DialogEditProfile(const QString &_type, int profileOrGroupId,
     : QDialog(parent), ui(new Ui::DialogEditProfile) {
     // setup UI
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
     ui->dialog_layout->setAlignment(ui->left, Qt::AlignTop);
 
     // network changed

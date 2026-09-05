@@ -276,6 +276,7 @@ set(PROJECT_SOURCES
         ui/ServerCardDelegate.cpp
         ui/MainShell.cpp
         ui/Icons.cpp
+        ui/DialogPolish.cpp
         main/PortHealth.cpp
         main/ProgramTrouble.cpp
         main/Interference.cpp
@@ -390,6 +391,38 @@ else ()
 endif ()
 configure_file(translations/translations.qrc ${CMAKE_BINARY_DIR} COPYONLY)
 target_sources(greenrhythm PRIVATE ${CMAKE_BINARY_DIR}/translations.qrc)
+
+# ПЕРЕВОД САМОГО Qt — ВШИТЬ, А НЕ ПОЛОЖИТЬ РЯДОМ. «OK», «Cancel», «Press
+# shortcut» и всё остальное, что рисует библиотека, а не наш код, живёт в
+# qtbase_<язык>.qm из каталога translations Qt. windeployqt его копирует, а
+# deploy_windows64.sh тут же выбрасывает (rm -rf translations), и в русском
+# окне годами стояли английские кнопки. Файл берётся из того же SDK, что
+# собирает приложение, кладётся в каталог сборки (его читают превью) и
+# вшивается в ресурс, откуда main.cpp его и грузит запасным путём.
+if (${QT_VERSION_MAJOR} GREATER_EQUAL 6 AND TARGET Qt6::qmake)
+    get_target_property(GR_QMAKE Qt6::qmake IMPORTED_LOCATION)
+    get_filename_component(GR_QT_BIN "${GR_QMAKE}" DIRECTORY)
+    get_filename_component(GR_QT_TRANSLATIONS "${GR_QT_BIN}/../translations" ABSOLUTE)
+    set(GR_QTBASE_QM "")
+    foreach (lang ru zh_CN fa)
+        if (EXISTS "${GR_QT_TRANSLATIONS}/qtbase_${lang}.qm")
+            configure_file("${GR_QT_TRANSLATIONS}/qtbase_${lang}.qm" "${CMAKE_BINARY_DIR}/qtbase_${lang}.qm" COPYONLY)
+            string(APPEND GR_QTBASE_QM "        <file>qtbase_${lang}.qm</file>
+")
+        endif ()
+    endforeach ()
+    if (GR_QTBASE_QM)
+        file(WRITE "${CMAKE_BINARY_DIR}/qtbase_translations.qrc"
+                "<RCC>
+    <qresource prefix=\"/translations\">
+${GR_QTBASE_QM}    </qresource>
+</RCC>
+")
+        target_sources(greenrhythm PRIVATE "${CMAKE_BINARY_DIR}/qtbase_translations.qrc")
+    else ()
+        message(WARNING "qtbase_*.qm не найдены в ${GR_QT_TRANSLATIONS}: кнопки Qt останутся английскими")
+    endif ()
+endif ()
 
 # Target Link
 
@@ -515,6 +548,30 @@ target_link_libraries(relay_dialog_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widget
 # окно можно было только запустив клиент поверх рабочего туннеля владельца.
 # Заголовок берётся тот же, что uic собрал для приложения, — второй AUTOUIC на
 # один .ui дал бы две расходящиеся вёрстки.
+# Снимки ВСЕХ диалогов из .ui: «Настройки» по вкладкам, маршруты, редактор
+# профиля и остальные. До этого их можно было увидеть только запустив клиент,
+# и они остались старым nekoray в новом окне. Заголовки — те же, что uic
+# собрал для приложения (см. mainwindow_preview ниже, довод тот же).
+add_executable(dialogs_preview EXCLUDE_FROM_ALL
+        test/DialogsPreview.cpp
+        main/AppFont.cpp
+        ui/DialogPolish.cpp
+        # Свои виджеты, которые .ui подставляют вместо штатных: без них setupUi
+        # не линкуется.
+        3rdparty/QtExtKeySequenceEdit.cpp
+)
+set_property(TARGET dialogs_preview PROPERTY AUTOMOC ON)
+add_dependencies(dialogs_preview greenrhythm)
+# И от шага генерации заголовков ОТДЕЛЬНО: зависимость от цели greenrhythm
+# упорядочивает только линковку, а объект превью компилируется раньше, чем
+# uic перегенерирует ui_*.h, и берёт старый. Вылезало так: правка .ui,
+# сборка, снимок — старый; вторая сборка — новый. Дважды.
+add_dependencies(dialogs_preview greenrhythm_autogen)
+target_include_directories(dialogs_preview PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_BINARY_DIR}/greenrhythm_autogen/include)
+target_link_libraries(dialogs_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+
 add_executable(mainwindow_preview EXCLUDE_FROM_ALL
         test/MainWindowPreview.cpp
         ui/MainShell.cpp
@@ -529,6 +586,11 @@ add_executable(mainwindow_preview EXCLUDE_FROM_ALL
 set_property(TARGET mainwindow_preview PROPERTY AUTORCC ON)
 set_property(TARGET mainwindow_preview PROPERTY AUTOMOC ON)
 add_dependencies(mainwindow_preview greenrhythm)
+# И от шага генерации заголовков ОТДЕЛЬНО: зависимость от цели greenrhythm
+# упорядочивает только линковку, а объект превью компилируется раньше, чем
+# uic перегенерирует ui_*.h, и берёт старый. Вылезало так: правка .ui,
+# сборка, снимок — старый; вторая сборка — новый. Дважды.
+add_dependencies(mainwindow_preview greenrhythm_autogen)
 target_include_directories(mainwindow_preview PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_BINARY_DIR}/greenrhythm_autogen/include)

@@ -1,4 +1,5 @@
 #include "edit_custom.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_edit_custom.h"
 
 #include "3rdparty/qv2ray/v2/ui/widgets/editors/w_JsonEditor.hpp"
@@ -12,6 +13,7 @@
 
 EditCustom::EditCustom(QWidget *parent) : QWidget(parent), ui(new Ui::EditCustom) {
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
     ui->config_simple->setPlaceholderText(
         "example:\n"
         "  server-address: \"127.0.0.1:%mapping_port%\"\n"

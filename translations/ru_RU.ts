@@ -231,6 +231,22 @@
         <source>Disabling TLS verification exposes subscription downloads to interception on hostile networks. Only enable this if you trust your connection.</source>
         <translation>Без проверки TLS загрузку подписки можно перехватить в чужой сети. Включайте, только если доверяете подключению.</translation>
     </message>
+    <message>
+        <source>Language</source>
+        <translation>Язык</translation>
+    </message>
+    <message>
+        <source>Loglevel</source>
+        <translation>Уровень журнала</translation>
+    </message>
+    <message>
+        <source>Padding</source>
+        <translation>Дополнение</translation>
+    </message>
+    <message>
+        <source>core_name</source>
+        <translation>Ядро</translation>
+    </message>
 </context>
 <context>
     <name>DialogEditGroup</name>
@@ -315,7 +331,7 @@
     <name>DialogEditProfile</name>
     <message>
         <source>Edit</source>
-        <translation>Редактировать</translation>
+        <translation>Изменить</translation>
     </message>
     <message>
         <source>Common</source>
@@ -1117,11 +1133,11 @@ This needs GreenRhythm to be run with administrator privileges.</source>
     </message>
     <message>
         <source>Bypass CIDR</source>
-        <translation>Пропускать CIDR</translation>
+        <translation>Адреса мимо туннеля</translation>
     </message>
     <message>
         <source>Bypass Process Name</source>
-        <translation>Пропускать процессы</translation>
+        <translation>Программы мимо туннеля</translation>
     </message>
     <message>
         <source>Whether blacklisted or whitelisted, your traffic will be handled by greenrhythm_core (sing-tun). This is NOT equal to &quot;process mode&quot; of some software.</source>
@@ -1180,6 +1196,26 @@ https://verdantvibe.ru</translation>
     <message>
         <source>Через %1 идёт весь трафик. Два полных туннеля на одной машине несовместимы: его сети не подставлены, и включать наш туннель вместе с ним не стоит.</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Strict Route</source>
+        <translation>Строгие маршруты</translation>
+    </message>
+    <message>
+        <source>FakeDNS</source>
+        <translation>Подставной DNS</translation>
+    </message>
+    <message>
+        <source>Stack</source>
+        <translation>Стек</translation>
+    </message>
+    <message>
+        <source>MTU</source>
+        <translation>MTU</translation>
+    </message>
+    <message>
+        <source>Whitelist Mode</source>
+        <translation>Режим белого списка</translation>
     </message>
 </context>
 <context>
@@ -1375,6 +1411,10 @@ https://verdantvibe.ru</translation>
     <message>
         <source>Please pick a core.</source>
         <translation>Пожалуйста, выберите ядро.</translation>
+    </message>
+    <message>
+        <source>Edit</source>
+        <translation>Изменить</translation>
     </message>
 </context>
 <context>
@@ -1609,6 +1649,10 @@ https://verdantvibe.ru</translation>
     <message>
         <source>Use Xray core (for Reality servers not compatible with sing-box)</source>
         <translation>Использовать ядро Xray (для серверов Reality, несовместимых с sing-box)</translation>
+    </message>
+    <message>
+        <source>Flow</source>
+        <translation>Поток (flow)</translation>
     </message>
 </context>
 <context>

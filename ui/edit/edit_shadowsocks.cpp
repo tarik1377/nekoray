@@ -1,4 +1,5 @@
 #include "edit_shadowsocks.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_edit_shadowsocks.h"
 
 #include "fmt/ShadowSocksBean.hpp"
@@ -7,6 +8,7 @@
 EditShadowSocks::EditShadowSocks(QWidget *parent) : QWidget(parent),
                                                     ui(new Ui::EditShadowSocks) {
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
     ui->method->addItems(Preset::SingBox::ShadowsocksMethods);
 }
 

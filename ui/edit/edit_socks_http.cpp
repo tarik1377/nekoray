@@ -1,4 +1,5 @@
 #include "edit_socks_http.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_edit_socks_http.h"
 
 #include "fmt/SocksHttpBean.hpp"
@@ -6,6 +7,7 @@
 EditSocksHttp::EditSocksHttp(QWidget *parent) : QWidget(parent),
                                                 ui(new Ui::EditSocksHttp) {
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
 }
 
 EditSocksHttp::~EditSocksHttp() {

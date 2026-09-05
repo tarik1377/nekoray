@@ -1,4 +1,5 @@
 #include "edit_relay.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_edit_relay.h"
 
 #include "fmt/RelayBean.hpp"
@@ -9,6 +10,7 @@
 
 EditRelay::EditRelay(QWidget *parent) : QWidget(parent), ui(new Ui::EditRelay) {
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
 
     // Состояние доступа показывается прямо в редакторе, а не только в отдельном
     // диалоге: человек, открывший профиль, потому что «не подключается»,

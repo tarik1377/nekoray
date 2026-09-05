@@ -45,7 +45,13 @@ void loadTranslate(const QString& locale) {
     if (trans->load(":/translations/" + locale + ".qm")) {
         QCoreApplication::installTranslator(trans);
     }
-    if (trans_qt->load(QApplication::applicationDirPath() + "/qtbase_" + locale + ".qm")) {
+    // ПЕРЕВОД САМОГО Qt — «OK», «Cancel», «Press shortcut» и всё, что рисует
+    // не наш код, а библиотека. Файл рядом с приложением его никто не кладёт:
+    // deploy_windows64.sh выбрасывает каталог translations целиком, и кнопки
+    // годами стояли по-английски в русском окне. Поэтому запасной путь — из
+    // ресурса, куда файл вшивает сборка (см. CMakeLists, qtbase_translations).
+    if (trans_qt->load(QApplication::applicationDirPath() + "/qtbase_" + locale + ".qm")
+        || trans_qt->load(":/translations/qtbase_" + locale + ".qm")) {
         QCoreApplication::installTranslator(trans_qt);
     }
 }

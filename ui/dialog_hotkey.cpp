@@ -1,10 +1,12 @@
 #include "dialog_hotkey.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_dialog_hotkey.h"
 
 #include "ui/mainwindow_interface.h"
 
 DialogHotkey::DialogHotkey(QWidget *parent) : QDialog(parent), ui(new Ui::DialogHotkey) {
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
     ui->show_mainwindow->setKeySequence(NekoGui::dataStore->hotkey_mainwindow);
     ui->show_groups->setKeySequence(NekoGui::dataStore->hotkey_group);
     ui->show_routes->setKeySequence(NekoGui::dataStore->hotkey_route);

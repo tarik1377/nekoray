@@ -1,4 +1,5 @@
 #include "dialog_vpn_settings.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_dialog_vpn_settings.h"
 
 #include "main/GuiUtils.hpp"
@@ -11,6 +12,7 @@
 
 DialogVPNSettings::DialogVPNSettings(QWidget *parent) : QDialog(parent), ui(new Ui::DialogVPNSettings) {
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
     ADD_ASTERISK(this);
 
     ui->fake_dns->setChecked(NekoGui::dataStore->fake_dns);
