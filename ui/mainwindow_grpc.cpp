@@ -1,4 +1,5 @@
 #include "./ui_mainwindow.h"
+#include "main/Interference.hpp"
 #include "mainwindow.h"
 
 #include "db/Database.hpp"
@@ -559,6 +560,19 @@ void MainWindow::neko_stop(bool crash, bool sem) {
         runOnUiThread([=] {
             refresh_status();
             refresh_proxy_list(id);
+            // ОБЕЩАНИЕ «ВЕРНЁМ, КОГДА ОТКЛЮЧИТЕ» ВЫПОЛНЯЕТСЯ ЗДЕСЬ. Отдельным
+            // потоком: возврат поднимает PowerShell с ожиданием, и держать на
+            // нём поток окна значило бы подвесить клиент на время UAC.
+            if (!GreenRhythm::interferencePaused()) return;
+            show_log_impl(tr("Возвращаем то, что приостанавливали на время работы…"));
+            runOnNewThread([this] {
+                const bool ok = GreenRhythm::resumeInterference(nullptr);
+                runOnUiThread([this, ok] {
+                    show_log_impl(ok ? tr("Вернули как было.")
+                                     : tr("Не получилось вернуть приостановленное — "
+                                          "загляните в «Что мешает подключению…»."));
+                });
+            });
         });
 
         return true;

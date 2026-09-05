@@ -654,6 +654,7 @@
     <addaction name="menu_gr_buy"/>
     <addaction name="menu_gr_telegram"/>
     <addaction name="menu_gr_diag"/>
+    <addaction name="menu_interference"/>
     <addaction name="menu_gr_fixnet"/>
     <addaction name="menu_gr_adapters"/>
     <addaction name="menu_gr_howto"/>
@@ -683,6 +684,14 @@
   <action name="menu_gr_diag">
    <property name="text">
     <string>Диагностика соединения</string>
+   </property>
+  </action>
+  <action name="menu_interference">
+   <property name="text">
+    <string>Что мешает подключению…</string>
+   </property>
+   <property name="toolTip">
+    <string>Показать чужие VPN, обходы и туннельные адаптеры и приостановить выбранные на время — с возвратом</string>
    </property>
   </action>
   <action name="menu_gr_fixnet">

@@ -277,6 +277,8 @@ set(PROJECT_SOURCES
         ui/MainShell.cpp
         main/PortHealth.cpp
         main/ProgramTrouble.cpp
+        main/Interference.cpp
+        ui/dialog_interference.cpp
         ui/dialog_greenrhythm.cpp
         ui/dialog_manage_routes.cpp
         ui/dialog_manage_routes.h
@@ -554,6 +556,17 @@ target_link_libraries(widget_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widget
 # в кернел-драйвер: ошибка в порядке профилей или пустой список означают не
 # «не сработало», а «дурим весь трафик машины». Набор чистый: ни сети, ни
 # системы, ни winws — сравнивается ровно то, что вернула buildPlan.
+# Помехи: приостановка чужого и возврат его как было. Единственное место, где
+# мы выключаем ЧУЖУЮ работающую программу, — и цена ошибки не в нашем клиенте, а
+# в рабочем VPN человека, который он не свяжет с нами. Проверять на живой машине
+# нечем: каждая проверка означала бы выключить себе сеть.
+add_executable(interference_test EXCLUDE_FROM_ALL
+        test/InterferenceTest.cpp
+        main/Interference.cpp
+)
+target_link_libraries(interference_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+target_include_directories(interference_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
 add_executable(dpi_plan_test EXCLUDE_FROM_ALL
         test/DpiPlanTest.cpp
         dpi/DpiPlan.cpp
@@ -622,6 +635,7 @@ set(GR_TEST_TARGETS
         widget_lifetime_test
         network_repair_test
         dpi_plan_test
+        interference_test
 )
 
 add_custom_target(build-tests DEPENDS ${GR_TEST_TARGETS})

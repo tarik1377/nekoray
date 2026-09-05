@@ -1,5 +1,7 @@
 #include "ui/mainwindow_common.hpp"
 
+#include "main/Interference.hpp"
+
 #include "dpi/DpiBundle.hpp"
 #include "dpi/DpiModule.hpp"
 
@@ -210,6 +212,35 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // МОДУЛЬ ОБХОДА создаётся всегда, даже когда выключен и не скачан: он и
     // есть то место, где живёт ответ «почему не работает». Выключенный модуль
     // не делает ничего — ни процесса, ни таймера, ни обращения к системе.
+    // СНИМОК, ПЕРЕЖИВШИЙ ЗАПУСК, означает ровно одно: прошлый раз кончился
+    // плохо — клиент упал или его убили, — а чужая служба до сих пор выключена
+    // нашими руками. Человек при этом сидит без рабочего VPN и никак не свяжет
+    // это с нами. Тот же приём, что у MacProxy::RestoreIfCrashed выше.
+    //
+    // Спрашиваем, а не возвращаем молча: возврат требует повышения прав, и
+    // окно UAC без объяснения сразу после запуска пугает сильнее, чем вопрос.
+    if (GreenRhythm::interferencePaused()) {
+        QTimer::singleShot(1200, this, [this] {
+            QString said;
+            QFile f(GreenRhythm::snapshotPath());
+            if (f.open(QIODevice::ReadOnly)) {
+                said = GreenRhythm::snapshotSummary(QString::fromUtf8(f.readAll())).join(QChar('\n'));
+                f.close();
+            }
+            if (QMessageBox::question(this, tr("Приостановлено в прошлый раз"),
+                                      tr("В прошлый раз клиент закрылся неожиданно, и это осталось "
+                                         "приостановленным:\n\n%1\n\nВернуть как было?")
+                                          .arg(said))
+                != QMessageBox::Yes) {
+                return;
+            }
+            const bool ok = GreenRhythm::resumeInterference(nullptr);
+            show_log_impl(ok ? tr("Вернули как было то, что приостанавливали в прошлый раз.")
+                             : tr("Не получилось вернуть приостановленное. "
+                                  "Службы включаются вручную: «Службы» в «Администрировании»."));
+        });
+    }
+
     dpi_module = new GreenRhythm::Dpi::DpiModule(this);
     connect(dpi_module, &GreenRhythm::Dpi::DpiModule::stateChanged, this, [this] {
         show_log_impl(tr("Усиленный обход: %1").arg(dpi_module->stateText()));
@@ -1124,6 +1155,10 @@ void MainWindow::on_menu_exit_triggered() {
         // именно резидентный WinDivert и находят античиты. Порядок здесь важнее
         // краткости: всё остальное ниже может показать диалог и вернуться.
         if (dpi_module != nullptr) dpi_module->shutdown();
+        // И вернуть чужое, что приостановили. Тоже до всего остального: ниже
+        // есть пути, которые показывают диалог и возвращаются, а обещание
+        // «вернём, когда закроете клиент» дано без оговорок.
+        if (GreenRhythm::interferencePaused()) GreenRhythm::resumeInterference(nullptr);
         //
         neko_set_spmode_system_proxy(false, false);
         neko_set_spmode_vpn(false, false);

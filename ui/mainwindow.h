@@ -37,11 +37,14 @@ namespace GreenRhythm {
     class MainShell;
 }
 
-QT_BEGIN_NAMESPACE
+// Вне QT_BEGIN_NAMESPACE намеренно: внутри него объявление уехало бы в
+// QT_NAMESPACE::GreenRhythm::Dpi, и с Qt, собранным в пространстве имён,
+// это был бы другой класс — при обычной сборке молча совпадающий.
 namespace GreenRhythm::Dpi {
     class DpiModule;
 }
 
+QT_BEGIN_NAMESPACE
 namespace Ui {
     class MainWindow;
 }
@@ -98,6 +101,12 @@ public slots:
     void on_commitDataRequest();
 
     void on_menu_exit_triggered();
+
+    // «Что мешает подключению»: список чужих VPN и обходов с галочками.
+    // ОБРАТИМО, в отличие от «Починить сеть»: прежнее состояние пишется в
+    // снимок до остановки и возвращается при отключении, выходе и при
+    // следующем запуске после падения.
+    void on_menu_interference_triggered();
 
 #ifndef MW_INTERFACE
 
