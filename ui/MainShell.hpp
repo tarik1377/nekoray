@@ -124,7 +124,7 @@ namespace GreenRhythm {
          * сверху, а ряд ушёл вместе с прежней вёрсткой. Человек искал их и не
          * находил — ровно тот вопрос, с которого и начался этот блок.
          */
-        void setModes(bool tun, bool systemProxy, bool gamesViaTunnel);
+        void setModes(bool tun, bool systemProxy, bool gamesViaTunnel, bool dpiFragment);
 
         /** Кого подключит кнопка, пока не подключено. Пусто — «Сервер не выбран». */
         void setIdleServer(const QString &name);
@@ -136,6 +136,7 @@ namespace GreenRhythm {
         void tunToggled(bool on);
         void systemProxyToggled(bool on);
         void gamesViaTunnelToggled(bool on);
+        void dpiFragmentToggled(bool on);
 
         /** Инструменты, переехавшие из верхнего ряда. */
         void routesRequested();
@@ -190,6 +191,7 @@ namespace GreenRhythm {
         QPushButton *modeTun = nullptr;
         QPushButton *modeProxy = nullptr;
         QPushButton *gamesToggle = nullptr;
+        QPushButton *dpiToggle = nullptr;
         QComboBox *serverPick = nullptr;
         QStringList serverSignature; ///< состав списка, чтобы не перестраивать зря
         QString idleServerName;

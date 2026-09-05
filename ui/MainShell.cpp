@@ -101,12 +101,15 @@ namespace GreenRhythm {
             b->setCheckable(true);
             b->setCursor(Qt::PointingHandCursor);
             b->setMinimumHeight(32);
+            // Без жирного во включённом состоянии: жирный шире обычного, фишка
+            // прыгала по ширине и резала собственную подпись. Состояние читается
+            // по заливке и цвету, этого достаточно.
             b->setStyleSheet(QStringLiteral(
                                  "QPushButton { border: 1px solid %1; border-radius: 8px;"
-                                 " color: %2; background: transparent; padding: 0 8px; }"
+                                 " color: %2; background: transparent; padding: 0 12px; }"
                                  "QPushButton:hover { border-color: %3; }"
                                  "QPushButton:checked { background: rgba(63,185,80,0.18);"
-                                 " border-color: %3; color: %3; font-weight: bold; }")
+                                 " border-color: %3; color: %3; }")
                                  .arg(kLine, kMuted, kAccent));
             return b;
         }
@@ -204,35 +207,11 @@ namespace GreenRhythm {
             box->addWidget(b);
         }
 
-        // РЕЖИМ. Туннель и системный прокси раньше были галками в верхнем ряду
-        // кнопок; ряд ушёл вместе с прежней вёрсткой, а замены не дали — человек
-        // спросил, куда всё делось. Здесь они на виду и показывают состояние.
-        box->addSpacing(14);
-        box->addWidget(caption(bar, tr("РЕЖИМ")));
-        {
-            auto *row = new QHBoxLayout();
-            row->setSpacing(6);
-            modeTun = toggle(bar, tr("Туннель"));
-            modeTun->setToolTip(tr("Весь трафик системы идёт через клиент (TUN). Нужны права администратора."));
-            connect(modeTun, &QPushButton::clicked, this, &MainShell::tunToggled);
-            row->addWidget(modeTun, 1);
-            modeProxy = toggle(bar, tr("Сист. прокси"));
-            modeProxy->setToolTip(tr("Только программы, которые уважают системный прокси: браузеры и большинство мессенджеров."));
-            connect(modeProxy, &QPushButton::clicked, this, &MainShell::systemProxyToggled);
-            row->addWidget(modeProxy, 1);
-            box->addLayout(row);
-        }
-        gamesToggle = toggle(bar, tr("Игры через VPN"));
-        gamesToggle->setToolTip(
-            tr("Обычно игры идут мимо туннеля: пинг ниже, адрес российский, античит спокоен.\n"
-               "Включите, если серверы игры фильтруются у провайдера и мимо туннеля она не работает."));
-        connect(gamesToggle, &QPushButton::clicked, this, &MainShell::gamesViaTunnelToggled);
-        box->addWidget(gamesToggle);
-
         // ИНСТРУМЕНТЫ. То, ради чего раньше лезли в верхний ряд: маршруты,
-        // настройки, обновление подписки и проверка обновлений. Сеткой два на
-        // два, чтобы колонка не вытянулась.
-        box->addSpacing(8);
+        // настройки, обновление подписки и проверка обновлений. Режимы здесь
+        // не живут: они про подключение и стоят на его странице, под кнопкой,
+        // — колонка остаётся навигации и инструментам.
+        box->addSpacing(14);
         box->addWidget(caption(bar, tr("ИНСТРУМЕНТЫ")));
         {
             // Короткие подписи — парой, длинные — во всю ширину. Сетка два на
@@ -403,7 +382,67 @@ namespace GreenRhythm {
         powerHint = muted(page, tr("Нажмите для подключения"), 1.15);
         powerHint->setAlignment(Qt::AlignHCenter);
         box->addWidget(powerHint);
-        box->addSpacing(28);
+        box->addSpacing(22);
+
+        // РЕЖИМ — ЗДЕСЬ, ПОД КНОПКОЙ, А НЕ В КОЛОНКЕ. Режим — это свойство
+        // подключения, и место ему рядом с тем, что он меняет. Слева
+        // переключатель из двух положений одним куском, справа два дополнения
+        // отдельными фишками: они не исключают друг друга.
+        {
+            auto *strip = new QWidget(page);
+            auto *row = new QHBoxLayout(strip);
+            row->setContentsMargins(0, 0, 0, 0);
+            row->setSpacing(10);
+
+            auto *seg = new QWidget(strip);
+            seg->setObjectName(QStringLiteral("grSeg"));
+            seg->setStyleSheet(QStringLiteral(
+                                   "QWidget#grSeg { background: %1; border: 1px solid %2; border-radius: 11px; }")
+                                   .arg(kSurfaceUp, kLine));
+            auto *segBox = new QHBoxLayout(seg);
+            segBox->setContentsMargins(3, 3, 3, 3);
+            segBox->setSpacing(2);
+            const QString segStyle = QStringLiteral(
+                "QPushButton { border: none; border-radius: 8px; padding: 6px 16px;"
+                " color: %1; background: transparent; }"
+                "QPushButton:hover { color: %2; }"
+                "QPushButton:checked { background: %3; color: #08170c; }")
+                .arg(kMuted, kText, kAccent);
+
+            modeTun = new QPushButton(tr("Туннель"), seg);
+            modeTun->setCheckable(true);
+            modeTun->setCursor(Qt::PointingHandCursor);
+            modeTun->setStyleSheet(segStyle);
+            modeTun->setToolTip(tr("Весь трафик системы идёт через клиент (TUN). Нужны права администратора."));
+            connect(modeTun, &QPushButton::clicked, this, &MainShell::tunToggled);
+            segBox->addWidget(modeTun);
+
+            modeProxy = new QPushButton(tr("Системный прокси"), seg);
+            modeProxy->setCheckable(true);
+            modeProxy->setCursor(Qt::PointingHandCursor);
+            modeProxy->setStyleSheet(segStyle);
+            modeProxy->setToolTip(tr("Только программы, которые уважают системный прокси: браузеры и большинство мессенджеров."));
+            connect(modeProxy, &QPushButton::clicked, this, &MainShell::systemProxyToggled);
+            segBox->addWidget(modeProxy);
+            row->addWidget(seg);
+
+            gamesToggle = toggle(strip, tr("Игры через VPN"));
+            gamesToggle->setToolTip(
+                tr("Обычно игры идут мимо туннеля: пинг ниже, адрес российский, античит спокоен.\n"
+               "Включите, если серверы игры фильтруются у провайдера и мимо туннеля она не работает."));
+            connect(gamesToggle, &QPushButton::clicked, this, &MainShell::gamesViaTunnelToggled);
+            row->addWidget(gamesToggle);
+
+            dpiToggle = toggle(strip, tr("Обход фильтрации"));
+            dpiToggle->setToolTip(
+                tr("Дробит приветствие TLS у того, что идёт мимо туннеля, — игры и античиты остаются на своём адресе,\n"
+               "а фильтр провайдера не видит имени сервера. Без драйвера, внутри ядра. Против простых фильтров; если не помогло — скажите."));
+            connect(dpiToggle, &QPushButton::clicked, this, &MainShell::dpiFragmentToggled);
+            row->addWidget(dpiToggle);
+
+            box->addWidget(strip, 0, Qt::AlignHCenter);
+        }
+        box->addSpacing(26);
 
         auto *caption = muted(page, tr("ТЕКУЩИЙ СЕРВЕР"), 0.85);
         QFont cf = caption->font();
@@ -571,11 +610,12 @@ namespace GreenRhythm {
         serverPick->blockSignals(false);
     }
 
-    void MainShell::setModes(bool tun, bool systemProxy, bool gamesViaTunnel) {
+    void MainShell::setModes(bool tun, bool systemProxy, bool gamesViaTunnel, bool dpiFragment) {
         // setChecked не шлёт clicked, поэтому обратной волны сигналов нет.
         if (modeTun != nullptr) modeTun->setChecked(tun);
         if (modeProxy != nullptr) modeProxy->setChecked(systemProxy);
         if (gamesToggle != nullptr) gamesToggle->setChecked(gamesViaTunnel);
+        if (dpiToggle != nullptr) dpiToggle->setChecked(dpiFragment);
     }
 
     void MainShell::setState(State next, const QString &reason) {

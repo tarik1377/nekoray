@@ -307,6 +307,35 @@ int main(int argc, char **argv) {
     is(QStringLiteral("порт Clash API подставляется в конфиг"),
        src.contains(QStringLiteral("dataStore->core_clash_port > 0 ? dataStore->core_clash_port")));
 
+    // ---- ОБХОД ФИЛЬТРАЦИИ — ТОЛЬКО ПРЯМОМУ ПУТИ И ТОЛЬКО TCP ----
+    //
+    // Дробление приветствия TLS нужно тому, что идёт мимо туннеля и режется у
+    // провайдера. Навесить его на туннель значило бы дробить наше же
+    // соединение к серверу; навесить на UDP — бессмысленно; навесить на правила
+    // по одним адресам — рискнуть домашним NAS с чужим стеком TLS. Проход стоит
+    // ПОСЛЕ сборки всей цепочки и ДО того, как она уходит в конфиг.
+    const int frag     = src.indexOf(QStringLiteral("auto fragmentDirect = ["));
+    const int chainEnd = src.indexOf(QStringLiteral("QJSONARRAY_ADD(routingRules, status->routingRules)"));
+    const int routeObj = src.indexOf(QStringLiteral("auto routeObj = QJsonObject{"));
+    is(QStringLiteral("проход дробления есть"), frag >= 0);
+    is(QStringLiteral("проход идёт ПОСЛЕ сборки цепочки"), frag >= 0 && frag > chainEnd);
+    is(QStringLiteral("проход идёт ДО отправки в конфиг"), frag >= 0 && routeObj > frag);
+    if (frag >= 0) {
+        const QString body = src.mid(frag, 1800);
+        is(QStringLiteral("дробится только bypass и direct"),
+           body.contains(QStringLiteral("out != QStringLiteral(\"bypass\") && out != QStringLiteral(\"direct\")")));
+        is(QStringLiteral("правила без tcp не трогаются"),
+           body.contains(QStringLiteral("!nets.contains(QStringLiteral(\"tcp\"))")));
+        is(QStringLiteral("правила по одним адресам не трогаются"),
+           body.contains(QStringLiteral("if (!byProcess && !byDomain) return o;")));
+        is(QStringLiteral("пакетное дробление — только правилам по процессу"),
+           body.indexOf(QStringLiteral("if (byProcess)")) < body.indexOf(QStringLiteral("tls_fragment_fallback_delay")));
+        is(QStringLiteral("запасная задержка задана явно"),
+           body.contains(QStringLiteral("tls_fragment_fallback_delay")));
+    }
+    is(QStringLiteral("переключатель обхода сохраняется в настройки"),
+       gui.contains(QStringLiteral("configItem(\"dpi_fragment\"")));
+
     std::fputs(QStringLiteral("\nпроверок %1, провалов %2\n").arg(checks).arg(fails).toUtf8().constData(),
                stdout);
     return fails == 0 ? 0 : 1;

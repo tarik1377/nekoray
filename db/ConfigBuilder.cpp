@@ -923,6 +923,60 @@ namespace NekoGui {
         if (status->forTest) routingRules = {};
         if (!status->forTest) QJSONARRAY_ADD(routingRules, QString2QJsonObject(dataStore->custom_route_global)["rules"].toArray())
         QJSONARRAY_ADD(routingRules, status->routingRules)
+
+        // ОБХОД ФИЛЬТРАЦИИ НА ПРЯМОМ ПУТИ — СРЕДСТВАМИ ЯДРА, БЕЗ ДРАЙВЕРА.
+        //
+        // Провайдер режет рукопожатие TLS по имени сервера у того, что идёт
+        // МИМО туннеля: игры, античиты. Уводить их в туннель значит менять
+        // адрес и пинг; дробление ClientHello оставляет всё на месте. Ядро
+        // умеет два приёма (option/rule_action.go): tls_record_fragment —
+        // несколько записей TLS в одном пакете, дёшево и без ожидания, — и
+        // tls_fragment — несколько ПАКЕТОВ с ожиданием подтверждения, дороже.
+        // Само ядро советует начинать с первого и второй вешать только на то,
+        // что точно фильтруется.
+        //
+        // Поэтому: правилам по домену — только записи; правилам по процессу
+        // (это и есть игры, у них фильтрация и замечена) — оба. Правила по
+        // одним адресам (ip_cidr, geoip:private) не трогаются вовсе: домашний
+        // NAS с чужим стеком TLS не обязан понимать дроблёное приветствие.
+        // UDP, ICMP и правила по протоколу — мимо: дробить там нечего.
+        //
+        // Задержка ожидания — 200 мс, а не 500 по умолчанию: под правами
+        // администратора (а туннель без них не поднимается) ядро ждёт
+        // настоящего подтверждения и к запасной задержке прибегает редко.
+        if (dataStore->dpi_fragment && !status->forTest) {
+            auto fragmentDirect = [](QJsonObject o) -> QJsonObject {
+                const auto out = o["outbound"].toString();
+                if (out != QStringLiteral("bypass") && out != QStringLiteral("direct")) return o;
+                if (o.contains("action") || o.contains("protocol")) return o;
+                if (o.contains("network")) {
+                    QStringList nets;
+                    const auto n = o["network"];
+                    if (n.isArray()) {
+                        for (const auto &x: n.toArray()) nets << x.toString();
+                    } else {
+                        nets << n.toString();
+                    }
+                    if (!nets.contains(QStringLiteral("tcp"))) return o;
+                }
+                const bool byProcess = o.contains("process_name") || o.contains("process_path")
+                                       || o.contains("process_path_regex");
+                const bool byDomain = o.contains("domain") || o.contains("domain_suffix")
+                                      || o.contains("domain_keyword") || o.contains("domain_regex")
+                                      || o.contains("geosite");
+                if (!byProcess && !byDomain) return o;
+                o["tls_record_fragment"] = true;
+                if (byProcess) {
+                    o["tls_fragment"] = true;
+                    o["tls_fragment_fallback_delay"] = QStringLiteral("200ms");
+                }
+                return o;
+            };
+            QJsonArray shaped;
+            for (const auto &v: routingRules) shaped += fragmentDirect(v.toObject());
+            routingRules = shaped;
+        }
+
         auto routeObj = QJsonObject{
             {"rules", routingRules},
             {"auto_detect_interface", dataStore->spmode_vpn}, // TODO force enable?

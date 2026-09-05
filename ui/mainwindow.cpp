@@ -317,6 +317,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
             // правила читаются при старте ядра, и без него ничего не изменится.
             MW_dialog_message("", "UpdateDataStore,RouteChanged");
         });
+        connect(shell, &GreenRhythm::MainShell::dpiFragmentToggled, this, [this](bool on) {
+            NekoGui::dataStore->dpi_fragment = on;
+            show_log_impl(on ? tr("Обход фильтрации включён: приветствие TLS у прямого трафика дробится. "
+                                  "Игры и античиты остаются на своём адресе.")
+                             : tr("Обход фильтрации выключен."));
+            MW_dialog_message("", "UpdateDataStore,RouteChanged");
+        });
         connect(shell, &GreenRhythm::MainShell::routesRequested, this,
                 [this] { on_menu_routing_settings_triggered(); });
         connect(shell, &GreenRhythm::MainShell::settingsRequested, this,
@@ -1297,7 +1304,8 @@ void MainWindow::refresh_status(const QString &traffic_update) {
             // Режимы — в колонку, той же правдой, что и в галки ниже.
             shell->setModes(NekoGui::dataStore->spmode_vpn,
                             NekoGui::dataStore->spmode_system_proxy,
-                            NekoGui::dataStore->games_via_tunnel);
+                            NekoGui::dataStore->games_via_tunnel,
+                            NekoGui::dataStore->dpi_fragment);
 
             // Пока не подключено, карточка называет того, кого подключит кнопка:
             // выбранного под кнопкой, иначе запомненного, иначе самого быстрого.
