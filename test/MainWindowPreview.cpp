@@ -16,9 +16,12 @@
  */
 
 #include "ui_mainwindow.h"
+#include "ui/Icons.hpp"
 
 #include "ui/MainShell.hpp"
 #include "ui/ServerCardDelegate.hpp"
+#include "main/ConnectionRow.hpp"
+#include "main/AppFont.hpp"
 
 #include <QApplication>
 #include <QFile>
@@ -47,6 +50,10 @@ namespace {
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
 
+    // Тот же шрифт, что ставит main.cpp: без него снимок показывает окно в
+    // «MS Shell Dlg 2», которого у человека уже нет.
+    GreenRhythm::applyAppFont(app);
+
     const QString out = argc > 1 ? QString::fromLocal8Bit(argv[1]) : QStringLiteral("main.png");
 
     // ПЕРЕВОД ОБЯЗАТЕЛЕН. Без него окно показывает английские заготовки из .ui,
@@ -57,6 +64,12 @@ int main(int argc, char *argv[]) {
         QCoreApplication::installTranslator(&ru);
     } else {
         qWarning("перевод не загрузился — подписи будут английскими");
+    }
+    // И перевод самого Qt — иначе «OK» и «Cancel» на снимке останутся
+    // английскими, каких у человека уже нет.
+    QTranslator qt;
+    if (qt.load(QStringLiteral("qtbase_ru.qm"), QCoreApplication::applicationDirPath())) {
+        QCoreApplication::installTranslator(&qt);
     }
 
     QMainWindow w;
@@ -81,6 +94,78 @@ int main(int argc, char *argv[]) {
     addServer(ui.proxyListTable, "VLESS", "31.77.129.38:443", "Germany-admin", "");
     addServer(ui.proxyListTable, "VLESS", "192.124.181.171:443", "tarik", "32 ms");
     addServer(ui.proxyListTable, "VLESS", "orsana.adshkola.ru:443", "orsana-admin", "106 ms");
+
+    // ТАБЛИЦА СОЕДИНЕНИЙ — С НАСТОЯЩИМИ СТРОКАМИ со снимка владельца 05.09.2026,
+    // через те же подписи, что и в живом окне (ConnectionRow). Три строки
+    // «без программы, напрямую, на 185.194.32.150» там читались как неизвестные
+    // программы мимо VPN; здесь видно, как они подписаны теперь.
+    {
+        const QString server = QStringLiteral("185.194.32.150");
+        struct Row {
+            const char *tag;
+            const char *process;
+            const char *dest;
+            const char *rdest;
+        };
+        const Row rows[]{
+            {"proxy", "Telegram.exe", "149.154.167.41:443", ""},
+            {"direct", "rustdesk.exe", "95.183.11.208:21116", ""},
+            {"direct", "", "185.194.32.150:1193", ""},
+            {"direct", "", "185.194.32.150:1192", ""},
+            {"proxy", "claude.exe", "160.79.104.10:443", "a.claude.ai:443"},
+            {"proxy", "Discord.exe", "162.159.129.233:443", "cdn.discordapp.com:443"},
+            {"proxy", "WardogsClient-Win64-Shipping.exe", "52.51.161.65:443",
+             "game.live.wardogs.bulkhead.pragmaengine.com:443"},
+            {"block", "nvcontainer.exe", "18.195.56.114:443", "events.telemetry.data.nvidia.com:443"},
+        };
+        auto *t = ui.tableWidget_conn;
+        t->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+        t->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+        t->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+        t->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
+        // То же, что делает окно (mainwindow.cpp): строки, не ведомость.
+        t->verticalHeader()->setVisible(false);
+        t->verticalHeader()->setDefaultSectionSize(36);
+        t->setShowGrid(false);
+        t->setFrameShape(QFrame::NoFrame);
+        t->setAlternatingRowColors(false);
+        t->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        t->horizontalHeader()->setHighlightSections(false);
+        ui.masterLogBrowser->setFrameShape(QFrame::NoFrame);
+        for (const auto &r: rows) {
+            const int row = t->rowCount();
+            t->insertRow(row);
+            const QString tag = QString::fromLatin1(r.tag);
+            // Те же значки, подписи и цвета, что в окне (LogAndConnections.cpp).
+            const bool isProxy = tag == QStringLiteral("proxy");
+            const bool isBlock = tag == QStringLiteral("block");
+            const QColor tagColor = isProxy ? QColor(0x3F, 0xB9, 0x50)
+                                    : isBlock ? QColor(0xE5, 0x48, 0x4D)
+                                              : QColor(0x9A, 0xA0, 0xA8);
+            const QString tagIcon = isProxy ? QStringLiteral("gr-shield-check")
+                                    : isBlock ? QStringLiteral("gr-ban")
+                                              : QStringLiteral("gr-arrow-right");
+            auto *c0 = new QLabel;
+            c0->setPixmap(GreenRhythm::Icons::pixmap(isBlock ? QStringLiteral("gr-ban") : QStringLiteral("gr-activity"),
+                                                     isBlock ? tagColor : QColor(0x9A, 0xA0, 0xA8), 16));
+            c0->setAlignment(Qt::AlignCenter);
+            t->setCellWidget(row, 0, c0);
+            auto *c1 = new QTableWidgetItem(QIcon(GreenRhythm::Icons::pixmap(tagIcon, tagColor, 16)),
+                                            isProxy ? QStringLiteral("Прокси")
+                                            : isBlock ? QStringLiteral("Блокировка")
+                                                      : QStringLiteral("Напрямую"));
+            c1->setForeground(QBrush(tagColor));
+            t->setItem(row, 1, c1);
+            const auto program = GreenRhythm::programLabel(QString::fromUtf8(r.process), QString::fromLatin1(r.dest), server);
+            auto *c2 = new QTableWidgetItem(program);
+            if (program == GreenRhythm::tunnelLabel()) c2->setForeground(QBrush(QColor(0x8B, 0x94, 0x9E)));
+            t->setItem(row, 2, c2);
+            t->setItem(row, 3, new QTableWidgetItem(GreenRhythm::destinationLabel(QString::fromLatin1(r.dest),
+                                                                                  QString::fromLatin1(r.rdest))));
+        }
+        // Страница журнала открывается на соединениях: их и правили.
+        ui.down_tab->setCurrentIndex(1);
+    }
 
     ui.label_running->setText(QStringLiteral("[По умолчанию] Germanyyy-admin"));
     ui.label_inbound->setText(QStringLiteral("Mixed: 127.0.0.1:2080"));

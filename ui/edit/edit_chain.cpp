@@ -1,4 +1,5 @@
 #include "edit_chain.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_edit_chain.h"
 
 #include "ui/mainwindow_interface.h"
@@ -9,6 +10,7 @@
 
 EditChain::EditChain(QWidget *parent) : QWidget(parent), ui(new Ui::EditChain) {
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
 }
 
 EditChain::~EditChain() {

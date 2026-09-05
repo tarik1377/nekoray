@@ -1,4 +1,5 @@
 #include "dialog_manage_groups.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_dialog_manage_groups.h"
 
 #include "db/Database.hpp"
@@ -23,6 +24,7 @@
 
 DialogManageGroups::DialogManageGroups(QWidget *parent) : QDialog(parent), ui(new Ui::DialogManageGroups) {
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
 
     for (auto id: NekoGui::profileManager->groupsTabOrder) {
         AddGroupToListIfExist(id)

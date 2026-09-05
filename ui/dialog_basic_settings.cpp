@@ -1,4 +1,5 @@
 #include "dialog_basic_settings.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_dialog_basic_settings.h"
 
 #include "3rdparty/qv2ray/v2/ui/widgets/editors/w_JsonEditor.hpp"
@@ -55,6 +56,7 @@ public:
 DialogBasicSettings::DialogBasicSettings(QWidget *parent)
     : QDialog(parent), ui(new Ui::DialogBasicSettings) {
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
     ADD_ASTERISK(this);
 
     // Common
@@ -163,7 +165,9 @@ DialogBasicSettings::DialogBasicSettings(QWidget *parent)
 
     // Core
 
-    ui->groupBox_core->setTitle(software_core_name);
+    // Капителью: полировка прошла раньше и подняла остальные подписи, а эта
+    // ставится здесь и осталась бы строчной рядом с «ОБЩИЕ».
+    ui->groupBox_core->setTitle(software_core_name.toUpper());
     //
     CACHE.extraCore = QString2QJsonObject(NekoGui::dataStore->extraCore->core_map);
     if (!CACHE.extraCore.contains("naive")) CACHE.extraCore.insert("naive", "");

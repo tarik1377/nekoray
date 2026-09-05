@@ -6,6 +6,22 @@
         <file>icon/gr-nav-connect.svg</file>
         <file>icon/gr-nav-servers.svg</file>
         <file>icon/gr-nav-log.svg</file>
+        <file>icon/gr-routes.svg</file>
+        <file>icon/gr-shield-alert.svg</file>
+        <file>icon/gr-refresh.svg</file>
+        <file>icon/gr-download.svg</file>
+        <file>icon/gr-sliders.svg</file>
+        <file>icon/gr-more.svg</file>
+        <file>icon/gr-power.svg</file>
+        <file>icon/gr-plus.svg</file>
+        <file>icon/gr-shield-check.svg</file>
+        <file>icon/gr-arrow-right.svg</file>
+        <file>icon/gr-arrows-updown.svg</file>
+        <file>icon/gr-list.svg</file>
+        <file>icon/gr-help.svg</file>
+        <file>icon/gr-ban.svg</file>
+        <file>icon/gr-activity.svg</file>
+        <file>icon/gr-history.svg</file>
         <file alias="icon/b-preferences.svg">icon/preferences.svg</file>
         <file alias="icon/b-network-server.svg">icon/network-server.svg</file>
         <file alias="icon/b-dialog-question.svg">icon/dialog-question.svg</file>

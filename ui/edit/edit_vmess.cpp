@@ -1,4 +1,5 @@
 #include "edit_vmess.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_edit_vmess.h"
 
 #include "fmt/VMessBean.hpp"
@@ -7,6 +8,7 @@
 
 EditVMess::EditVMess(QWidget *parent) : QWidget(parent), ui(new Ui::EditVMess) {
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
     connect(ui->uuidgen, &QPushButton::clicked, this, [=] { ui->uuid->setText(QUuid::createUuid().toString().remove("{").remove("}")); });
 }
 

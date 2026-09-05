@@ -1,4 +1,5 @@
 #include "dialog_relay_activate.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_dialog_relay_activate.h"
 
 #include "main/DeviceCredentials.hpp"
@@ -50,6 +51,7 @@ namespace {
 
 DialogRelayActivate::DialogRelayActivate(QWidget *parent) : QDialog(parent), ui(new Ui::DialogRelayActivate) {
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
     dressUp();
 
     // Код на сайте — восемь знаков в верхнем регистре. Приводим на лету, чтобы

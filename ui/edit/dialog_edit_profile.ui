@@ -132,7 +132,7 @@
            <item>
             <widget class="QPushButton" name="custom_outbound_edit">
              <property name="text">
-              <string notr="true">Edit</string>
+              <string>Изменить</string>
              </property>
             </widget>
            </item>
@@ -148,7 +148,7 @@
            <item>
             <widget class="QPushButton" name="custom_config_edit">
              <property name="text">
-              <string notr="true">Edit</string>
+              <string>Изменить</string>
              </property>
             </widget>
            </item>
@@ -528,7 +528,7 @@ security (QUIC)</string>
            <item>
             <widget class="QPushButton" name="certificate_edit">
              <property name="text">
-              <string notr="true">Edit</string>
+              <string>Изменить</string>
              </property>
             </widget>
            </item>

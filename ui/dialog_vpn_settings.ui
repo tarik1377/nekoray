@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>600</width>
-    <height>600</height>
+    <width>760</width>
+    <height>640</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -163,7 +163,7 @@ This needs GreenRhythm to be run with administrator privileges.</string>
      <item>
       <widget class="QGroupBox" name="gb_route_exclude">
        <property name="title">
-        <string>Не заводить в туннель (маршруты ОС)</string>
+        <string>Маршруты ОС мимо туннеля</string>
        </property>
        <property name="toolTip">
         <string>Сети, которые останутся доступны в обход туннеля: домашний VPN, рабочая сеть, NAS. Это таблица маршрутов системы, а не правило внутри туннеля.</string>

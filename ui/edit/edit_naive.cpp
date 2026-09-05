@@ -1,4 +1,5 @@
 #include "edit_naive.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_edit_naive.h"
 
 #include "fmt/NaiveBean.hpp"
@@ -7,6 +8,7 @@
 
 EditNaive::EditNaive(QWidget *parent) : QWidget(parent), ui(new Ui::EditNaive) {
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
 }
 
 EditNaive::~EditNaive() {

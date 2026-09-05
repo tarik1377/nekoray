@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Через VPN: щит с галкой. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-width="1.8"
+     stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 3.5 L19 6.5 V11.5 C19 15.8 16 19.2 12 20.5 C8 19.2 5 15.8 5 11.5 V6.5 Z"/>
+  <path d="M9 12 L11.2 14.2 L15.2 10"/>
+</svg>

@@ -10,6 +10,8 @@ class QVBoxLayout;
 
 namespace GreenRhythm {
 
+    class PowerGlow;
+
     /**
      * Новая оболочка главного окна: боковая колонка и страницы.
      *
@@ -156,6 +158,8 @@ namespace GreenRhythm {
 
         /** Инструменты, переехавшие из верхнего ряда. */
         void routesRequested();
+        /** «Что мешает подключению» — только под Windows. */
+        void interferenceRequested();
         void updateSubscriptionRequested();
         void checkUpdateRequested();
 
@@ -181,12 +185,15 @@ namespace GreenRhythm {
     private:
         QWidget *buildSidebar();
         QWidget *buildConnectPage();
+        /** Страница с полями и заголовком вокруг чужого виджета. */
+        QWidget *framed(QWidget *content, const QString &title);
         void selectPage(int index);
 
         QStackedWidget *pages = nullptr;
         QList<QPushButton *> navButtons;
 
         QPushButton *power = nullptr;
+        PowerGlow *glow = nullptr;
         QLabel *powerHint = nullptr;
         QLabel *stateDot = nullptr;
         QLabel *currentTitle = nullptr;
@@ -199,6 +206,8 @@ namespace GreenRhythm {
         QLabel *liveDirect = nullptr;
         QLabel *liveTraffic = nullptr;
         QPushButton *bypassLine = nullptr;
+        QPushButton *troubleLink = nullptr;
+        QPushButton *moreButton = nullptr;
 
         State state = State::Idle;
         QWidget *tagRow = nullptr;

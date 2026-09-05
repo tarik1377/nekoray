@@ -1,4 +1,5 @@
 #include "edit_quic.h"
+#include "ui/DialogPolish.hpp"
 #include "ui_edit_quic.h"
 
 #include "fmt/QUICBean.hpp"
@@ -8,6 +9,7 @@
 
 EditQUIC::EditQUIC(QWidget *parent) : QWidget(parent), ui(new Ui::EditQUIC) {
     ui->setupUi(this);
+    GreenRhythm::polishDialog(this);
     connect(ui->uuidgen, &QPushButton::clicked, this, [=] { ui->uuid->setText(QUuid::createUuid().toString().remove("{").remove("}")); });
 }
 

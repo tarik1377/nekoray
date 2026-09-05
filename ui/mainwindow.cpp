@@ -419,6 +419,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         });
         connect(shell, &GreenRhythm::MainShell::routesRequested, this,
                 [this] { on_menu_routing_settings_triggered(); });
+        connect(shell, &GreenRhythm::MainShell::interferenceRequested, this,
+                [this] { on_menu_interference_triggered(); });
         connect(shell, &GreenRhythm::MainShell::settingsRequested, this,
                 [this] { on_menu_basic_settings_triggered(); });
         connect(shell, &GreenRhythm::MainShell::updateSubscriptionRequested, this,
@@ -534,6 +536,18 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
+    // СТРОКИ, А НЕ ЭЛЕКТРОННАЯ ТАБЛИЦА. Нумерация слева, сетка и рамка вокруг
+    // — вид ведомости, а не списка соединений. Заголовок — слева, как текст
+    // под ним; строка выше, чтобы дышала. Это свойства виджета, стилем их не
+    // задать, — потому здесь, а не в modern.css.
+    ui->tableWidget_conn->verticalHeader()->setVisible(false);
+    ui->tableWidget_conn->verticalHeader()->setDefaultSectionSize(36);
+    ui->tableWidget_conn->setShowGrid(false);
+    ui->tableWidget_conn->setFrameShape(QFrame::NoFrame);
+    ui->tableWidget_conn->setAlternatingRowColors(false);
+    ui->tableWidget_conn->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    ui->tableWidget_conn->horizontalHeader()->setHighlightSections(false);
+    ui->masterLogBrowser->setFrameShape(QFrame::NoFrame);
     // Right-click a live connection → одним кликом сделать правило маршрутизации.
     ui->tableWidget_conn->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(ui->tableWidget_conn, &QWidget::customContextMenuRequested, this, [=](const QPoint &p) { show_conn_context_menu(p); });
@@ -1528,21 +1542,38 @@ void MainWindow::refresh_status(const QString &traffic_update) {
         ui->label_running->setToolTip({});
     }
 
+    // ЗАГОЛОВОК — ФРАЗОЙ, А НЕ РЯДОМ СКОБОК. Было «[Admin] [Tun] GreenRhythm
+    // (v1.7.5) [VLESS] tarik@По умолчанию»: шесть квадратных скобок, английские
+    // метки в русском окне и «@» между сервером и группой. Читается как дамп
+    // состояния. Теперь: имя, сервер, режим, права — через точку, по-русски.
+    // В трее то же самое строками: подсказка узкая.
     auto make_title = [=](bool isTray) {
         QStringList tt;
-        if (!isTray && NekoGui::IsAdmin()) tt << "[Admin]";
-        if (select_mode) tt << "[" + tr("Select") + "]";
-        if (!title_error.isEmpty()) tt << "[" + title_error + "]";
-        if (NekoGui::dataStore->spmode_vpn && !NekoGui::dataStore->spmode_system_proxy) tt << "[Tun]";
-        if (!NekoGui::dataStore->spmode_vpn && NekoGui::dataStore->spmode_system_proxy) tt << "[" + tr("System Proxy") + "]";
-        if (NekoGui::dataStore->spmode_vpn && NekoGui::dataStore->spmode_system_proxy) tt << "[Tun+" + tr("System Proxy") + "]";
-        tt << software_name;
-        if (!isTray) tt << "(" + QString(NKR_VERSION) + ")";
-        if (!NekoGui::dataStore->active_routing.isEmpty() && NekoGui::dataStore->active_routing != "Default") {
-            tt << "[" + NekoGui::dataStore->active_routing + "]";
+        tt << (isTray ? QString(software_name) : QStringLiteral("%1 %2").arg(software_name, NKR_VERSION));
+        if (running != nullptr) {
+            // Группу показываем только не «По умолчанию»: единственная группа —
+            // не признак, а шум.
+            const bool namedGroup = !group_name.isEmpty() && group_name != tr("Default")
+                                    && group_name != QStringLiteral("По умолчанию");
+            tt << (namedGroup ? QStringLiteral("%1 (%2, %3)")
+                                    .arg(running->bean->DisplayName(), running->bean->DisplayType(), group_name)
+                              : QStringLiteral("%1 (%2)")
+                                    .arg(running->bean->DisplayName(), running->bean->DisplayType()));
         }
-        if (running != nullptr) tt << running->bean->DisplayTypeAndName() + "@" + group_name;
-        return tt.join(isTray ? "\n" : " ");
+        if (NekoGui::dataStore->spmode_vpn && NekoGui::dataStore->spmode_system_proxy) {
+            tt << tr("туннель + системный прокси");
+        } else if (NekoGui::dataStore->spmode_vpn) {
+            tt << tr("туннель");
+        } else if (NekoGui::dataStore->spmode_system_proxy) {
+            tt << tr("системный прокси");
+        }
+        if (!NekoGui::dataStore->active_routing.isEmpty() && NekoGui::dataStore->active_routing != "Default") {
+            tt << tr("маршруты: %1").arg(NekoGui::dataStore->active_routing);
+        }
+        if (select_mode) tt << tr("выбор");
+        if (!isTray && NekoGui::IsAdmin()) tt << tr("администратор");
+        if (!title_error.isEmpty()) tt << title_error;
+        return tt.join(isTray ? QStringLiteral("\n") : QStringLiteral("  ·  "));
     };
 
     auto icon_status_new = Icon::NONE;

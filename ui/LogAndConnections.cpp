@@ -1,4 +1,7 @@
 #include "ui/mainwindow_common.hpp"
+#include "ui/Icons.hpp"
+
+#include "main/ConnectionRow.hpp"
 
 /**
  * Журнал и список соединений — две поверхности, которыми чинят подключение.
@@ -272,14 +275,14 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
         auto end_t = item["End"].toInt();
         // icon
         auto outboundTag = item["Tag"].toString();
+        // Свои значки одной линией, а не material разной заливки: пульс — живое,
+        // часы — закрытое, круг с чертой — запрещено.
         if (outboundTag == "block") {
-            c0->setPixmap(Icon::GetMaterialIcon("cancel"));
+            c0->setPixmap(GreenRhythm::Icons::pixmap(QStringLiteral("gr-ban"), QColor(0xE5, 0x48, 0x4D), 16));
+        } else if (end_t > 0) {
+            c0->setPixmap(GreenRhythm::Icons::pixmap(QStringLiteral("gr-history"), QColor(0x6A, 0x70, 0x78), 16));
         } else {
-            if (end_t > 0) {
-                c0->setPixmap(Icon::GetMaterialIcon("history"));
-            } else {
-                c0->setPixmap(Icon::GetMaterialIcon("swap-vertical"));
-            }
+            c0->setPixmap(GreenRhythm::Icons::pixmap(QStringLiteral("gr-activity"), QColor(0x9A, 0xA0, 0xA8), 16));
         }
         c0->setAlignment(Qt::AlignCenter);
         c0->setToolTip(tr("Start: %1\nEnd: %2").arg(DisplayTime(start_t), end_t > 0 ? DisplayTime(end_t) : ""));
@@ -290,46 +293,56 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
         auto f = f0->clone();
         f->setToolTip(outboundTag);
         QString obLabel = outboundTag;
+        QString obIcon;
         QColor obColor;
+        // ТОЧКА, А НЕ ЭМОДЗИ. Глобус, флаг и знак «стоп» рисуются на каждой
+        // машине своим шрифтом, цветные и разного размера; в настольном окне
+        // это читается как чат, а не как программа. Точка одного размера
+        // берёт цвет — и цвет здесь значит одно и то же везде: зелёный — через
+        // нас, серый — мимо нас, красный — запрещено. Раньше зелёным был
+        // «Напрямую», и он спорил с акцентом, который во всём окне значит
+        // «наше, включено».
         if (outboundTag == "proxy") {
-            obLabel = QString::fromUtf8("\xF0\x9F\x8C\x8D ") + tr("Прокси"); // 🌍 foreign
-            obColor = QColor(0x4C, 0x9A, 0xFF);
-        } else if (outboundTag == "direct" || outboundTag == "bypass") {
-            obLabel = QString::fromUtf8("\xF0\x9F\x87\xB7\xF0\x9F\x87\xBA ") + tr("Напрямую"); // 🇷🇺 domestic
+            obLabel = tr("Прокси");
+            obIcon = QStringLiteral("gr-shield-check");
             obColor = QColor(0x3F, 0xB9, 0x50);
+        } else if (outboundTag == "direct" || outboundTag == "bypass") {
+            obLabel = tr("Напрямую");
+            obIcon = QStringLiteral("gr-arrow-right");
+            obColor = QColor(0x9A, 0xA0, 0xA8);
         } else if (outboundTag == "block") {
-            obLabel = QString::fromUtf8("\xE2\x9B\x94 ") + tr("Блокировка"); // ⛔
+            obLabel = tr("Блокировка");
+            obIcon = QStringLiteral("gr-ban");
             obColor = QColor(0xE5, 0x48, 0x4D);
         }
         f->setText(obLabel);
         if (obColor.isValid()) f->setForeground(QBrush(obColor));
+        if (!obIcon.isEmpty()) f->setIcon(QIcon(GreenRhythm::Icons::pixmap(obIcon, obColor, 16)));
         ui->tableWidget_conn->setItem(row, 1, f);
 
-        // C2: Destination
+        // C3: Куда. Имя впереди, адрес хвостом — см. ConnectionRow.hpp: раньше
+        // адрес стоял первым в скобках, и имя, которое глаз ищет, было вторым.
         f = f0->clone();
-        QString target1 = item["Dest"].toString();
-        QString target2 = item["RDest"].toString();
-        if (target2.isEmpty() || target1 == target2) {
-            target2 = "";
-        }
-        f->setText("[" + target1 + "] " + target2);
-        // Stash the bare host (no port) so the context menu can build a rule from it.
-        // Prefer the resolved domain (RDest) over a bare IP when both exist.
-        QString host = !target2.isEmpty() ? target2 : target1;
-        int colon = host.lastIndexOf(':');
-        if (colon > 0) {
-            bool okPort = false;
-            host.mid(colon + 1).toInt(&okPort);
-            if (okPort) host = host.left(colon);
-        }
-        f->setData(Qt::UserRole, host);
-        // C2: Program that opened the connection — the answer to "what actually goes
-        // through the VPN", which the tab could never show before.
+        const QString target1 = item["Dest"].toString();
+        const QString target2 = item["RDest"].toString();
+        f->setText(GreenRhythm::destinationLabel(target1, target2));
+        f->setToolTip(target2.isEmpty() ? target1 : target2 + QStringLiteral("\n") + target1);
+        // Голый хост (без порта) — контекстному меню, чтобы собрать правило.
+        // Имя предпочтительнее адреса, когда есть оба.
+        f->setData(Qt::UserRole,
+                   GreenRhythm::hostWithoutPort(!target2.isEmpty() && target2 != target1 ? target2 : target1));
+
+        // C2: Программа. Без процесса и к серверу профиля — это наш собственный
+        // туннель, а не неизвестная программа мимо VPN; так и подписываем.
         {
-            auto proc = item["Process"].toString();
-            if (proc.isEmpty()) proc = "—";
+            const QString serverHost = running != nullptr ? running->bean->serverAddress : QString();
+            const auto proc = GreenRhythm::programLabel(item["Process"].toString(), target1, serverHost);
             auto fp = new QTableWidgetItem(proc);
-            fp->setToolTip(proc);
+            fp->setToolTip(proc == GreenRhythm::tunnelLabel()
+                               ? tr("Соединение самого клиента с сервером профиля. Это не программа мимо VPN — "
+                                    "это и есть туннель.")
+                               : proc);
+            if (proc == GreenRhythm::tunnelLabel()) fp->setForeground(QBrush(QColor(0x8B, 0x94, 0x9E)));
             ui->tableWidget_conn->setItem(row, 2, fp);
         }
 
@@ -371,12 +384,15 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
             auto seg = [](int n, const QString &color) {
                 return n > 0 ? QStringLiteral("<span style='color:%1;'>%2</span>").arg(color, QString(n, QChar(0x2588))) : QString(); // █
             };
+            // Те же цвета, что в колонке «Путь» ниже, и с тем же смыслом:
+            // зелёный — через нас, серый — мимо, красный — запрещено. Точки
+            // вместо эмодзи по той же причине, что и в таблице.
             const QString bar = QStringLiteral("<span style='font-family:monospace;font-size:11px;'>%1%2%3</span>")
-                                    .arg(seg(wp, "#4C9AFF"), seg(wd, "#3FB950"), seg(wb, "#E5484D"));
+                                    .arg(seg(wp, "#3FB950"), seg(wd, "#9AA0A8"), seg(wb, "#E5484D"));
             const QString counts =
-                QString::fromUtf8("\xF0\x9F\x8C\x8D ") + QStringLiteral("<span style='color:#4C9AFF;'>") + tr("Прокси: %1").arg(nProxy) + "</span>&nbsp;&nbsp;" +
-                QString::fromUtf8("\xF0\x9F\x87\xB7\xF0\x9F\x87\xBA ") + QStringLiteral("<span style='color:#3FB950;'>") + tr("Напрямую: %1").arg(nDirect) + "</span>&nbsp;&nbsp;" +
-                QString::fromUtf8("\xE2\x9B\x94 ") + QStringLiteral("<span style='color:#E5484D;'>") + tr("Блок: %1").arg(nBlock) + "</span>";
+                QStringLiteral("<span style='color:#3FB950;'>&#9679; ") + tr("Прокси: %1").arg(nProxy) + "</span>&nbsp;&nbsp;&nbsp;" +
+                QStringLiteral("<span style='color:#9AA0A8;'>&#9679; ") + tr("Напрямую: %1").arg(nDirect) + "</span>&nbsp;&nbsp;&nbsp;" +
+                QStringLiteral("<span style='color:#E5484D;'>&#9679; ") + tr("Блок: %1").arg(nBlock) + "</span>";
             conn_route_summary->setText(bar + "<br>" + counts);
         }
     }
@@ -401,7 +417,8 @@ void MainWindow::show_conn_context_menu(const QPoint &pos) {
     // угаданное имя не совпадает ни с чем и молча не делает ничего.
     auto *procItem = ui->tableWidget_conn->item(cell->row(), 2);
     const QString program = procItem != nullptr ? procItem->text().trimmed() : QString();
-    const bool knownProgram = !program.isEmpty() && program != QStringLiteral("—");
+    const bool knownProgram = !program.isEmpty() && program != QStringLiteral("—")
+                              && program != GreenRhythm::tunnelLabel();
     const auto bypassList =
         NekoGui::dataStore->vpn_rule_process.split(QChar(0x0A), Qt::SkipEmptyParts);
     bool alreadyDirect = false;
