@@ -122,6 +122,13 @@ int main(int argc, char *argv[]) {
     // человека на Windows уже нет.
     w.menuBar()->setVisible(false);
     shell->setSubscription(QStringLiteral("27 дн. · 84,3 ГБ"), false);
+    // Режимы и список под кнопкой — тоже настоящие: снимок обязан показывать
+    // то окно, которое увидит человек, а не то, что было до этих кнопок.
+    shell->setModes(true, false, false, true);
+    shell->setServers({{4, QStringLiteral("tarik"), QStringLiteral("32 мс")},
+                       {1, QStringLiteral("Germany-admin"), QString()},
+                       {5, QStringLiteral("orsana-admin"), QStringLiteral("106 мс")}},
+                      4);
     w.setCentralWidget(shell);
 
     // Страница выбирается доводом: посмотреть надо каждую, а не только первую.

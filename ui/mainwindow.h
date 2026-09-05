@@ -37,6 +37,13 @@ namespace GreenRhythm {
     class MainShell;
 }
 
+// Вне QT_BEGIN_NAMESPACE намеренно: внутри него объявление уехало бы в
+// QT_NAMESPACE::GreenRhythm::Dpi, и с Qt, собранным в пространстве имён,
+// это был бы другой класс — при обычной сборке молча совпадающий.
+namespace GreenRhythm::Dpi {
+    class DpiModule;
+}
+
 QT_BEGIN_NAMESPACE
 namespace Ui {
     class MainWindow;
@@ -94,6 +101,12 @@ public slots:
     void on_commitDataRequest();
 
     void on_menu_exit_triggered();
+
+    // «Что мешает подключению»: список чужих VPN и обходов с галочками.
+    // ОБРАТИМО, в отличие от «Починить сеть»: прежнее состояние пишется в
+    // снимок до остановки и возвращается при отключении, выходе и при
+    // следующем запуске после падения.
+    void on_menu_interference_triggered();
 
 #ifndef MW_INTERFACE
 
@@ -249,6 +262,22 @@ private:
     bool show_macos_modes(bool onlyOnce);
     void show_conn_context_menu(const QPoint &pos);     // right-click a connection → make a routing rule
     void add_routing_rule(const QString &host, int kind); // kind: 0 direct, 1 proxy, 2 block
+
+    // Кнопка «Добавить сервер» в колонке. Раньше она молча читала буфер обмена
+    // и молча же ничего не делала, если там не ссылка; теперь спрашивает.
+    void add_server_dialog();
+    // Список серверов под кнопкой подключения и «кого подключит» в карточке.
+    void sync_shell_servers();
+    // Выбор человека под кнопкой: -1 — автовыбор самого быстрого.
+    int chosen_server_id = -1;
+
+    // Модуль обхода (winws). Окно ему ничего не приказывает — только сообщает
+    // желаемое: включён ли и к какому серверу подключены. Всё остальное —
+    // старт, остановка, отказ при античите — решает он сам.
+    GreenRhythm::Dpi::DpiModule *dpi_module = nullptr;
+    // Свести желаемое с действительным. Дешёвая и идемпотентная: зовётся из
+    // refresh_status.
+    void sync_dpi_module();
 
     QLabel *conn_route_summary = nullptr; // live route "map": proxy/direct/block split + bar
 

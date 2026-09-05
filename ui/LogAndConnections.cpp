@@ -409,14 +409,29 @@ void MainWindow::show_conn_context_menu(const QPoint &pos) {
         if (line.trimmed().compare(program, Qt::CaseInsensitive) == 0) alreadyDirect = true;
     }
 
+    // ОБРАТНОЕ НАПРАВЛЕНИЕ. Список умел только выводить из-под защиты; загнать
+    // одну игру В туннель — например ту, чьи серверы фильтруются, — через
+    // интерфейс было нельзя, и схему правили руками.
+    const auto proxyList =
+        NekoGui::dataStore->vpn_rule_process_proxy.split(QChar(0x0A), Qt::SkipEmptyParts);
+    bool alreadyProxy = false;
+    for (const auto &line: proxyList) {
+        if (line.trimmed().compare(program, Qt::CaseInsensitive) == 0) alreadyProxy = true;
+    }
+
     QMenu menu(this);
     QAction *aProgramDirect = nullptr;
     QAction *aProgramBack = nullptr;
+    QAction *aProgramProxy = nullptr;
+    QAction *aProgramProxyBack = nullptr;
     if (knownProgram) {
         if (alreadyDirect) {
             aProgramBack = menu.addAction(tr("Вернуть «%1» под защиту").arg(program));
+        } else if (alreadyProxy) {
+            aProgramProxyBack = menu.addAction(tr("Вернуть «%1» под общие правила").arg(program));
         } else {
             aProgramDirect = menu.addAction(tr("Пустить «%1» напрямую").arg(program));
+            aProgramProxy = menu.addAction(tr("Пустить «%1» через VPN").arg(program));
         }
         menu.addSeparator();
     }
@@ -444,6 +459,27 @@ void MainWindow::show_conn_context_menu(const QPoint &pos) {
         NekoGui::dataStore->vpn_rule_process = list.join(QChar(0x0A));
         NekoGui::dataStore->Save();
         MW_show_log(tr("«%1» снова под защитой. Начнёт действовать при следующем подключении.")
+                        .arg(program));
+        return;
+    }
+    if (chosen == aProgramProxy && aProgramProxy != nullptr) {
+        auto list = proxyList;
+        list << program;
+        NekoGui::dataStore->vpn_rule_process_proxy = list.join(QChar(0x0A));
+        NekoGui::dataStore->Save();
+        MW_show_log(tr("«%1» пойдёт через VPN, даже если общие правила уводят её мимо. "
+                       "Начнёт действовать при следующем подключении.")
+                        .arg(program));
+        return;
+    }
+    if (chosen == aProgramProxyBack && aProgramProxyBack != nullptr) {
+        QStringList list;
+        for (const auto &line: proxyList) {
+            if (line.trimmed().compare(program, Qt::CaseInsensitive) != 0) list << line;
+        }
+        NekoGui::dataStore->vpn_rule_process_proxy = list.join(QChar(0x0A));
+        NekoGui::dataStore->Save();
+        MW_show_log(tr("«%1» снова под общими правилами. Начнёт действовать при следующем подключении.")
                         .arg(program));
         return;
     }

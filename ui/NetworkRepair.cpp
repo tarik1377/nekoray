@@ -304,8 +304,8 @@ void MainWindow::repair_windows_network() {
                        "• их службы, задания и записи автозапуска;\n"
                        "• зависший прокси, мёртвый DNS и кэш DNS.\n\n"
                        "Другие VPN НЕ отключаются: если рядом поднят туннель до дома "
-                       "или до работы, он продолжит работать. Найденные туннели будут "
-                       "просто перечислены в отчёте.\n\n"
+                       "или до работы, он продолжит работать. Найденные туннели и их службы "
+                       "будут просто перечислены в отчёте.\n\n"
                        "Ваши файлы, пароли и файл hosts НЕ затрагиваются.\n\n"
                        "Нужны права администратора и перезагрузка. Продолжить?"),
                     QMessageBox::NoButton, this);
@@ -402,11 +402,11 @@ $ErrorActionPreference='SilentlyContinue'
 $log=@()
 $lsp=$false
 $t='winws|windivert|zapret|goodbyedpi|byedpi|ciadpi|proxifyre|spoofdpi|powertunnel'
-foreach($s in Get-CimInstance Win32_Service | Where-Object {$_.PathName -match $t -or $_.Name -match $t -or $_.DisplayName -match $t}){$log+=('служба: '+$s.Name); sc.exe stop $s.Name|Out-Null; sc.exe config $s.Name start= disabled|Out-Null; sc.exe delete $s.Name|Out-Null}
-foreach($n in 'WinDivert','WinDivert1.4','WinDivert14'){if(Get-Service $n -EA SilentlyContinue){$log+=('драйвер: '+$n); $lsp=$true; sc.exe stop $n|Out-Null; sc.exe delete $n|Out-Null}}
-foreach($d in Get-CimInstance Win32_SystemDriver | Where-Object {$_.PathName -match 'divert|zapret|winws'}){$log+=('драйвер: '+$d.Name); $lsp=$true; sc.exe stop $d.Name|Out-Null; sc.exe delete $d.Name|Out-Null}
-foreach($s in Get-Service | Where-Object {$_.Name -match 'warp|cloudflare|outline|amnezia' -or $_.DisplayName -match 'warp|cloudflare|outline|amnezia'}){$log+=('служба: '+$s.Name); Stop-Service $s.Name -Force; Set-Service $s.Name -StartupType Disabled}
-foreach($p in Get-Process | Where-Object {$_.ProcessName -match 'winws|goodbyedpi|zapret|byedpi|ciadpi|proxifyre|bdmanager|spoofdpi|powertunnel|warp-svc'}){$log+=('процесс: '+$p.ProcessName); Stop-Process -Id $p.Id -Force}
+foreach($s in Get-CimInstance Win32_Service | Where-Object {$_.PathName -match $t -or $_.Name -match $t -or $_.DisplayName -match $t}){if($Own -and $s.PathName -and $s.PathName.ToLower().Contains($Own)){$log+=('наш модуль обхода, служба (НЕ тронута): '+$s.Name); continue}; $log+=('служба: '+$s.Name); sc.exe stop $s.Name|Out-Null; sc.exe config $s.Name start= disabled|Out-Null; sc.exe delete $s.Name|Out-Null}
+foreach($n in 'WinDivert','WinDivert1.4','WinDivert14'){if(Get-Service $n -EA SilentlyContinue){$ip=(Get-CimInstance Win32_SystemDriver -Filter "Name='$n'" -EA SilentlyContinue).PathName; if($Own -and $ip -and $ip.ToLower().Contains($Own)){$log+=('наш модуль обхода, драйвер (НЕ тронут): '+$n); continue}; $log+=('драйвер: '+$n); $lsp=$true; sc.exe stop $n|Out-Null; sc.exe delete $n|Out-Null}}
+foreach($d in Get-CimInstance Win32_SystemDriver | Where-Object {$_.PathName -match 'divert|zapret|winws'}){if($Own -and $d.PathName -and $d.PathName.ToLower().Contains($Own)){$log+=('наш модуль обхода, драйвер (НЕ тронут): '+$d.Name); continue}; $log+=('драйвер: '+$d.Name); $lsp=$true; sc.exe stop $d.Name|Out-Null; sc.exe delete $d.Name|Out-Null}
+foreach($s in Get-Service | Where-Object {$_.Name -match 'warp|cloudflare|outline|amnezia' -or $_.DisplayName -match 'warp|cloudflare|outline|amnezia'}){$log+=('чужой VPN (НЕ тронут): '+$s.Name+' ['+$s.Status+']')}
+foreach($p in Get-Process | Where-Object {$_.ProcessName -match 'winws|goodbyedpi|zapret|byedpi|ciadpi|proxifyre|bdmanager|spoofdpi|powertunnel|warp-svc'}){$pp=''; try{$pp=$p.Path}catch{}; if($Own -and $pp -and $pp.ToLower().StartsWith($Own)){$log+=('наш модуль обхода, процесс (НЕ тронут): '+$p.ProcessName); continue}; $log+=('процесс: '+$p.ProcessName); Stop-Process -Id $p.Id -Force}
 foreach($tk in Get-ScheduledTask | Where-Object {($_.Actions.Execute -match $t) -or ($_.Actions.Arguments -match $t)}){$log+=('задание: '+$tk.TaskName); $tk | Unregister-ScheduledTask -Confirm:$false}
 $runkeys=@('HKLM:\Software\Microsoft\Windows\CurrentVersion\Run','HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Run')
 foreach($sid in (Get-ChildItem 'Registry::HKEY_USERS' | Where-Object {$_.PSChildName -match '^S-1-5-21-' -and $_.PSChildName -notmatch '_Classes$'})){$runkeys+="Registry::HKEY_USERS\$($sid.PSChildName)\Software\Microsoft\Windows\CurrentVersion\Run"}
@@ -459,10 +459,31 @@ Set-Content -LiteralPath $Report -Value $out -Encoding UTF8
     // параметров, а param() обязан быть первой строкой скрипта. Путь
     // подставляется в текст; одинарные кавычки удваиваются на случай пути с
     // апострофом — в имени пользователя он встречается.
-    QString adminScript = QString::fromUtf8(kAdminPs);
     QString reportLiteral = QDir::toNativeSeparators(report);
     reportLiteral.replace(QStringLiteral("'"), QStringLiteral("''"));
-    adminScript.prepend(QStringLiteral("$Report='%1'\n").arg(reportLiteral));
+    /*
+     * $Own — НАШ СОБСТВЕННЫЙ КАТАЛОГ ОБХОДА, И ОН ОБЯЗАН БЫТЬ ИСКЛЮЧЁН.
+     *
+     * Скрипт ниже ищет перехватчики по маске winws|windivert|zapret|… в пути,
+     * имени и описании службы. Маска верная — она и должна ловить чужое, — но
+     * своего от чужого она не отличает вовсе: драйвер WinDivert на машине один
+     * на всех, и служба у него одна. Появись у нас собственный модуль обхода,
+     * эта же кнопка снесла бы его при первом нажатии, а человек увидел бы, что
+     * «починка сети» ломает нашу же защиту.
+     *
+     * Отличаем ПО ПУТИ, а не по имени: имя процесса и имя службы у нашего и
+     * чужого winws одинаковы, переименование не спасает и выглядит как попытка
+     * спрятаться. Путь — единственный признак, который нельзя подделать
+     * случайно.
+     *
+     * Сравнение в нижнем регистре: PathName у служб приходит как записан в
+     * реестре, регистр там произвольный.
+     */
+    QString ownDir = QDir::toNativeSeparators(QApplication::applicationDirPath() + "/dpi").toLower();
+    ownDir.replace(QStringLiteral("'"), QStringLiteral("''"));
+
+    QString adminScript = QString::fromUtf8(kAdminPs);
+    adminScript.prepend(QStringLiteral("$Report='%1'\n$Own='%2'\n").arg(reportLiteral, ownDir));
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
 

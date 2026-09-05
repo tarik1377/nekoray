@@ -1,5 +1,10 @@
 #include "ui/mainwindow_common.hpp"
 
+#include "main/Interference.hpp"
+
+#include "dpi/DpiBundle.hpp"
+#include "dpi/DpiModule.hpp"
+
 #ifdef Q_OS_WIN
 static void RegisterGreenRhythmScheme();
 #endif
@@ -204,6 +209,52 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // по страницам. Поэтому сортировка, перетаскивание, контекстное меню, поиск
     // и проверка задержки продолжают работать: это те же объекты, к которым
     // привязан весь код выше.
+    // МОДУЛЬ ОБХОДА создаётся всегда, даже когда выключен и не скачан: он и
+    // есть то место, где живёт ответ «почему не работает». Выключенный модуль
+    // не делает ничего — ни процесса, ни таймера, ни обращения к системе.
+    // СНИМОК, ПЕРЕЖИВШИЙ ЗАПУСК, означает ровно одно: прошлый раз кончился
+    // плохо — клиент упал или его убили, — а чужая служба до сих пор выключена
+    // нашими руками. Человек при этом сидит без рабочего VPN и никак не свяжет
+    // это с нами. Тот же приём, что у MacProxy::RestoreIfCrashed выше.
+    //
+    // Спрашиваем, а не возвращаем молча: возврат требует повышения прав, и
+    // окно UAC без объяснения сразу после запуска пугает сильнее, чем вопрос.
+    if (GreenRhythm::interferencePaused()) {
+        QTimer::singleShot(1200, this, [this] {
+            QString said;
+            QFile f(GreenRhythm::snapshotPath());
+            if (f.open(QIODevice::ReadOnly)) {
+                said = GreenRhythm::snapshotSummary(QString::fromUtf8(f.readAll())).join(QChar('\n'));
+                f.close();
+            }
+            if (QMessageBox::question(this, tr("Приостановлено в прошлый раз"),
+                                      tr("В прошлый раз клиент закрылся неожиданно, и это осталось "
+                                         "приостановленным:\n\n%1\n\nВернуть как было?")
+                                          .arg(said))
+                != QMessageBox::Yes) {
+                return;
+            }
+            const bool ok = GreenRhythm::resumeInterference(nullptr);
+            show_log_impl(ok ? tr("Вернули как было то, что приостанавливали в прошлый раз.")
+                             : tr("Не получилось вернуть приостановленное. "
+                                  "Службы включаются вручную: «Службы» в «Администрировании»."));
+        });
+    }
+
+    dpi_module = new GreenRhythm::Dpi::DpiModule(this);
+    connect(dpi_module, &GreenRhythm::Dpi::DpiModule::stateChanged, this, [this] {
+        show_log_impl(tr("Усиленный обход: %1").arg(dpi_module->stateText()));
+        refresh_status();
+    });
+    connect(dpi_module, &GreenRhythm::Dpi::DpiModule::coreRestartWanted, this, [this] {
+        // Ярус ядра и winws взаимно исключены (правило 4), а ярус ядра живёт в
+        // конфиге, который читается один раз при старте. Значит, переход модуля
+        // требует пересборки — но только если ядру и правда есть что менять.
+        if (!NekoGui::dataStore->dpi_fragment) return;
+        if (running == nullptr) return;
+        MW_dialog_message("", "RouteChanged");
+    });
+
     {
         shell = new GreenRhythm::MainShell(this);
         shell->adopt(ui->tabWidget, ui->down_tab);
@@ -278,10 +329,102 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         connect(shell, &GreenRhythm::MainShell::connectToggled, this, [this] {
             if (NekoGui::dataStore->started_id >= 0) {
                 neko_stop();
+            } else if (chosen_server_id >= 0 &&
+                       NekoGui::profileManager->GetProfile(chosen_server_id) != nullptr) {
+                // Человек выбрал сервер под кнопкой — подключаем его, а не
+                // «самый быстрый»: выбор сделан не для того, чтобы его отменили.
+                neko_start(chosen_server_id);
             } else {
                 smart_connect_greenrhythm();
             }
         });
+        connect(shell, &GreenRhythm::MainShell::serverChosen, this, [this](int id) {
+            chosen_server_id = id;
+            // Уже подключены к другому — переключаем сразу: выбор под кнопкой
+            // читается как «хочу вот этот», а не как «запомни на потом».
+            if (id >= 0 && NekoGui::dataStore->started_id >= 0 &&
+                NekoGui::dataStore->started_id != id &&
+                NekoGui::profileManager->GetProfile(id) != nullptr) {
+                neko_start(id);
+            }
+            refresh_status();
+        });
+        // РЕЖИМЫ — та же проводка, что у прежних галок: одна правда, два места.
+        connect(shell, &GreenRhythm::MainShell::tunToggled, this, [this](bool on) {
+            if (on && show_macos_modes(true)) {
+                refresh_status();
+                return;
+            }
+            neko_set_spmode_vpn(on);
+        });
+        connect(shell, &GreenRhythm::MainShell::systemProxyToggled, this,
+                [this](bool on) { neko_set_spmode_system_proxy(on); });
+        connect(shell, &GreenRhythm::MainShell::gamesViaTunnelToggled, this, [this](bool on) {
+            NekoGui::dataStore->games_via_tunnel = on;
+            show_log_impl(on ? tr("Игры пойдут через туннель. Пинг будет выше, адрес — зарубежный; "
+                                  "если игра фильтруется у провайдера, иначе она не работает.")
+                             : tr("Игры снова идут мимо туннеля: адрес российский, пинг ниже."));
+            // RouteChanged: сохранить и, если подключены, предложить перезапуск —
+            // правила читаются при старте ядра, и без него ничего не изменится.
+            MW_dialog_message("", "UpdateDataStore,RouteChanged");
+        });
+        connect(shell, &GreenRhythm::MainShell::dpiFragmentToggled, this, [this](bool on) {
+            NekoGui::dataStore->dpi_fragment = on;
+            show_log_impl(on ? tr("Обход фильтрации включён: приветствие TLS у прямого трафика дробится. "
+                                  "Игры и античиты остаются на своём адресе.")
+                             : tr("Обход фильтрации выключен."));
+            MW_dialog_message("", "UpdateDataStore,RouteChanged");
+        });
+        connect(shell, &GreenRhythm::MainShell::dpiModuleToggled, this, [this](bool on) {
+            NekoGui::dataStore->dpi_module_enabled = on;
+            if (on) {
+                const auto problems = GreenRhythm::Dpi::bundleProblems(GreenRhythm::Dpi::bundleDir());
+                if (!problems.isEmpty()) {
+                    // Файлов нет — спрашиваем, а не качаем молча: это 7,6 МБ,
+                    // кернел-драйвер и антивирус, который положит его в
+                    // карантин как RiskTool. Человек имеет право знать заранее.
+                    if (QMessageBox::question(
+                            this, tr("Усиленный обход"),
+                            tr("Нужно скачать %1 (около 7,6 МБ) с github.com/bol-van/zapret.\n\n"
+                               "Это отдельная программа под лицензией MIT и системный драйвер WinDivert. "
+                               "Антивирус может пометить его как RiskTool — это известное свойство "
+                               "самого драйвера, а не признак заражения.\n\n"
+                               "Драйвер поднимается только на время работы обхода и снимается сразу "
+                               "после. Пока запущена игра с античитом, обход не включается вовсе.\n\n"
+                               "Скачать?")
+                                .arg(GreenRhythm::Dpi::bundleVersion()))
+                        != QMessageBox::Yes) {
+                        NekoGui::dataStore->dpi_module_enabled = false;
+                        refresh_status();
+                        return;
+                    }
+                    runOnNewThread([this] {
+                        QString err;
+                        const bool ok = dpi_module->install(&err);
+                        runOnUiThread([this, ok, err] {
+                            if (!ok) {
+                                NekoGui::dataStore->dpi_module_enabled = false;
+                                show_log_impl(tr("Усиленный обход не установлен: %1").arg(err));
+                            }
+                            MW_dialog_message("", "UpdateDataStore");
+                            refresh_status();
+                        });
+                    });
+                    return;
+                }
+            }
+            MW_dialog_message("", "UpdateDataStore");
+            sync_dpi_module();
+            refresh_status();
+        });
+        connect(shell, &GreenRhythm::MainShell::routesRequested, this,
+                [this] { on_menu_routing_settings_triggered(); });
+        connect(shell, &GreenRhythm::MainShell::settingsRequested, this,
+                [this] { on_menu_basic_settings_triggered(); });
+        connect(shell, &GreenRhythm::MainShell::updateSubscriptionRequested, this,
+                [this] { on_menu_update_subscription_triggered(); });
+        connect(shell, &GreenRhythm::MainShell::checkUpdateRequested, this,
+                [this] { runOnNewThread([this] { CheckUpdate(); }); });
         connect(shell, &GreenRhythm::MainShell::moreRequested, this,
                 [this](const QPoint &pos) {
                     // Меню собирается из той же полосы, что была сверху: те же
@@ -300,8 +443,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         });
         connect(shell, &GreenRhythm::MainShell::panelRequested, this,
                 [this] { open_greenrhythm_panel(); });
-        connect(shell, &GreenRhythm::MainShell::addServerRequested, ui->menu_add_from_clipboard,
-                &QAction::trigger);
+        // Кнопка спрашивает, а не читает буфер молча: с пустым буфером прежняя
+        // проводка не делала ничего, и кнопка выглядела сломанной.
+        connect(shell, &GreenRhythm::MainShell::addServerRequested, this,
+                [this] { add_server_dialog(); });
+        sync_shell_servers();
     }
 
     // Setup log UI
@@ -637,6 +783,19 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     NekoGui::dataStore->core_token = GetRandomString(32);
     NekoGui::dataStore->core_port = MkPort();
     if (NekoGui::dataStore->core_port <= 0) NekoGui::dataStore->core_port = 19810;
+    // Порт Clash API — тем же способом, а не «соседний». Соседний никто не
+    // проверял, и ядро падало на старте с «Only one usage of each socket
+    // address», когда его успевал занять кто-то другой. MkPort освобождает
+    // порт перед возвратом, поэтому второй вызов может вернуть тот же номер —
+    // отсюда проверка на равенство.
+    NekoGui::dataStore->core_clash_port = 0;
+    for (int attempt = 0; attempt < 8; attempt++) {
+        const int p = MkPort();
+        if (p > 0 && p != NekoGui::dataStore->core_port) {
+            NekoGui::dataStore->core_clash_port = p;
+            break;
+        }
+    }
 
     auto core_path = QApplication::applicationDirPath() + "/";
     core_path += "greenrhythm_core";
@@ -970,9 +1129,36 @@ void MainWindow::on_commitDataRequest() {
     qDebug() << "End of data save";
 }
 
+/**
+ * Свести желаемое с действительным для модуля обхода.
+ *
+ * Окно НЕ РЕШАЕТ, работать модулю или нет. Оно сообщает две вещи: включил ли
+ * человек модуль и к какому серверу мы подключены. Всё остальное — античит,
+ * права, чужой перехватчик, смена адаптера — решает сам модуль, потому что
+ * только он знает, чем это кончится.
+ *
+ * Адрес сервера нужен ровно для одного: не портить рукопожатие СВОЕГО же
+ * туннеля. Он уходит по тому же физическому адаптеру и попадает winws в поле
+ * зрения; исключение по адресу оставляет его нетронутым.
+ */
+void MainWindow::sync_dpi_module() {
+    if (dpi_module == nullptr) return;
+    const QString host = running == nullptr ? QString() : running->bean->serverAddress;
+    dpi_module->reconcile(NekoGui::dataStore->dpi_module_enabled, host);
+}
+
 void MainWindow::on_menu_exit_triggered() {
     if (mu_exit.tryLock()) {
         NekoGui::dataStore->prepare_exit = true;
+        // ПЕРВЫМ ДЕЛОМ — снять обход и выгрузить драйвер. Job-объект убьёт winws
+        // и сам, но драйвер после этого останется в памяти до перезагрузки, а
+        // именно резидентный WinDivert и находят античиты. Порядок здесь важнее
+        // краткости: всё остальное ниже может показать диалог и вернуться.
+        if (dpi_module != nullptr) dpi_module->shutdown();
+        // И вернуть чужое, что приостановили. Тоже до всего остального: ниже
+        // есть пути, которые показывают диалог и возвращаются, а обещание
+        // «вернём, когда закроете клиент» дано без оговорок.
+        if (GreenRhythm::interferencePaused()) GreenRhythm::resumeInterference(nullptr);
         //
         neko_set_spmode_system_proxy(false, false);
         neko_set_spmode_vpn(false, false);
@@ -1234,6 +1420,38 @@ void MainWindow::refresh_status(const QString &traffic_update) {
 
             // Пустой список — не пустой экран.
             shell->setEmpty(NekoGui::profileManager->profiles.empty());
+
+            // Режимы — в колонку, той же правдой, что и в галки ниже.
+            shell->setModes(NekoGui::dataStore->spmode_vpn,
+                            NekoGui::dataStore->spmode_system_proxy,
+                            NekoGui::dataStore->games_via_tunnel,
+                            NekoGui::dataStore->dpi_fragment);
+            // Усиленный обход показывается СОСТОЯНИЕМ, а не галкой. Галка врала
+            // бы ровно в тот момент, когда это важнее всего: человек её нажал,
+            // а модуль не встал — идёт игра с античитом, нет прав, чужой
+            // перехватчик. Строка состояния говорит, что происходит на самом
+            // деле, и почему.
+            shell->setDpiModule(NekoGui::dataStore->dpi_module_enabled,
+                                dpi_module != nullptr ? dpi_module->running() : false,
+                                dpi_module != nullptr ? dpi_module->stateText() : QString());
+            sync_dpi_module();
+
+            // Пока не подключено, карточка называет того, кого подключит кнопка:
+            // выбранного под кнопкой, иначе запомненного, иначе самого быстрого.
+            if (!up) {
+                QString idle;
+                auto named = [](int id) -> QString {
+                    if (id < 0) return {};
+                    auto p = NekoGui::profileManager->GetProfile(id);
+                    return p == nullptr ? QString() : p->bean->DisplayName().left(26);
+                };
+                idle = named(chosen_server_id);
+                if (idle.isEmpty()) idle = named(NekoGui::dataStore->remember_id);
+                if (idle.isEmpty() && !NekoGui::profileManager->profiles.empty()) {
+                    idle = tr("Самый быстрый сервер");
+                }
+                shell->setIdleServer(idle);
+            }
         }
         // Three states, not two: grey «Не запущено», amber «Подключено, нет трафика» when
         // the tunnel is up but the autopilot probe cannot pass traffic, green otherwise.
@@ -1395,6 +1613,61 @@ void MainWindow::refresh_groups() {
 
 void MainWindow::refresh_proxy_list(const int &id) {
     refresh_proxy_list_impl(id, {});
+    sync_shell_servers();
+}
+
+void MainWindow::sync_shell_servers() {
+    if (shell == nullptr) return;
+    // Та же группа, что и у быстрого подключения: своя, если есть, иначе текущая.
+    std::shared_ptr<NekoGui::Group> gr;
+    {
+        QMutexLocker locker(&NekoGui::profileManager->mutex);
+        for (const auto &[gid, g]: NekoGui::profileManager->groups) {
+            if (g == nullptr) continue;
+            if (g->name == GreenRhythm::kServiceName ||
+                g->url.contains(QStringLiteral("verdantvibe"), Qt::CaseInsensitive)) {
+                gr = g;
+                break;
+            }
+        }
+    }
+    if (gr == nullptr) gr = NekoGui::profileManager->CurrentGroup();
+    QList<GreenRhythm::MainShell::ServerItem> items;
+    if (gr != nullptr) {
+        for (const auto &p: gr->Profiles()) {
+            if (p == nullptr || p->bean == nullptr) continue;
+            GreenRhythm::MainShell::ServerItem it;
+            it.id = p->id;
+            it.name = p->bean->DisplayName();
+            if (p->latency > 0) it.latency = tr("%1 мс").arg(p->latency);
+            items += it;
+        }
+    }
+    shell->setServers(items, chosen_server_id);
+}
+
+void MainWindow::add_server_dialog() {
+    const auto clip = QApplication::clipboard()->text().trimmed();
+    // Подставляем из буфера только то, что похоже на ссылку: чужой текст в
+    // поле ввода читается как «программа что-то вставила сама».
+    static const QStringList schemes{
+        QStringLiteral("http://"),  QStringLiteral("https://"), QStringLiteral("vless://"),
+        QStringLiteral("vmess://"), QStringLiteral("trojan://"), QStringLiteral("ss://"),
+        QStringLiteral("ssr://"),   QStringLiteral("hysteria2://"), QStringLiteral("hy2://"),
+        QStringLiteral("tuic://"),  QStringLiteral("socks://"), QStringLiteral("greenrhythm://"),
+        QStringLiteral("nekoray://")};
+    bool looksLikeLink = false;
+    for (const auto &s: schemes) {
+        if (clip.startsWith(s, Qt::CaseInsensitive)) looksLikeLink = true;
+    }
+    bool ok = false;
+    const auto text = QInputDialog::getMultiLineText(
+        this, tr("Добавить сервер"),
+        tr("Вставьте ссылку подписки или ссылку на сервер.\n"
+           "Подойдут http(s)://, vless://, vmess://, trojan://, ss:// — по одной на строку."),
+        looksLikeLink ? clip : QString(), &ok);
+    if (!ok || text.trimmed().isEmpty()) return;
+    NekoGui_sub::groupUpdater->AsyncUpdate(text.trimmed());
 }
 
 void MainWindow::refresh_proxy_list_impl(const int &id, GroupSortAction groupSortAction) {

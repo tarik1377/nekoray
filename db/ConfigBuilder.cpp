@@ -860,6 +860,39 @@ namespace NekoGui {
                 userRules += rule;
             }
 
+            // ОБРАТНОЕ НАПРАВЛЕНИЕ: программы, которые человек назвал «через
+            // туннель». До сих пор список умел только выводить из-под защиты, и
+            // загнать одну игру в туннель через интерфейс было невозможно —
+            // схему правили руками. Кладётся в routingRulesFirst СЛЕДОМ за
+            // поимённым обходом: сказанное про обход решает раньше, а всё
+            // остальное — пресет, списки доменов — позже.
+            const QString proxy_process_rule = dataStore->vpn_rule_process_proxy.trimmed();
+            if (!proxy_process_rule.isEmpty()) {
+                auto arr = SplitLinesSkipSharp(proxy_process_rule);
+                status->routingRulesFirst += QJsonObject{{"outbound", tagProxy},
+                                                         {"process_name", QList2QJsonArray(arr)}};
+            }
+
+            // ИГРЫ ЧЕРЕЗ ТУННЕЛЬ — РАЗВОРОТОМ ПРЕСЕТА, А НЕ ВТОРЫМ СПИСКОМ.
+            //
+            // Пресет уводит игры мимо туннеля правилами по process_name и
+            // process_path_regex. Когда серверы игры фильтруются у провайдера,
+            // «мимо» означает «никак», и человеку нужен один переключатель, а не
+            // правка схемы. Разворот берёт ТЕ ЖЕ правила и меняет им выход на
+            // туннель: список один, при правке пресета расходиться нечему.
+            // Стоит здесь, после списков человека и до пресета: поимённое «мимо»
+            // человека по-прежнему побеждает, а правило пресета уже не успевает.
+            // Только правила по процессу: блокировки QUIC и прочее не трогаются.
+            if (dataStore->games_via_tunnel) {
+                for (const auto &v: QString2QJsonObject(dataStore->routing->custom)["rules"].toArray()) {
+                    auto o = v.toObject();
+                    if (o["outbound"].toString() != QStringLiteral("bypass")) continue;
+                    if (!o.contains("process_name") && !o.contains("process_path_regex")) continue;
+                    o["outbound"] = tagProxy;
+                    status->routingRulesFirst += o;
+                }
+            }
+
             auto autoBypassExternalProcessPaths = getAutoBypassExternalProcessPaths(status->result);
             if (!autoBypassExternalProcessPaths.isEmpty()) {
                 QJsonObject rule{{"outbound", "bypass"},
@@ -890,6 +923,66 @@ namespace NekoGui {
         if (status->forTest) routingRules = {};
         if (!status->forTest) QJSONARRAY_ADD(routingRules, QString2QJsonObject(dataStore->custom_route_global)["rules"].toArray())
         QJSONARRAY_ADD(routingRules, status->routingRules)
+
+        // ОБХОД ФИЛЬТРАЦИИ НА ПРЯМОМ ПУТИ — СРЕДСТВАМИ ЯДРА, БЕЗ ДРАЙВЕРА.
+        //
+        // Провайдер режет рукопожатие TLS по имени сервера у того, что идёт
+        // МИМО туннеля: игры, античиты. Уводить их в туннель значит менять
+        // адрес и пинг; дробление ClientHello оставляет всё на месте. Ядро
+        // умеет два приёма (option/rule_action.go): tls_record_fragment —
+        // несколько записей TLS в одном пакете, дёшево и без ожидания, — и
+        // tls_fragment — несколько ПАКЕТОВ с ожиданием подтверждения, дороже.
+        // Само ядро советует начинать с первого и второй вешать только на то,
+        // что точно фильтруется.
+        //
+        // Поэтому: правилам по домену — только записи; правилам по процессу
+        // (это и есть игры, у них фильтрация и замечена) — оба. Правила по
+        // одним адресам (ip_cidr, geoip:private) не трогаются вовсе: домашний
+        // NAS с чужим стеком TLS не обязан понимать дроблёное приветствие.
+        // UDP, ICMP и правила по протоколу — мимо: дробить там нечего.
+        //
+        // Задержка ожидания — 200 мс, а не 500 по умолчанию: под правами
+        // администратора (а туннель без них не поднимается) ядро ждёт
+        // настоящего подтверждения и к запасной задержке прибегает редко.
+        // ЯРУС ЯДРА И МОДУЛЬ WINWS ВМЕСТЕ НЕ РАБОТАЮТ. Дробление здесь режет
+        // ClientHello внутри имени сервера; winws видит обрезанное SNI, имя со
+        // списком не сходится, и по умолчанию он отпускает пакет нетронутым.
+        // То есть два включённых обхода дают МЕНЬШЕ, чем один. Пока модуль
+        // работает, дробит он, а ядро молчит — dpi_module_active выставляет
+        // DpiModule, и он же просит пересобрать конфиг на каждом переходе.
+        if (dataStore->dpi_fragment && !dataStore->dpi_module_active && !status->forTest) {
+            auto fragmentDirect = [](QJsonObject o) -> QJsonObject {
+                const auto out = o["outbound"].toString();
+                if (out != QStringLiteral("bypass") && out != QStringLiteral("direct")) return o;
+                if (o.contains("action") || o.contains("protocol")) return o;
+                if (o.contains("network")) {
+                    QStringList nets;
+                    const auto n = o["network"];
+                    if (n.isArray()) {
+                        for (const auto &x: n.toArray()) nets << x.toString();
+                    } else {
+                        nets << n.toString();
+                    }
+                    if (!nets.contains(QStringLiteral("tcp"))) return o;
+                }
+                const bool byProcess = o.contains("process_name") || o.contains("process_path")
+                                       || o.contains("process_path_regex");
+                const bool byDomain = o.contains("domain") || o.contains("domain_suffix")
+                                      || o.contains("domain_keyword") || o.contains("domain_regex")
+                                      || o.contains("geosite");
+                if (!byProcess && !byDomain) return o;
+                o["tls_record_fragment"] = true;
+                if (byProcess) {
+                    o["tls_fragment"] = true;
+                    o["tls_fragment_fallback_delay"] = QStringLiteral("200ms");
+                }
+                return o;
+            };
+            QJsonArray shaped;
+            for (const auto &v: routingRules) shaped += fragmentDirect(v.toObject());
+            routingRules = shaped;
+        }
+
         auto routeObj = QJsonObject{
             {"rules", routingRules},
             {"auto_detect_interface", dataStore->spmode_vpn}, // TODO force enable?
@@ -923,7 +1016,15 @@ namespace NekoGui {
             // dashboard: bind to loopback on a port derived from the core's own, and
             // generate a secret so nothing else on the machine can query it.
             const bool userConfigured = dataStore->core_box_clash_api > 0;
-            const int port = userConfigured ? dataStore->core_box_clash_api : dataStore->core_port + 1;
+            // Порт — СВОЙ, выбранный при запуске так же, как core_port, а не
+            // «соседний». Соседний никто не проверял на занятость: ядро падало
+            // на старте с «listen tcp 127.0.0.1:N: bind: Only one usage of each
+            // socket address», стоило кому-то занять N раньше нас, — и человек
+            // видел это окно вместо подключения. Запас на случай, если порт
+            // почему-то не выбран, оставлен прежним.
+            const int port = userConfigured           ? dataStore->core_box_clash_api
+                             : dataStore->core_clash_port > 0 ? dataStore->core_clash_port
+                                                              : dataStore->core_port + 1;
             QString secret = dataStore->core_box_clash_api_secret;
             if (secret.isEmpty()) secret = dataStore->core_token;
             QJsonObject clash_api = {

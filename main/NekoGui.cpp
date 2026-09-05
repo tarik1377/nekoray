@@ -272,6 +272,11 @@ namespace NekoGui {
         _add(new configItem("vpn_route_exclude_extra", &vpn_route_exclude_extra, itemType::string));
         _add(new configItem("vpn_bypass_process", &vpn_rule_process, itemType::string));
         _add(new configItem("vpn_bypass_cidr", &vpn_rule_cidr, itemType::string));
+        _add(new configItem("vpn_proxy_process", &vpn_rule_process_proxy, itemType::string));
+        _add(new configItem("games_via_tunnel", &games_via_tunnel, itemType::boolean));
+        _add(new configItem("dpi_fragment", &dpi_fragment, itemType::boolean));
+        _add(new configItem("dpi_module_enabled", &dpi_module_enabled, itemType::boolean));
+        _add(new configItem("dpi_module_strategy", &dpi_module_strategy, itemType::string));
         _add(new configItem("vpn_rule_white", &vpn_rule_white, itemType::boolean));
         _add(new configItem("check_include_pre", &check_include_pre, itemType::boolean));
         _add(new configItem("sp_format", &system_proxy_format, itemType::string));
@@ -423,10 +428,17 @@ namespace NekoGui {
             //    speaks DoH over QUIC to 8.8.8.8:443, so a blanket udp/443 block leaves
             //    it unable to resolve anything and the browser opens no TCP at all —
             //    which looks exactly like the bug we were trying to fix.
-            // 2. Games and their auth/anti-cheat helpers go "bypass", not "direct":
-            //    "direct" still re-injects packets through the TUN adapter, which resets
-            //    long-lived game connections. Every helper must share the game's exit IP
-            //    or Xbox/Epic auth fails (seen as Sea of Thieves "Lavenderbeard").
+            // 2. ИГРЫ И ИХ ПОМОЩНИКИ ИДУТ ВЫХОДОМ «bypass». Слово здесь — только
+            //    ярлык: в собранном конфиге и «bypass», и «direct» — это один и тот
+            //    же {"type":"direct"} без единого отличающегося поля (см.
+            //    db/ConfigBuilder.cpp, где оба объявляются). Раньше тут стояло,
+            //    что «direct» переинжектит пакеты через TUN, — это было неверно;
+            //    решает ПОРЯДОК правил, а не имя выхода. Ярлык при этом трогать
+            //    нельзя: на строку "bypass" завязаны миграция схем, сторож порядка
+            //    и счётчик прямого трафика.
+            //    Что верно по существу: каждый помощник игры обязан выходить с того
+            //    же адреса, что и она сама, иначе вход и античит отказывают (так
+            //    ломался Sea of Thieves — «Lavenderbeard»).
             // 3. НО ЛАУНЧЕР EPIC — НЕ ИГРА, И ЕМУ НАПРЯМУЮ НЕЛЬЗЯ. Сеть Epic не
             //    пускает с прямого адреса: лаунчер отвечает «ошибка соединения» и
             //    предлагает автономный режим. Проверено по журналу — все его

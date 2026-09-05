@@ -267,6 +267,75 @@ int main(int argc, char **argv) {
        gui.contains(QStringLiteral("configItem(\"") + flag));
     is(QStringLiteral("флаг ремонта читается при запуске"), win.contains(flag));
 
+    // ---- ОБРАТНОЕ НАПРАВЛЕНИЕ И ИГРЫ ЧЕРЕЗ ТУННЕЛЬ ----
+    //
+    // Список человека умел только выводить из-под защиты. Обратный список и
+    // переключатель «игры через туннель» обязаны стоять в routingRulesFirst —
+    // раньше пресета и списков доменов, иначе шаблон «-Shipping» из пресета
+    // заберёт игру первым и переключатель не сделает ничего, оставаясь на вид
+    // включённым. И ПОСЛЕ поимённого обхода человека: сказанное «мимо»
+    // поимённо решает раньше общего «через».
+    const int bypassUser = src.indexOf(QStringLiteral("QString process_name_rule = dataStore->vpn_rule_process.trimmed();"));
+    const int proxyUser  = src.indexOf(QStringLiteral("dataStore->vpn_rule_process_proxy.trimmed()"));
+    const int gamesFlip  = src.indexOf(QStringLiteral("if (dataStore->games_via_tunnel)"));
+    is(QStringLiteral("обратный список программ собирается"), proxyUser >= 0);
+    is(QStringLiteral("разворот игровых правил собирается"), gamesFlip >= 0);
+    is(QStringLiteral("обратный список идёт ПОСЛЕ поимённого обхода"),
+       bypassUser >= 0 && proxyUser > bypassUser);
+    is(QStringLiteral("разворот игр идёт ПОСЛЕ обратного списка"),
+       proxyUser >= 0 && gamesFlip > proxyUser);
+    is(QStringLiteral("обратный список кладётся в routingRulesFirst"),
+       proxyUser >= 0 && src.mid(proxyUser, 400).contains(QStringLiteral("routingRulesFirst")));
+    is(QStringLiteral("разворот кладётся в routingRulesFirst"),
+       gamesFlip >= 0 && src.mid(gamesFlip, 700).contains(QStringLiteral("routingRulesFirst")));
+    // Разворачивать можно только правила ПО ПРОЦЕССУ: перевёрнутая блокировка
+    // QUIC стала бы правилом «QUIC — в туннель», ровно наоборот к замыслу.
+    is(QStringLiteral("разворот отбирает только правила по процессу"),
+       gamesFlip >= 0 && src.mid(gamesFlip, 700).contains(QStringLiteral("process_path_regex")));
+    is(QStringLiteral("обратный список сохраняется в настройки"),
+       gui.contains(QStringLiteral("configItem(\"vpn_proxy_process\"")));
+    is(QStringLiteral("переключатель игр сохраняется в настройки"),
+       gui.contains(QStringLiteral("configItem(\"games_via_tunnel\"")));
+
+    // ---- ПОРТ CLASH API — СВОЙ, А НЕ СОСЕДНИЙ ----
+    //
+    // core_port + 1 никто не проверял на занятость; ядро падало на старте с
+    // «Only one usage of each socket address». Порт обязан выбираться так же,
+    // как core_port, и подставляться в конфиг.
+    is(QStringLiteral("порт Clash API выбирается при запуске"),
+       win.contains(QStringLiteral("core_clash_port = p")));
+    is(QStringLiteral("порт Clash API подставляется в конфиг"),
+       src.contains(QStringLiteral("dataStore->core_clash_port > 0 ? dataStore->core_clash_port")));
+
+    // ---- ОБХОД ФИЛЬТРАЦИИ — ТОЛЬКО ПРЯМОМУ ПУТИ И ТОЛЬКО TCP ----
+    //
+    // Дробление приветствия TLS нужно тому, что идёт мимо туннеля и режется у
+    // провайдера. Навесить его на туннель значило бы дробить наше же
+    // соединение к серверу; навесить на UDP — бессмысленно; навесить на правила
+    // по одним адресам — рискнуть домашним NAS с чужим стеком TLS. Проход стоит
+    // ПОСЛЕ сборки всей цепочки и ДО того, как она уходит в конфиг.
+    const int frag     = src.indexOf(QStringLiteral("auto fragmentDirect = ["));
+    const int chainEnd = src.indexOf(QStringLiteral("QJSONARRAY_ADD(routingRules, status->routingRules)"));
+    const int routeObj = src.indexOf(QStringLiteral("auto routeObj = QJsonObject{"));
+    is(QStringLiteral("проход дробления есть"), frag >= 0);
+    is(QStringLiteral("проход идёт ПОСЛЕ сборки цепочки"), frag >= 0 && frag > chainEnd);
+    is(QStringLiteral("проход идёт ДО отправки в конфиг"), frag >= 0 && routeObj > frag);
+    if (frag >= 0) {
+        const QString body = src.mid(frag, 1800);
+        is(QStringLiteral("дробится только bypass и direct"),
+           body.contains(QStringLiteral("out != QStringLiteral(\"bypass\") && out != QStringLiteral(\"direct\")")));
+        is(QStringLiteral("правила без tcp не трогаются"),
+           body.contains(QStringLiteral("!nets.contains(QStringLiteral(\"tcp\"))")));
+        is(QStringLiteral("правила по одним адресам не трогаются"),
+           body.contains(QStringLiteral("if (!byProcess && !byDomain) return o;")));
+        is(QStringLiteral("пакетное дробление — только правилам по процессу"),
+           body.indexOf(QStringLiteral("if (byProcess)")) < body.indexOf(QStringLiteral("tls_fragment_fallback_delay")));
+        is(QStringLiteral("запасная задержка задана явно"),
+           body.contains(QStringLiteral("tls_fragment_fallback_delay")));
+    }
+    is(QStringLiteral("переключатель обхода сохраняется в настройки"),
+       gui.contains(QStringLiteral("configItem(\"dpi_fragment\"")));
+
     std::fputs(QStringLiteral("\nпроверок %1, провалов %2\n").arg(checks).arg(fails).toUtf8().constData(),
                stdout);
     return fails == 0 ? 0 : 1;
