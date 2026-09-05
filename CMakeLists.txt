@@ -275,6 +275,7 @@ set(PROJECT_SOURCES
         ui/dialog_whatbroke.cpp
         ui/ServerCardDelegate.cpp
         ui/MainShell.cpp
+        ui/Icons.cpp
         main/PortHealth.cpp
         main/ProgramTrouble.cpp
         main/Interference.cpp
@@ -517,6 +518,7 @@ target_link_libraries(relay_dialog_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widget
 add_executable(mainwindow_preview EXCLUDE_FROM_ALL
         test/MainWindowPreview.cpp
         ui/MainShell.cpp
+        ui/Icons.cpp
         ui/ServerCardDelegate.cpp
         main/ConnectionRow.cpp
         main/AppFont.cpp
@@ -530,7 +532,7 @@ add_dependencies(mainwindow_preview greenrhythm)
 target_include_directories(mainwindow_preview PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_BINARY_DIR}/greenrhythm_autogen/include)
-target_link_libraries(mainwindow_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+target_link_libraries(mainwindow_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg)
 
 # СТОРОЖ ВРЕМЕНИ ЖИЗНИ ВИДЖЕТОВ. Нужен заголовок, собранный uic для
 # приложения, и оболочка — как у предпросмотра выше, по той же причине: второй
@@ -545,6 +547,7 @@ target_include_directories(network_repair_test PRIVATE ${CMAKE_CURRENT_SOURCE_DI
 add_executable(widget_lifetime_test EXCLUDE_FROM_ALL
         test/WidgetLifetimeTest.cpp
         ui/MainShell.cpp
+        ui/Icons.cpp
         ui/ServerCardDelegate.cpp
         res/neko.qrc
 )
@@ -554,7 +557,7 @@ add_dependencies(widget_lifetime_test greenrhythm)
 target_include_directories(widget_lifetime_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_BINARY_DIR}/greenrhythm_autogen/include)
-target_link_libraries(widget_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+target_link_libraries(widget_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg)
 
 # План запуска winws — золотым набором. Аргументы строятся один раз и уезжают
 # в кернел-драйвер: ошибка в порядке профилей или пустой список означают не
@@ -567,6 +570,11 @@ target_link_libraries(widget_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widget
 # Подписи строки соединений. Таблица — то, куда смотрят, когда не работает;
 # три строки со снимка владельца там читались как программы мимо VPN, а были
 # нашим же туннелем.
+# Значки: каждое имя из кода есть файлом и вписано в ресурсы. Отсутствующий
+# значок рисуется пустотой молча — ни ошибки, ни предупреждения.
+add_executable(icons_test EXCLUDE_FROM_ALL test/IconsTest.cpp)
+target_link_libraries(icons_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+
 add_executable(connection_row_test EXCLUDE_FROM_ALL
         test/ConnectionRowTest.cpp
         main/ConnectionRow.cpp
@@ -653,6 +661,7 @@ set(GR_TEST_TARGETS
         dpi_plan_test
         interference_test
         connection_row_test
+        icons_test
 )
 
 add_custom_target(build-tests DEPENDS ${GR_TEST_TARGETS})

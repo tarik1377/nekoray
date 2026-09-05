@@ -1,4 +1,5 @@
 #include "ui/MainShell.hpp"
+#include "ui/Icons.hpp"
 
 #include <QComboBox>
 #include <QGridLayout>
@@ -210,13 +211,12 @@ namespace GreenRhythm {
         // стояла кнопкой «Меню» рядом с «Действиями», и обе читались как
         // «тут что-то ещё, но что — неясно». Многоточие в углу — то место, где
         // остальное ищут во всех современных окнах.
-        moreButton = new QPushButton(QStringLiteral("⋯"), bar);
+        moreButton = new QPushButton(bar);
+        moreButton->setIcon(Icons::icon(QStringLiteral("gr-more"), QColor(kMuted), QColor(kText), 18));
+        moreButton->setIconSize(QSize(18, 18));
         moreButton->setFixedSize(28, 28);
         moreButton->setCursor(Qt::PointingHandCursor);
         moreButton->setToolTip(tr("Меню"));
-        QFont mf = moreButton->font();
-        mf.setPointSizeF(mf.pointSizeF() * 1.3);
-        moreButton->setFont(mf);
         moreButton->setStyleSheet(QStringLiteral(
                                       "QPushButton { border: none; border-radius: 8px; background: transparent;"
                                       " color: %1; padding: 0; }"
@@ -236,15 +236,17 @@ namespace GreenRhythm {
             int page;
         };
         const QList<Item> items{
-            {tr("Подключение"), QStringLiteral(":/icon/gr-nav-connect.svg"), 0},
-            {tr("Серверы"), QStringLiteral(":/icon/gr-nav-servers.svg"), 1},
-            {tr("Журнал"), QStringLiteral(":/icon/gr-nav-log.svg"), 2},
+            {tr("Подключение"), QStringLiteral("gr-nav-connect"), 0},
+            {tr("Серверы"), QStringLiteral("gr-nav-servers"), 1},
+            {tr("Журнал"), QStringLiteral("gr-nav-log"), 2},
         };
         for (const auto &item: items) {
-            // Значок рисуется линией и красится currentColor, поэтому он берёт
-            // цвет от состояния кнопки: приглушённый у обычной, акцентный у
-            // выбранной. Заливкой в 20 точек он слился бы в пятно.
-            auto *b = new QPushButton(QIcon(item.icon), QStringLiteral("  ") + item.text, bar);
+            // Значок рисуется линией и красится ЯВНО, в два состояния: серый у
+            // обычного пункта, акцентный у выбранного и под курсором. Раньше
+            // окраска доверялась currentColor внутри SVG — работало в кнопке и
+            // не работало больше нигде; см. ui/Icons.hpp.
+            auto *b = new QPushButton(Icons::icon(item.icon, QColor(kMuted), QColor(kAccent), 19),
+                                      QStringLiteral("  ") + item.text, bar);
             b->setIconSize(QSize(19, 19));
             b->setCheckable(true);
             b->setCursor(Qt::PointingHandCursor);
@@ -278,21 +280,23 @@ namespace GreenRhythm {
             // подписью слева, как пункты навигации выше, только тише.
             auto *list = new QVBoxLayout();
             list->setSpacing(0);
-            auto row = [&](const QString &text, auto signal) {
+            auto row = [&](const QString &text, const QString &icon, auto signal) {
                 auto *b = tool(bar, text);
+                b->setIcon(Icons::icon(icon, QColor(kMuted), QColor(kText), 16));
+                b->setIconSize(QSize(16, 16));
                 connect(b, &QPushButton::clicked, this, signal);
                 list->addWidget(b);
                 return b;
             };
-            row(tr("Маршруты"), &MainShell::routesRequested);
+            row(tr("Маршруты"), QStringLiteral("gr-routes"), &MainShell::routesRequested);
 #ifdef Q_OS_WIN
             // Есть только под Windows: разведка службами и адаптерами системы.
             // На маке пункт не показывается вовсе, а не открывает окно с отказом.
-            row(tr("Что мешает подключению"), &MainShell::interferenceRequested);
+            row(tr("Что мешает подключению"), QStringLiteral("gr-shield-alert"), &MainShell::interferenceRequested);
 #endif
-            row(tr("Обновить подписку"), &MainShell::updateSubscriptionRequested);
-            row(tr("Проверить обновление"), &MainShell::checkUpdateRequested);
-            row(tr("Настройки"), &MainShell::settingsRequested);
+            row(tr("Обновить подписку"), QStringLiteral("gr-refresh"), &MainShell::updateSubscriptionRequested);
+            row(tr("Проверить обновление"), QStringLiteral("gr-download"), &MainShell::checkUpdateRequested);
+            row(tr("Настройки"), QStringLiteral("gr-sliders"), &MainShell::settingsRequested);
             box->addLayout(list);
         }
         // Воздух между инструментами и карточками — ДО растяжки. На высоте 720
@@ -335,7 +339,9 @@ namespace GreenRhythm {
         subBlock->setVisible(false); // покажется, когда будет что показать
         box->addWidget(subBlock);
 
-        auto *add = new QPushButton(tr("+  Добавить сервер"), bar);
+        auto *add = new QPushButton(tr("Добавить сервер"), bar);
+        add->setIcon(Icons::icon(QStringLiteral("gr-plus"), QColor("#08170c"), QColor("#08170c"), 16));
+        add->setIconSize(QSize(16, 16));
         add->setCursor(Qt::PointingHandCursor);
         add->setMinimumHeight(42);
         add->setStyleSheet(QStringLiteral(
@@ -359,16 +365,16 @@ namespace GreenRhythm {
         // Кнопка — главный предмет на экране, и она обязана быть крупной. Прежде
         // подключение включалось галкой «Режим TUN» в углу панели инструментов:
         // человек не находил её и не понимал, включено у него что-нибудь или нет.
-        power = new QPushButton(QStringLiteral("⏻"), page);
+        power = new QPushButton(page);
         // Имя нужно ради селектора по имени: у темы есть своё правило для
         // QPushButton, и при равной точности выигрывает не наше. Круглая кнопка
         // от этого получалась квадратной — скругление просто не применялось.
         power->setObjectName(QStringLiteral("grPower"));
         power->setFixedSize(168, 168);
         power->setCursor(Qt::PointingHandCursor);
-        QFont glyph = power->font();
-        glyph.setPointSize(52);
-        power->setFont(glyph);
+        // Значок, а не символ ⏻ из шрифта: символ рисовался тем, что нашлось в
+        // системе, и на разных машинах был разной толщины и высоты.
+        power->setIconSize(QSize(64, 64));
         connect(power, &QPushButton::clicked, this, &MainShell::connectToggled);
         box->addWidget(power, 0, Qt::AlignHCenter);
         box->addSpacing(20);
@@ -565,6 +571,8 @@ namespace GreenRhythm {
             bypassLine->setCursor(Qt::PointingHandCursor);
             bypassLine->setFlat(true);
             bypassLine->setStyleSheet(linkStyle(kMuted));
+            bypassLine->setIcon(Icons::icon(QStringLiteral("gr-list"), QColor(kMuted), QColor(kAccent), 14));
+            bypassLine->setIconSize(QSize(14, 14));
             connect(bypassLine, &QPushButton::clicked, this, &MainShell::bypassListRequested);
             row->addWidget(bypassLine, 0, Qt::AlignLeft);
             row->addStretch(1);
@@ -572,6 +580,8 @@ namespace GreenRhythm {
             troubleLink->setCursor(Qt::PointingHandCursor);
             troubleLink->setFlat(true);
             troubleLink->setStyleSheet(linkStyle(kMuted));
+            troubleLink->setIcon(Icons::icon(QStringLiteral("gr-help"), QColor(kMuted), QColor(kAccent), 14));
+            troubleLink->setIconSize(QSize(14, 14));
             connect(troubleLink, &QPushButton::clicked, this, &MainShell::troubleRequested);
             row->addWidget(troubleLink, 0, Qt::AlignRight);
             box->addWidget(links, 0, Qt::AlignHCenter);
@@ -732,6 +742,7 @@ namespace GreenRhythm {
                            "QPushButton#grPower:hover { border-color: %4; }")
                 .arg(glyph, fill, ring, next == State::Connected ? QString(kAccent)
                                                                  : QString(kAccent)));
+        power->setIcon(QIcon(Icons::pixmap(QStringLiteral("gr-power"), QColor(glyph), 64)));
         powerHint->setText(hint);
         powerHint->setStyleSheet(
             QStringLiteral("color: %1;").arg(next == State::Failed ? QString(kRed)

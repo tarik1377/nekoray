@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Питание: дуга и черта. Линия толще остальных — значок большой,
+     на кнопке в 168 точек тонкая линия терялась бы. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-width="2.2"
+     stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 4 V12"/>
+  <path d="M7.05 7.05 A7 7 0 1 0 16.95 7.05"/>
+</svg>

@@ -16,6 +16,7 @@
  */
 
 #include "ui_mainwindow.h"
+#include "ui/Icons.hpp"
 
 #include "ui/MainShell.hpp"
 #include "ui/ServerCardDelegate.hpp"
@@ -129,13 +130,25 @@ int main(int argc, char *argv[]) {
             const int row = t->rowCount();
             t->insertRow(row);
             const QString tag = QString::fromLatin1(r.tag);
-            // Те же подписи и цвета, что в окне (LogAndConnections.cpp).
-            auto *c1 = new QTableWidgetItem(tag == QStringLiteral("proxy")   ? QStringLiteral("●  Прокси")
-                                            : tag == QStringLiteral("block") ? QStringLiteral("●  Блокировка")
-                                                                             : QStringLiteral("●  Напрямую"));
-            c1->setForeground(QBrush(tag == QStringLiteral("proxy")   ? QColor(0x3F, 0xB9, 0x50)
-                                     : tag == QStringLiteral("block") ? QColor(0xE5, 0x48, 0x4D)
-                                                                      : QColor(0x9A, 0xA0, 0xA8)));
+            // Те же значки, подписи и цвета, что в окне (LogAndConnections.cpp).
+            const bool isProxy = tag == QStringLiteral("proxy");
+            const bool isBlock = tag == QStringLiteral("block");
+            const QColor tagColor = isProxy ? QColor(0x3F, 0xB9, 0x50)
+                                    : isBlock ? QColor(0xE5, 0x48, 0x4D)
+                                              : QColor(0x9A, 0xA0, 0xA8);
+            const QString tagIcon = isProxy ? QStringLiteral("gr-shield-check")
+                                    : isBlock ? QStringLiteral("gr-ban")
+                                              : QStringLiteral("gr-arrow-right");
+            auto *c0 = new QLabel;
+            c0->setPixmap(GreenRhythm::Icons::pixmap(isBlock ? QStringLiteral("gr-ban") : QStringLiteral("gr-activity"),
+                                                     isBlock ? tagColor : QColor(0x9A, 0xA0, 0xA8), 16));
+            c0->setAlignment(Qt::AlignCenter);
+            t->setCellWidget(row, 0, c0);
+            auto *c1 = new QTableWidgetItem(QIcon(GreenRhythm::Icons::pixmap(tagIcon, tagColor, 16)),
+                                            isProxy ? QStringLiteral("Прокси")
+                                            : isBlock ? QStringLiteral("Блокировка")
+                                                      : QStringLiteral("Напрямую"));
+            c1->setForeground(QBrush(tagColor));
             t->setItem(row, 1, c1);
             const auto program = GreenRhythm::programLabel(QString::fromUtf8(r.process), QString::fromLatin1(r.dest), server);
             auto *c2 = new QTableWidgetItem(program);

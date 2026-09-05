@@ -1,4 +1,5 @@
 #include "ui/mainwindow_common.hpp"
+#include "ui/Icons.hpp"
 
 #include "main/ConnectionRow.hpp"
 
@@ -274,14 +275,14 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
         auto end_t = item["End"].toInt();
         // icon
         auto outboundTag = item["Tag"].toString();
+        // Свои значки одной линией, а не material разной заливки: пульс — живое,
+        // часы — закрытое, круг с чертой — запрещено.
         if (outboundTag == "block") {
-            c0->setPixmap(Icon::GetMaterialIcon("cancel"));
+            c0->setPixmap(GreenRhythm::Icons::pixmap(QStringLiteral("gr-ban"), QColor(0xE5, 0x48, 0x4D), 16));
+        } else if (end_t > 0) {
+            c0->setPixmap(GreenRhythm::Icons::pixmap(QStringLiteral("gr-history"), QColor(0x6A, 0x70, 0x78), 16));
         } else {
-            if (end_t > 0) {
-                c0->setPixmap(Icon::GetMaterialIcon("history"));
-            } else {
-                c0->setPixmap(Icon::GetMaterialIcon("swap-vertical"));
-            }
+            c0->setPixmap(GreenRhythm::Icons::pixmap(QStringLiteral("gr-activity"), QColor(0x9A, 0xA0, 0xA8), 16));
         }
         c0->setAlignment(Qt::AlignCenter);
         c0->setToolTip(tr("Start: %1\nEnd: %2").arg(DisplayTime(start_t), end_t > 0 ? DisplayTime(end_t) : ""));
@@ -292,6 +293,7 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
         auto f = f0->clone();
         f->setToolTip(outboundTag);
         QString obLabel = outboundTag;
+        QString obIcon;
         QColor obColor;
         // ТОЧКА, А НЕ ЭМОДЗИ. Глобус, флаг и знак «стоп» рисуются на каждой
         // машине своим шрифтом, цветные и разного размера; в настольном окне
@@ -301,17 +303,21 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
         // «Напрямую», и он спорил с акцентом, который во всём окне значит
         // «наше, включено».
         if (outboundTag == "proxy") {
-            obLabel = QStringLiteral("●  ") + tr("Прокси");
+            obLabel = tr("Прокси");
+            obIcon = QStringLiteral("gr-shield-check");
             obColor = QColor(0x3F, 0xB9, 0x50);
         } else if (outboundTag == "direct" || outboundTag == "bypass") {
-            obLabel = QStringLiteral("●  ") + tr("Напрямую");
+            obLabel = tr("Напрямую");
+            obIcon = QStringLiteral("gr-arrow-right");
             obColor = QColor(0x9A, 0xA0, 0xA8);
         } else if (outboundTag == "block") {
-            obLabel = QStringLiteral("●  ") + tr("Блокировка");
+            obLabel = tr("Блокировка");
+            obIcon = QStringLiteral("gr-ban");
             obColor = QColor(0xE5, 0x48, 0x4D);
         }
         f->setText(obLabel);
         if (obColor.isValid()) f->setForeground(QBrush(obColor));
+        if (!obIcon.isEmpty()) f->setIcon(QIcon(GreenRhythm::Icons::pixmap(obIcon, obColor, 16)));
         ui->tableWidget_conn->setItem(row, 1, f);
 
         // C3: Куда. Имя впереди, адрес хвостом — см. ConnectionRow.hpp: раньше
