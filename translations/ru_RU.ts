@@ -1911,7 +1911,7 @@ https://verdantvibe.ru</translation>
     </message>
     <message>
         <source>Log</source>
-        <translation>Журнал</translation>
+        <translation>Сообщения</translation>
     </message>
     <message>
         <source>Connection</source>

@@ -1,6 +1,10 @@
 #include "ui/MainShell.hpp"
 #include "ui/Icons.hpp"
 
+#include <QGridLayout>
+#include <QPainter>
+#include <QRadialGradient>
+
 #include <QComboBox>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -162,6 +166,47 @@ namespace GreenRhythm {
         }
 
     } // namespace
+
+    /**
+     * Свечение под кнопкой питания.
+     *
+     * Плоское кольцо на плоском фоне — это схема, а не состояние. Мягкий
+     * радиальный ореол цвета состояния под кнопкой отвечает на «работает ли»
+     * ещё до того, как прочитана подпись, — так устроен главный экран у всех
+     * современных VPN. QSS теней не умеет, поэтому рисуем сами.
+     */
+    class PowerGlow : public QWidget {
+    public:
+        explicit PowerGlow(QWidget *parent) : QWidget(parent) {
+            setAttribute(Qt::WA_TransparentForMouseEvents);
+        }
+        void set(const QColor &c, bool on) {
+            color = c;
+            active = on;
+            update();
+        }
+
+    protected:
+        void paintEvent(QPaintEvent *) override {
+            if (!active) return;
+            QPainter p(this);
+            p.setRenderHint(QPainter::Antialiasing);
+            const QPointF c(width() / 2.0, height() / 2.0);
+            QRadialGradient g(c, width() / 2.0);
+            QColor a = color;
+            a.setAlpha(64);
+            g.setColorAt(0.0, a);
+            a.setAlpha(22);
+            g.setColorAt(0.55, a);
+            a.setAlpha(0);
+            g.setColorAt(1.0, a);
+            p.fillRect(rect(), g);
+        }
+
+    private:
+        QColor color;
+        bool active = false;
+    };
 
     MainShell::MainShell(QWidget *parent) : QWidget(parent) {
         auto *row = new QHBoxLayout(this);
@@ -376,7 +421,14 @@ namespace GreenRhythm {
         // системе, и на разных машинах был разной толщины и высоты.
         power->setIconSize(QSize(64, 64));
         connect(power, &QPushButton::clicked, this, &MainShell::connectToggled);
-        box->addWidget(power, 0, Qt::AlignHCenter);
+        // Кнопка лежит поверх ореола: у того размер с запасом в 40 точек по
+        // кругу, и он прозрачен для мыши — нажимается сама кнопка.
+        glow = new PowerGlow(page);
+        glow->setFixedSize(248, 248);
+        auto *glowBox = new QGridLayout(glow);
+        glowBox->setContentsMargins(0, 0, 0, 0);
+        glowBox->addWidget(power, 0, 0, Qt::AlignCenter);
+        box->addWidget(glow, 0, Qt::AlignHCenter);
         box->addSpacing(20);
 
         powerHint = muted(page, tr("Нажмите для подключения"), 1.15);
@@ -611,11 +663,32 @@ namespace GreenRhythm {
         return page;
     }
 
+    QWidget *MainShell::framed(QWidget *content, const QString &title) {
+        // ПОЛЯ И ЗАГОЛОВОК — У КАЖДОЙ СТРАНИЦЫ, А НЕ ТОЛЬКО У ПОДКЛЮЧЕНИЯ. Список
+        // серверов и таблица соединений упирались в край окна с зазором в шесть
+        // точек, пока у подключения поля были в сорок; страницы выглядели из
+        // разных программ. Заголовок — потому что у страницы должно быть имя,
+        // которое читается раньше содержимого.
+        auto *page = new QWidget(this);
+        auto *box = new QVBoxLayout(page);
+        box->setContentsMargins(28, 22, 28, 20);
+        box->setSpacing(14);
+        auto *h = new QLabel(title, page);
+        QFont hf = h->font();
+        hf.setBold(true);
+        hf.setPointSizeF(hf.pointSizeF() * 1.55);
+        h->setFont(hf);
+        h->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(kText));
+        box->addWidget(h);
+        box->addWidget(content, 1);
+        return page;
+    }
+
     void MainShell::adopt(QWidget *servers, QWidget *logs) {
         // Виджеты переезжают, а не создаются заново: к ним привязана вся прежняя
         // проводка окна. addWidget сам меняет родителя.
-        if (servers != nullptr) pages->insertWidget(1, servers);
-        if (logs != nullptr) pages->insertWidget(2, logs);
+        if (servers != nullptr) pages->insertWidget(1, framed(servers, tr("Серверы")));
+        if (logs != nullptr) pages->insertWidget(2, framed(logs, tr("Журнал")));
         selectPage(0);
     }
 
@@ -743,6 +816,9 @@ namespace GreenRhythm {
                 .arg(glyph, fill, ring, next == State::Connected ? QString(kAccent)
                                                                  : QString(kAccent)));
         power->setIcon(QIcon(Icons::pixmap(QStringLiteral("gr-power"), QColor(glyph), 64)));
+        // Ореол только у живых состояний: подключено — акцент, подключаюсь —
+        // янтарь, не вышло — красный. В покое кнопка стоит на ровном фоне.
+        if (glow != nullptr) glow->set(QColor(glyph), next != State::Idle);
         powerHint->setText(hint);
         powerHint->setStyleSheet(
             QStringLiteral("color: %1;").arg(next == State::Failed ? QString(kRed)
