@@ -43,6 +43,15 @@
 namespace GreenRhythm {
 
     namespace {
+// ВСЕ ПОМОЩНИКИ — ПОД Q_OS_WIN, а не только места их вызова.
+//
+// sys/WinShell.hpp объявлен целиком внутри #ifdef Q_OS_WIN, поэтому на маке и в
+// Linux PowerShellPath просто не существует. Тела этих функций компилируются
+// независимо от того, зовёт их кто-нибудь на той платформе или нет: защитить
+// вызов и не защитить определение — значит сломать сборку под мак, ничего при
+// этом не сломав под Windows, где всё выглядит исправным. Ровно так оно и
+// вышло. Так же устроен NetworkRepair.cpp, и это не совпадение.
+#ifdef Q_OS_WIN
         /** Обычный проход: без повышения, только чтение. */
         QString runPlain(const QString &script, int msec) {
             QProcess p;
@@ -91,6 +100,7 @@ namespace GreenRhythm {
             }
             return QObject::tr("служба");
         }
+#endif
     } // namespace
 
     QList<Meddling> scanInterference() {
