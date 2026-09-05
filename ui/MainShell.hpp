@@ -2,6 +2,7 @@
 
 #include <QWidget>
 
+class QComboBox;
 class QLabel;
 class QPushButton;
 class QStackedWidget;
@@ -96,8 +97,53 @@ namespace GreenRhythm {
         /** Идёт подключение. Оставлено ради прежних вызовов: это State::Connecting. */
         void setBusy(bool busy);
 
+        /** Одна строка выбора сервера под кнопкой. */
+        struct ServerItem {
+            int id = -1;
+            QString name;
+            QString latency; ///< «32 мс»; пусто — не измерена
+        };
+
+        /**
+         * Список серверов для выбора прямо под кнопкой подключения.
+         *
+         * Раньше сервер выбирался только на своей вкладке, а страница
+         * подключения стояла пустой, пока туда не сходишь. Место под кнопкой
+         * есть, и вопрос «к чему подключаюсь» решается там же, где нажимают.
+         * Перестраивается только при смене состава — иначе раскрытый список
+         * захлопывался бы каждые две секунды.
+         *
+         * @param currentId выбранный сейчас; -1 — автовыбор самого быстрого
+         */
+        void setServers(const QList<ServerItem> &servers, int currentId);
+
+        /**
+         * Режимы: туннель, системный прокси, игры через туннель.
+         *
+         * Переключатели живут в колонке, потому что раньше жили в ряду кнопок
+         * сверху, а ряд ушёл вместе с прежней вёрсткой. Человек искал их и не
+         * находил — ровно тот вопрос, с которого и начался этот блок.
+         */
+        void setModes(bool tun, bool systemProxy, bool gamesViaTunnel);
+
+        /** Кого подключит кнопка, пока не подключено. Пусто — «Сервер не выбран». */
+        void setIdleServer(const QString &name);
+
     signals:
         void connectToggled();
+
+        /** Переключатели режима — человек нажал сам. */
+        void tunToggled(bool on);
+        void systemProxyToggled(bool on);
+        void gamesViaTunnelToggled(bool on);
+
+        /** Инструменты, переехавшие из верхнего ряда. */
+        void routesRequested();
+        void updateSubscriptionRequested();
+        void checkUpdateRequested();
+
+        /** Выбор сервера под кнопкой. -1 — автовыбор. */
+        void serverChosen(int id);
         void addServerRequested();
         void panelRequested();
         void settingsRequested();
@@ -140,6 +186,14 @@ namespace GreenRhythm {
         State state = State::Idle;
         QWidget *tagRow = nullptr;
         QWidget *emptyHint = nullptr;
+
+        QPushButton *modeTun = nullptr;
+        QPushButton *modeProxy = nullptr;
+        QPushButton *gamesToggle = nullptr;
+        QComboBox *serverPick = nullptr;
+        QStringList serverSignature; ///< состав списка, чтобы не перестраивать зря
+        QString idleServerName;
+        bool connected = false;
     };
 
 } // namespace GreenRhythm

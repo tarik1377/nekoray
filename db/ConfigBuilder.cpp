@@ -860,6 +860,39 @@ namespace NekoGui {
                 userRules += rule;
             }
 
+            // ОБРАТНОЕ НАПРАВЛЕНИЕ: программы, которые человек назвал «через
+            // туннель». До сих пор список умел только выводить из-под защиты, и
+            // загнать одну игру в туннель через интерфейс было невозможно —
+            // схему правили руками. Кладётся в routingRulesFirst СЛЕДОМ за
+            // поимённым обходом: сказанное про обход решает раньше, а всё
+            // остальное — пресет, списки доменов — позже.
+            const QString proxy_process_rule = dataStore->vpn_rule_process_proxy.trimmed();
+            if (!proxy_process_rule.isEmpty()) {
+                auto arr = SplitLinesSkipSharp(proxy_process_rule);
+                status->routingRulesFirst += QJsonObject{{"outbound", tagProxy},
+                                                         {"process_name", QList2QJsonArray(arr)}};
+            }
+
+            // ИГРЫ ЧЕРЕЗ ТУННЕЛЬ — РАЗВОРОТОМ ПРЕСЕТА, А НЕ ВТОРЫМ СПИСКОМ.
+            //
+            // Пресет уводит игры мимо туннеля правилами по process_name и
+            // process_path_regex. Когда серверы игры фильтруются у провайдера,
+            // «мимо» означает «никак», и человеку нужен один переключатель, а не
+            // правка схемы. Разворот берёт ТЕ ЖЕ правила и меняет им выход на
+            // туннель: список один, при правке пресета расходиться нечему.
+            // Стоит здесь, после списков человека и до пресета: поимённое «мимо»
+            // человека по-прежнему побеждает, а правило пресета уже не успевает.
+            // Только правила по процессу: блокировки QUIC и прочее не трогаются.
+            if (dataStore->games_via_tunnel) {
+                for (const auto &v: QString2QJsonObject(dataStore->routing->custom)["rules"].toArray()) {
+                    auto o = v.toObject();
+                    if (o["outbound"].toString() != QStringLiteral("bypass")) continue;
+                    if (!o.contains("process_name") && !o.contains("process_path_regex")) continue;
+                    o["outbound"] = tagProxy;
+                    status->routingRulesFirst += o;
+                }
+            }
+
             auto autoBypassExternalProcessPaths = getAutoBypassExternalProcessPaths(status->result);
             if (!autoBypassExternalProcessPaths.isEmpty()) {
                 QJsonObject rule{{"outbound", "bypass"},
@@ -923,7 +956,15 @@ namespace NekoGui {
             // dashboard: bind to loopback on a port derived from the core's own, and
             // generate a secret so nothing else on the machine can query it.
             const bool userConfigured = dataStore->core_box_clash_api > 0;
-            const int port = userConfigured ? dataStore->core_box_clash_api : dataStore->core_port + 1;
+            // Порт — СВОЙ, выбранный при запуске так же, как core_port, а не
+            // «соседний». Соседний никто не проверял на занятость: ядро падало
+            // на старте с «listen tcp 127.0.0.1:N: bind: Only one usage of each
+            // socket address», стоило кому-то занять N раньше нас, — и человек
+            // видел это окно вместо подключения. Запас на случай, если порт
+            // почему-то не выбран, оставлен прежним.
+            const int port = userConfigured           ? dataStore->core_box_clash_api
+                             : dataStore->core_clash_port > 0 ? dataStore->core_clash_port
+                                                              : dataStore->core_port + 1;
             QString secret = dataStore->core_box_clash_api_secret;
             if (secret.isEmpty()) secret = dataStore->core_token;
             QJsonObject clash_api = {

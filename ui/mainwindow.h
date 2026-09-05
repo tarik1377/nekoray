@@ -250,6 +250,14 @@ private:
     void show_conn_context_menu(const QPoint &pos);     // right-click a connection → make a routing rule
     void add_routing_rule(const QString &host, int kind); // kind: 0 direct, 1 proxy, 2 block
 
+    // Кнопка «Добавить сервер» в колонке. Раньше она молча читала буфер обмена
+    // и молча же ничего не делала, если там не ссылка; теперь спрашивает.
+    void add_server_dialog();
+    // Список серверов под кнопкой подключения и «кого подключит» в карточке.
+    void sync_shell_servers();
+    // Выбор человека под кнопкой: -1 — автовыбор самого быстрого.
+    int chosen_server_id = -1;
+
     QLabel *conn_route_summary = nullptr; // live route "map": proxy/direct/block split + bar
 
     // Connection health for the status pill, so it can say more than up/down: the tunnel

@@ -278,10 +278,53 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         connect(shell, &GreenRhythm::MainShell::connectToggled, this, [this] {
             if (NekoGui::dataStore->started_id >= 0) {
                 neko_stop();
+            } else if (chosen_server_id >= 0 &&
+                       NekoGui::profileManager->GetProfile(chosen_server_id) != nullptr) {
+                // Человек выбрал сервер под кнопкой — подключаем его, а не
+                // «самый быстрый»: выбор сделан не для того, чтобы его отменили.
+                neko_start(chosen_server_id);
             } else {
                 smart_connect_greenrhythm();
             }
         });
+        connect(shell, &GreenRhythm::MainShell::serverChosen, this, [this](int id) {
+            chosen_server_id = id;
+            // Уже подключены к другому — переключаем сразу: выбор под кнопкой
+            // читается как «хочу вот этот», а не как «запомни на потом».
+            if (id >= 0 && NekoGui::dataStore->started_id >= 0 &&
+                NekoGui::dataStore->started_id != id &&
+                NekoGui::profileManager->GetProfile(id) != nullptr) {
+                neko_start(id);
+            }
+            refresh_status();
+        });
+        // РЕЖИМЫ — та же проводка, что у прежних галок: одна правда, два места.
+        connect(shell, &GreenRhythm::MainShell::tunToggled, this, [this](bool on) {
+            if (on && show_macos_modes(true)) {
+                refresh_status();
+                return;
+            }
+            neko_set_spmode_vpn(on);
+        });
+        connect(shell, &GreenRhythm::MainShell::systemProxyToggled, this,
+                [this](bool on) { neko_set_spmode_system_proxy(on); });
+        connect(shell, &GreenRhythm::MainShell::gamesViaTunnelToggled, this, [this](bool on) {
+            NekoGui::dataStore->games_via_tunnel = on;
+            show_log_impl(on ? tr("Игры пойдут через туннель. Пинг будет выше, адрес — зарубежный; "
+                                  "если игра фильтруется у провайдера, иначе она не работает.")
+                             : tr("Игры снова идут мимо туннеля: адрес российский, пинг ниже."));
+            // RouteChanged: сохранить и, если подключены, предложить перезапуск —
+            // правила читаются при старте ядра, и без него ничего не изменится.
+            MW_dialog_message("", "UpdateDataStore,RouteChanged");
+        });
+        connect(shell, &GreenRhythm::MainShell::routesRequested, this,
+                [this] { on_menu_routing_settings_triggered(); });
+        connect(shell, &GreenRhythm::MainShell::settingsRequested, this,
+                [this] { on_menu_basic_settings_triggered(); });
+        connect(shell, &GreenRhythm::MainShell::updateSubscriptionRequested, this,
+                [this] { on_menu_update_subscription_triggered(); });
+        connect(shell, &GreenRhythm::MainShell::checkUpdateRequested, this,
+                [this] { runOnNewThread([this] { CheckUpdate(); }); });
         connect(shell, &GreenRhythm::MainShell::moreRequested, this,
                 [this](const QPoint &pos) {
                     // Меню собирается из той же полосы, что была сверху: те же
@@ -300,8 +343,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         });
         connect(shell, &GreenRhythm::MainShell::panelRequested, this,
                 [this] { open_greenrhythm_panel(); });
-        connect(shell, &GreenRhythm::MainShell::addServerRequested, ui->menu_add_from_clipboard,
-                &QAction::trigger);
+        // Кнопка спрашивает, а не читает буфер молча: с пустым буфером прежняя
+        // проводка не делала ничего, и кнопка выглядела сломанной.
+        connect(shell, &GreenRhythm::MainShell::addServerRequested, this,
+                [this] { add_server_dialog(); });
+        sync_shell_servers();
     }
 
     // Setup log UI
@@ -637,6 +683,19 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     NekoGui::dataStore->core_token = GetRandomString(32);
     NekoGui::dataStore->core_port = MkPort();
     if (NekoGui::dataStore->core_port <= 0) NekoGui::dataStore->core_port = 19810;
+    // Порт Clash API — тем же способом, а не «соседний». Соседний никто не
+    // проверял, и ядро падало на старте с «Only one usage of each socket
+    // address», когда его успевал занять кто-то другой. MkPort освобождает
+    // порт перед возвратом, поэтому второй вызов может вернуть тот же номер —
+    // отсюда проверка на равенство.
+    NekoGui::dataStore->core_clash_port = 0;
+    for (int attempt = 0; attempt < 8; attempt++) {
+        const int p = MkPort();
+        if (p > 0 && p != NekoGui::dataStore->core_port) {
+            NekoGui::dataStore->core_clash_port = p;
+            break;
+        }
+    }
 
     auto core_path = QApplication::applicationDirPath() + "/";
     core_path += "greenrhythm_core";
@@ -1234,6 +1293,28 @@ void MainWindow::refresh_status(const QString &traffic_update) {
 
             // Пустой список — не пустой экран.
             shell->setEmpty(NekoGui::profileManager->profiles.empty());
+
+            // Режимы — в колонку, той же правдой, что и в галки ниже.
+            shell->setModes(NekoGui::dataStore->spmode_vpn,
+                            NekoGui::dataStore->spmode_system_proxy,
+                            NekoGui::dataStore->games_via_tunnel);
+
+            // Пока не подключено, карточка называет того, кого подключит кнопка:
+            // выбранного под кнопкой, иначе запомненного, иначе самого быстрого.
+            if (!up) {
+                QString idle;
+                auto named = [](int id) -> QString {
+                    if (id < 0) return {};
+                    auto p = NekoGui::profileManager->GetProfile(id);
+                    return p == nullptr ? QString() : p->bean->DisplayName().left(26);
+                };
+                idle = named(chosen_server_id);
+                if (idle.isEmpty()) idle = named(NekoGui::dataStore->remember_id);
+                if (idle.isEmpty() && !NekoGui::profileManager->profiles.empty()) {
+                    idle = tr("Самый быстрый сервер");
+                }
+                shell->setIdleServer(idle);
+            }
         }
         // Three states, not two: grey «Не запущено», amber «Подключено, нет трафика» when
         // the tunnel is up but the autopilot probe cannot pass traffic, green otherwise.
@@ -1395,6 +1476,61 @@ void MainWindow::refresh_groups() {
 
 void MainWindow::refresh_proxy_list(const int &id) {
     refresh_proxy_list_impl(id, {});
+    sync_shell_servers();
+}
+
+void MainWindow::sync_shell_servers() {
+    if (shell == nullptr) return;
+    // Та же группа, что и у быстрого подключения: своя, если есть, иначе текущая.
+    std::shared_ptr<NekoGui::Group> gr;
+    {
+        QMutexLocker locker(&NekoGui::profileManager->mutex);
+        for (const auto &[gid, g]: NekoGui::profileManager->groups) {
+            if (g == nullptr) continue;
+            if (g->name == GreenRhythm::kServiceName ||
+                g->url.contains(QStringLiteral("verdantvibe"), Qt::CaseInsensitive)) {
+                gr = g;
+                break;
+            }
+        }
+    }
+    if (gr == nullptr) gr = NekoGui::profileManager->CurrentGroup();
+    QList<GreenRhythm::MainShell::ServerItem> items;
+    if (gr != nullptr) {
+        for (const auto &p: gr->Profiles()) {
+            if (p == nullptr || p->bean == nullptr) continue;
+            GreenRhythm::MainShell::ServerItem it;
+            it.id = p->id;
+            it.name = p->bean->DisplayName();
+            if (p->latency > 0) it.latency = tr("%1 мс").arg(p->latency);
+            items += it;
+        }
+    }
+    shell->setServers(items, chosen_server_id);
+}
+
+void MainWindow::add_server_dialog() {
+    const auto clip = QApplication::clipboard()->text().trimmed();
+    // Подставляем из буфера только то, что похоже на ссылку: чужой текст в
+    // поле ввода читается как «программа что-то вставила сама».
+    static const QStringList schemes{
+        QStringLiteral("http://"),  QStringLiteral("https://"), QStringLiteral("vless://"),
+        QStringLiteral("vmess://"), QStringLiteral("trojan://"), QStringLiteral("ss://"),
+        QStringLiteral("ssr://"),   QStringLiteral("hysteria2://"), QStringLiteral("hy2://"),
+        QStringLiteral("tuic://"),  QStringLiteral("socks://"), QStringLiteral("greenrhythm://"),
+        QStringLiteral("nekoray://")};
+    bool looksLikeLink = false;
+    for (const auto &s: schemes) {
+        if (clip.startsWith(s, Qt::CaseInsensitive)) looksLikeLink = true;
+    }
+    bool ok = false;
+    const auto text = QInputDialog::getMultiLineText(
+        this, tr("Добавить сервер"),
+        tr("Вставьте ссылку подписки или ссылку на сервер.\n"
+           "Подойдут http(s)://, vless://, vmess://, trojan://, ss:// — по одной на строку."),
+        looksLikeLink ? clip : QString(), &ok);
+    if (!ok || text.trimmed().isEmpty()) return;
+    NekoGui_sub::groupUpdater->AsyncUpdate(text.trimmed());
 }
 
 void MainWindow::refresh_proxy_list_impl(const int &id, GroupSortAction groupSortAction) {
