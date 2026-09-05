@@ -20,6 +20,7 @@
 #include "ui/MainShell.hpp"
 #include "ui/ServerCardDelegate.hpp"
 #include "main/ConnectionRow.hpp"
+#include "main/AppFont.hpp"
 
 #include <QApplication>
 #include <QFile>
@@ -47,6 +48,10 @@ namespace {
 
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
+
+    // Тот же шрифт, что ставит main.cpp: без него снимок показывает окно в
+    // «MS Shell Dlg 2», которого у человека уже нет.
+    GreenRhythm::applyAppFont(app);
 
     const QString out = argc > 1 ? QString::fromLocal8Bit(argv[1]) : QStringLiteral("main.png");
 
@@ -111,6 +116,15 @@ int main(int argc, char *argv[]) {
         t->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
         t->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
         t->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
+        // То же, что делает окно (mainwindow.cpp): строки, не ведомость.
+        t->verticalHeader()->setVisible(false);
+        t->verticalHeader()->setDefaultSectionSize(36);
+        t->setShowGrid(false);
+        t->setFrameShape(QFrame::NoFrame);
+        t->setAlternatingRowColors(false);
+        t->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        t->horizontalHeader()->setHighlightSections(false);
+        ui.masterLogBrowser->setFrameShape(QFrame::NoFrame);
         for (const auto &r: rows) {
             const int row = t->rowCount();
             t->insertRow(row);

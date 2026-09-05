@@ -1,6 +1,7 @@
 #include <csignal>
 
 #include <QApplication>
+#include "main/AppFont.hpp"
 #include <QDir>
 #include <QTranslator>
 #include <QMessageBox>
@@ -133,6 +134,7 @@ int main(int argc, char* argv[]) {
     // init QApplication
     delete preQApp;
     QApplication a(argc, argv);
+    GreenRhythm::applyAppFont(a);
 
     // dispatchers
     DS_cores = new QThread;

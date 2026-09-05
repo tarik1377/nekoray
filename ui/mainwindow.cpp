@@ -536,6 +536,18 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     ui->tableWidget_conn->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
+    // СТРОКИ, А НЕ ЭЛЕКТРОННАЯ ТАБЛИЦА. Нумерация слева, сетка и рамка вокруг
+    // — вид ведомости, а не списка соединений. Заголовок — слева, как текст
+    // под ним; строка выше, чтобы дышала. Это свойства виджета, стилем их не
+    // задать, — потому здесь, а не в modern.css.
+    ui->tableWidget_conn->verticalHeader()->setVisible(false);
+    ui->tableWidget_conn->verticalHeader()->setDefaultSectionSize(36);
+    ui->tableWidget_conn->setShowGrid(false);
+    ui->tableWidget_conn->setFrameShape(QFrame::NoFrame);
+    ui->tableWidget_conn->setAlternatingRowColors(false);
+    ui->tableWidget_conn->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    ui->tableWidget_conn->horizontalHeader()->setHighlightSections(false);
+    ui->masterLogBrowser->setFrameShape(QFrame::NoFrame);
     // Right-click a live connection → одним кликом сделать правило маршрутизации.
     ui->tableWidget_conn->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(ui->tableWidget_conn, &QWidget::customContextMenuRequested, this, [=](const QPoint &p) { show_conn_context_menu(p); });

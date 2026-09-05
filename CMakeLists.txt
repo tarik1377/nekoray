@@ -279,6 +279,7 @@ set(PROJECT_SOURCES
         main/ProgramTrouble.cpp
         main/Interference.cpp
         main/ConnectionRow.cpp
+        main/AppFont.cpp
         ui/dialog_interference.cpp
         ui/dialog_greenrhythm.cpp
         ui/dialog_manage_routes.cpp
@@ -518,6 +519,7 @@ add_executable(mainwindow_preview EXCLUDE_FROM_ALL
         ui/MainShell.cpp
         ui/ServerCardDelegate.cpp
         main/ConnectionRow.cpp
+        main/AppFont.cpp
         # Ресурсы: без них значки в колонке возьмутся из пустоты, и снимок
         # покажет аккуратную вёрстку без единого значка — то есть соврёт.
         res/neko.qrc

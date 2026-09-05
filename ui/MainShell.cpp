@@ -20,6 +20,10 @@ namespace GreenRhythm {
         constexpr auto kAccentDim = "#2ea043";
         constexpr auto kSurface = "#1e2126";
         constexpr auto kSurfaceUp = "#262a30";
+        // Колонка ТЕМНЕЕ страницы, карточки СВЕТЛЕЕ. Три яруса вместо одного:
+        // так глубина читается без рамок. Те же значения — в modern.css; менять
+        // только парой.
+        constexpr auto kSidebar = "#181b20";
         constexpr auto kText = "#e4e6eb";
         constexpr auto kMuted = "#9aa0a8";
         constexpr auto kLine = "#2f343b";
@@ -124,7 +128,7 @@ namespace GreenRhythm {
         QPushButton *tool(QWidget *p, const QString &text) {
             auto *b = new QPushButton(text, p);
             b->setCursor(Qt::PointingHandCursor);
-            b->setMinimumHeight(30);
+            b->setMinimumHeight(27);
             QFont f = b->font();
             f.setPointSizeF(f.pointSizeF() * 0.92);
             b->setFont(f);
@@ -132,7 +136,7 @@ namespace GreenRhythm {
                                  "QPushButton { text-align: left; padding-left: 14px; border: none;"
                                  " border-radius: 7px; color: %1; background: transparent; }"
                                  "QPushButton:hover { background: %2; color: %3; }")
-                                 .arg(kMuted, kSurface, kText));
+                                 .arg(kMuted, kSurfaceUp, kText));
             return b;
         }
 
@@ -159,8 +163,9 @@ namespace GreenRhythm {
         // ширине «Обновить подписку» резалось до «овить подп». Снимок это
         // показал до того, как увидел бы человек.
         bar->setFixedWidth(236);
-        bar->setStyleSheet(QStringLiteral("background: %1; border-right: 1px solid %2;")
-                               .arg(kSurfaceUp, kLine));
+        bar->setObjectName(QStringLiteral("grSidebar"));
+        bar->setStyleSheet(QStringLiteral("QWidget#grSidebar { background: %1; border-right: 1px solid %2; }")
+                               .arg(kSidebar, kLine));
 
         auto *box = new QVBoxLayout(bar);
         box->setContentsMargins(16, 16, 16, 14);
@@ -181,7 +186,7 @@ namespace GreenRhythm {
         stateDot->setFixedSize(10, 10);
         head->addWidget(stateDot, 0, Qt::AlignVCenter);
         box->addLayout(head);
-        box->addSpacing(16);
+        box->addSpacing(12);
 
         struct Item {
             QString text;
@@ -201,7 +206,7 @@ namespace GreenRhythm {
             b->setIconSize(QSize(19, 19));
             b->setCheckable(true);
             b->setCursor(Qt::PointingHandCursor);
-            b->setMinimumHeight(40);
+            b->setMinimumHeight(38);
             // Состояния кнопки описаны здесь целиком: выбранный пункт заливается
             // акцентом вполсилы, наведённый — поверхностью. Без этого колонка
             // выглядит списком ссылок, а не навигацией.
@@ -211,7 +216,7 @@ namespace GreenRhythm {
                                  "QPushButton:hover { background: %2; }"
                                  "QPushButton:checked { background: rgba(63,185,80,0.16); color: %3;"
                                  " font-weight: bold; }")
-                                 .arg(kMuted, kSurface, kAccent));
+                                 .arg(kMuted, kSurfaceUp, kAccent));
             const int page = item.page;
             connect(b, &QPushButton::clicked, this, [this, page] { selectPage(page); });
             navButtons += b;
@@ -222,7 +227,7 @@ namespace GreenRhythm {
         // настройки, обновление подписки и проверка обновлений. Режимы здесь
         // не живут: они про подключение и стоят на его странице, под кнопкой,
         // — колонка остаётся навигации и инструментам.
-        box->addSpacing(14);
+        box->addSpacing(10);
         box->addWidget(caption(bar, tr("ИНСТРУМЕНТЫ")));
         {
             // РОВНЫМ СПИСКОМ, а не сеткой. Сетка «две короткие в ряд, две
@@ -230,7 +235,7 @@ namespace GreenRhythm {
             // Это один сорт — инструменты, и стоят они одинаково: строкой, с
             // подписью слева, как пункты навигации выше, только тише.
             auto *list = new QVBoxLayout();
-            list->setSpacing(2);
+            list->setSpacing(0);
             auto row = [&](const QString &text, auto signal) {
                 auto *b = tool(bar, text);
                 connect(b, &QPushButton::clicked, this, signal);
@@ -248,6 +253,10 @@ namespace GreenRhythm {
             row(tr("Настройки"), &MainShell::settingsRequested);
             box->addLayout(list);
         }
+        // Воздух между инструментами и карточками — ДО растяжки. На высоте 720
+        // растяжка сжимается в ноль, и без этого зазора карточка «Сейчас»
+        // садилась прямо на последнюю строку списка.
+        box->addSpacing(8);
 
         box->addStretch(1);
 
@@ -257,8 +266,13 @@ namespace GreenRhythm {
         // ровно тогда, когда что-то не работает.
         {
             auto *live = new QWidget(bar);
+            // Карточкой: блок цифр — отдельная вещь, а не продолжение списка
+            // кнопок, и глазу нужен край, чтобы это понять.
+            live->setObjectName(QStringLiteral("grCard"));
+            live->setStyleSheet(QStringLiteral("QWidget#grCard { background: %1; border-radius: 12px; }")
+                                    .arg(kSurfaceUp));
             auto *liveBox = new QVBoxLayout(live);
-            liveBox->setContentsMargins(0, 0, 0, 12);
+            liveBox->setContentsMargins(12, 8, 12, 8);
             liveBox->setSpacing(5);
 
             auto *cap = muted(live, tr("СЕЙЧАС"), 0.8);
@@ -297,8 +311,11 @@ namespace GreenRhythm {
         // находили. Между тем это единственное, что человеку надо знать про свои
         // деньги, и единственное, из-за чего он однажды останется без связи.
         subBlock = new QWidget(bar);
+        subBlock->setObjectName(QStringLiteral("grCard"));
+        subBlock->setStyleSheet(QStringLiteral("QWidget#grCard { background: %1; border-radius: 12px; }")
+                                    .arg(kSurfaceUp));
         auto *subBox = new QVBoxLayout(subBlock);
-        subBox->setContentsMargins(0, 0, 0, 10);
+        subBox->setContentsMargins(12, 8, 12, 10);
         subBox->setSpacing(6);
 
         auto *subCaption = muted(subBlock, tr("ПОДПИСКА"), 0.8);
@@ -317,6 +334,10 @@ namespace GreenRhythm {
         subButton = new QPushButton(tr("Продлить"), subBlock);
         subButton->setCursor(Qt::PointingHandCursor);
         subButton->setMinimumHeight(32);
+        // Кнопка внутри карточки того же цвета, что она сама, слилась бы с
+        // фоном; на тон светлее — и она снова кнопка.
+        subButton->setStyleSheet(QStringLiteral("QPushButton { background: #2e333a; }"
+                                                "QPushButton:hover { background: #363c44; }"));
         connect(subButton, &QPushButton::clicked, this, &MainShell::renewRequested);
         subBox->addWidget(subButton);
 
