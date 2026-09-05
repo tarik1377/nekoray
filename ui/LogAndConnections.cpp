@@ -293,14 +293,21 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
         f->setToolTip(outboundTag);
         QString obLabel = outboundTag;
         QColor obColor;
+        // ТОЧКА, А НЕ ЭМОДЗИ. Глобус, флаг и знак «стоп» рисуются на каждой
+        // машине своим шрифтом, цветные и разного размера; в настольном окне
+        // это читается как чат, а не как программа. Точка одного размера
+        // берёт цвет — и цвет здесь значит одно и то же везде: зелёный — через
+        // нас, серый — мимо нас, красный — запрещено. Раньше зелёным был
+        // «Напрямую», и он спорил с акцентом, который во всём окне значит
+        // «наше, включено».
         if (outboundTag == "proxy") {
-            obLabel = QString::fromUtf8("\xF0\x9F\x8C\x8D ") + tr("Прокси"); // 🌍 foreign
-            obColor = QColor(0x4C, 0x9A, 0xFF);
-        } else if (outboundTag == "direct" || outboundTag == "bypass") {
-            obLabel = QString::fromUtf8("\xF0\x9F\x87\xB7\xF0\x9F\x87\xBA ") + tr("Напрямую"); // 🇷🇺 domestic
+            obLabel = QStringLiteral("●  ") + tr("Прокси");
             obColor = QColor(0x3F, 0xB9, 0x50);
+        } else if (outboundTag == "direct" || outboundTag == "bypass") {
+            obLabel = QStringLiteral("●  ") + tr("Напрямую");
+            obColor = QColor(0x9A, 0xA0, 0xA8);
         } else if (outboundTag == "block") {
-            obLabel = QString::fromUtf8("\xE2\x9B\x94 ") + tr("Блокировка"); // ⛔
+            obLabel = QStringLiteral("●  ") + tr("Блокировка");
             obColor = QColor(0xE5, 0x48, 0x4D);
         }
         f->setText(obLabel);
@@ -371,12 +378,15 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
             auto seg = [](int n, const QString &color) {
                 return n > 0 ? QStringLiteral("<span style='color:%1;'>%2</span>").arg(color, QString(n, QChar(0x2588))) : QString(); // █
             };
+            // Те же цвета, что в колонке «Путь» ниже, и с тем же смыслом:
+            // зелёный — через нас, серый — мимо, красный — запрещено. Точки
+            // вместо эмодзи по той же причине, что и в таблице.
             const QString bar = QStringLiteral("<span style='font-family:monospace;font-size:11px;'>%1%2%3</span>")
-                                    .arg(seg(wp, "#4C9AFF"), seg(wd, "#3FB950"), seg(wb, "#E5484D"));
+                                    .arg(seg(wp, "#3FB950"), seg(wd, "#9AA0A8"), seg(wb, "#E5484D"));
             const QString counts =
-                QString::fromUtf8("\xF0\x9F\x8C\x8D ") + QStringLiteral("<span style='color:#4C9AFF;'>") + tr("Прокси: %1").arg(nProxy) + "</span>&nbsp;&nbsp;" +
-                QString::fromUtf8("\xF0\x9F\x87\xB7\xF0\x9F\x87\xBA ") + QStringLiteral("<span style='color:#3FB950;'>") + tr("Напрямую: %1").arg(nDirect) + "</span>&nbsp;&nbsp;" +
-                QString::fromUtf8("\xE2\x9B\x94 ") + QStringLiteral("<span style='color:#E5484D;'>") + tr("Блок: %1").arg(nBlock) + "</span>";
+                QStringLiteral("<span style='color:#3FB950;'>&#9679; ") + tr("Прокси: %1").arg(nProxy) + "</span>&nbsp;&nbsp;&nbsp;" +
+                QStringLiteral("<span style='color:#9AA0A8;'>&#9679; ") + tr("Напрямую: %1").arg(nDirect) + "</span>&nbsp;&nbsp;&nbsp;" +
+                QStringLiteral("<span style='color:#E5484D;'>&#9679; ") + tr("Блок: %1").arg(nBlock) + "</span>";
             conn_route_summary->setText(bar + "<br>" + counts);
         }
     }

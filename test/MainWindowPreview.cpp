@@ -129,14 +129,13 @@ int main(int argc, char *argv[]) {
             const int row = t->rowCount();
             t->insertRow(row);
             const QString tag = QString::fromLatin1(r.tag);
-            auto *c1 = new QTableWidgetItem(tag == QStringLiteral("proxy")
-                                                ? QString::fromUtf8("\xF0\x9F\x8C\x8D Прокси")
-                                            : tag == QStringLiteral("block")
-                                                ? QString::fromUtf8("\xE2\x9B\x94 Блокировка")
-                                                : QString::fromUtf8("\xF0\x9F\x87\xB7\xF0\x9F\x87\xBA Напрямую"));
-            c1->setForeground(QBrush(tag == QStringLiteral("proxy")   ? QColor(0x4C, 0x9A, 0xFF)
+            // Те же подписи и цвета, что в окне (LogAndConnections.cpp).
+            auto *c1 = new QTableWidgetItem(tag == QStringLiteral("proxy")   ? QStringLiteral("●  Прокси")
+                                            : tag == QStringLiteral("block") ? QStringLiteral("●  Блокировка")
+                                                                             : QStringLiteral("●  Напрямую"));
+            c1->setForeground(QBrush(tag == QStringLiteral("proxy")   ? QColor(0x3F, 0xB9, 0x50)
                                      : tag == QStringLiteral("block") ? QColor(0xE5, 0x48, 0x4D)
-                                                                      : QColor(0x3F, 0xB9, 0x50)));
+                                                                      : QColor(0x9A, 0xA0, 0xA8)));
             t->setItem(row, 1, c1);
             const auto program = GreenRhythm::programLabel(QString::fromUtf8(r.process), QString::fromLatin1(r.dest), server);
             auto *c2 = new QTableWidgetItem(program);

@@ -201,6 +201,8 @@ namespace GreenRhythm {
         QLabel *liveDirect = nullptr;
         QLabel *liveTraffic = nullptr;
         QPushButton *bypassLine = nullptr;
+        QPushButton *troubleLink = nullptr;
+        QPushButton *moreButton = nullptr;
 
         State state = State::Idle;
         QWidget *tagRow = nullptr;
