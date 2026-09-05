@@ -275,6 +275,8 @@ namespace NekoGui {
         _add(new configItem("vpn_proxy_process", &vpn_rule_process_proxy, itemType::string));
         _add(new configItem("games_via_tunnel", &games_via_tunnel, itemType::boolean));
         _add(new configItem("dpi_fragment", &dpi_fragment, itemType::boolean));
+        _add(new configItem("dpi_module_enabled", &dpi_module_enabled, itemType::boolean));
+        _add(new configItem("dpi_module_strategy", &dpi_module_strategy, itemType::string));
         _add(new configItem("vpn_rule_white", &vpn_rule_white, itemType::boolean));
         _add(new configItem("check_include_pre", &check_include_pre, itemType::boolean));
         _add(new configItem("sp_format", &system_proxy_format, itemType::string));

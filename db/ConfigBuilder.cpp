@@ -944,7 +944,13 @@ namespace NekoGui {
         // Задержка ожидания — 200 мс, а не 500 по умолчанию: под правами
         // администратора (а туннель без них не поднимается) ядро ждёт
         // настоящего подтверждения и к запасной задержке прибегает редко.
-        if (dataStore->dpi_fragment && !status->forTest) {
+        // ЯРУС ЯДРА И МОДУЛЬ WINWS ВМЕСТЕ НЕ РАБОТАЮТ. Дробление здесь режет
+        // ClientHello внутри имени сервера; winws видит обрезанное SNI, имя со
+        // списком не сходится, и по умолчанию он отпускает пакет нетронутым.
+        // То есть два включённых обхода дают МЕНЬШЕ, чем один. Пока модуль
+        // работает, дробит он, а ядро молчит — dpi_module_active выставляет
+        // DpiModule, и он же просит пересобрать конфиг на каждом переходе.
+        if (dataStore->dpi_fragment && !dataStore->dpi_module_active && !status->forTest) {
             auto fragmentDirect = [](QJsonObject o) -> QJsonObject {
                 const auto out = o["outbound"].toString();
                 if (out != QStringLiteral("bypass") && out != QStringLiteral("direct")) return o;

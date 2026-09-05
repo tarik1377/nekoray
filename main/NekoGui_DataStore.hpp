@@ -268,6 +268,22 @@ namespace NekoGui {
          */
         bool dpi_fragment = false;
 
+        /**
+         * Модуль обхода: winws под нашим управлением. Отдельный ярус, включается
+         * человеком и живёт только пока это безопасно — см. dpi/DpiModule.hpp.
+         */
+        bool dpi_module_enabled = false;
+        QString dpi_module_strategy = "general";
+
+        /**
+         * Модуль сейчас работает. НЕ СОХРАНЯЕТСЯ: это состояние машины, а не
+         * настройка. Читает ConfigBuilder, чтобы ядро не дробило приветствие
+         * одновременно с winws: дробление в ядре режет ClientHello внутри имени
+         * сервера, winws видит обрезанное SNI и отпускает пакет нетронутым, и
+         * два включённых обхода дают меньше, чем один.
+         */
+        bool dpi_module_active = false;
+
         // Hotkey
         QString hotkey_mainwindow = "";
         QString hotkey_group = "";

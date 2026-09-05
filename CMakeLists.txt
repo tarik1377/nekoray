@@ -262,6 +262,16 @@ set(PROJECT_SOURCES
         ui/dialog_manage_groups.ui
 
         main/RunningPrograms.cpp
+
+        # Модуль обхода. Каталог стратегий и построитель плана — чистые, без
+        # системы; DpiBundle и DpiModule трогают Windows и внутри себя закрыты
+        # Q_OS_WIN, чтобы дерево оставалось собираемым под macOS.
+        dpi/DpiCatalog.cpp
+        dpi/DpiPlan.cpp
+        dpi/DpiBundle.cpp
+        dpi/DpiModule.cpp
+        dpi/DpiModule.hpp
+
         ui/dialog_whatbroke.cpp
         ui/ServerCardDelegate.cpp
         ui/MainShell.cpp
@@ -540,6 +550,18 @@ target_include_directories(widget_lifetime_test PRIVATE
         ${CMAKE_BINARY_DIR}/greenrhythm_autogen/include)
 target_link_libraries(widget_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
+# План запуска winws — золотым набором. Аргументы строятся один раз и уезжают
+# в кернел-драйвер: ошибка в порядке профилей или пустой список означают не
+# «не сработало», а «дурим весь трафик машины». Набор чистый: ни сети, ни
+# системы, ни winws — сравнивается ровно то, что вернула buildPlan.
+add_executable(dpi_plan_test EXCLUDE_FROM_ALL
+        test/DpiPlanTest.cpp
+        dpi/DpiPlan.cpp
+        dpi/DpiCatalog.cpp
+)
+target_link_libraries(dpi_plan_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+target_include_directories(dpi_plan_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
 add_executable(greenrhythm_panel_preview EXCLUDE_FROM_ALL
         test/GreenRhythmPanelPreview.cpp
         ui/dialog_greenrhythm.cpp
@@ -599,6 +621,7 @@ set(GR_TEST_TARGETS
         port_health_test
         widget_lifetime_test
         network_repair_test
+        dpi_plan_test
 )
 
 add_custom_target(build-tests DEPENDS ${GR_TEST_TARGETS})
