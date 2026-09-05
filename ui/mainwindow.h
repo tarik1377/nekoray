@@ -38,6 +38,10 @@ namespace GreenRhythm {
 }
 
 QT_BEGIN_NAMESPACE
+namespace GreenRhythm::Dpi {
+    class DpiModule;
+}
+
 namespace Ui {
     class MainWindow;
 }
@@ -257,6 +261,14 @@ private:
     void sync_shell_servers();
     // Выбор человека под кнопкой: -1 — автовыбор самого быстрого.
     int chosen_server_id = -1;
+
+    // Модуль обхода (winws). Окно ему ничего не приказывает — только сообщает
+    // желаемое: включён ли и к какому серверу подключены. Всё остальное —
+    // старт, остановка, отказ при античите — решает он сам.
+    GreenRhythm::Dpi::DpiModule *dpi_module = nullptr;
+    // Свести желаемое с действительным. Дешёвая и идемпотентная: зовётся из
+    // refresh_status.
+    void sync_dpi_module();
 
     QLabel *conn_route_summary = nullptr; // live route "map": proxy/direct/block split + bar
 

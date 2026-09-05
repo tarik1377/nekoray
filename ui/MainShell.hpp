@@ -126,6 +126,21 @@ namespace GreenRhythm {
          */
         void setModes(bool tun, bool systemProxy, bool gamesViaTunnel, bool dpiFragment);
 
+        /**
+         * Усиленный обход (модуль winws) — ВКЛЮЧЁН и РАБОТАЕТ это разные вещи.
+         *
+         * Между ними лежит всё, из-за чего модуль честно отказывается: идёт
+         * игра с античитом, нет прав администратора, на машине чужой
+         * перехватчик, файлы не скачаны. Покажи мы одну галку — человек нажал
+         * бы её, ничего не изменилось, и спросить было бы не о чем. Поэтому
+         * рядом с фишкой стоит строка состояния, и она говорит правду.
+         *
+         * @param enabled  человек включил
+         * @param running  winws действительно работает
+         * @param text     состояние одной строкой; пусто — строка прячется
+         */
+        void setDpiModule(bool enabled, bool running, const QString &text);
+
         /** Кого подключит кнопка, пока не подключено. Пусто — «Сервер не выбран». */
         void setIdleServer(const QString &name);
 
@@ -137,6 +152,7 @@ namespace GreenRhythm {
         void systemProxyToggled(bool on);
         void gamesViaTunnelToggled(bool on);
         void dpiFragmentToggled(bool on);
+        void dpiModuleToggled(bool on);
 
         /** Инструменты, переехавшие из верхнего ряда. */
         void routesRequested();
@@ -192,6 +208,8 @@ namespace GreenRhythm {
         QPushButton *modeProxy = nullptr;
         QPushButton *gamesToggle = nullptr;
         QPushButton *dpiToggle = nullptr;
+        QPushButton *dpiModuleToggle = nullptr;
+        QLabel *dpiModuleState = nullptr;
         QComboBox *serverPick = nullptr;
         QStringList serverSignature; ///< состав списка, чтобы не перестраивать зря
         QString idleServerName;

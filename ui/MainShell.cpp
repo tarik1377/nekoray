@@ -440,7 +440,29 @@ namespace GreenRhythm {
             connect(dpiToggle, &QPushButton::clicked, this, &MainShell::dpiFragmentToggled);
             row->addWidget(dpiToggle);
 
+            // ВТОРОЙ ЯРУС — ОТДЕЛЬНОЙ ФИШКОЙ, А НЕ ГАЛКОЙ В НАСТРОЙКАХ. Он
+            // качает чужую программу и поднимает системный драйвер; такое
+            // решение человек должен принимать глядя на него, а не найдя
+            // случайно. Рядом — строка состояния: см. setDpiModule.
+            dpiModuleToggle = toggle(strip, tr("Усиленный обход"));
+            dpiModuleToggle->setToolTip(
+                tr("Второй ярус на случай, когда дробления в ядре не хватает: отдельная программа winws\n"
+                   "(проект zapret, лицензия MIT) и системный драйвер. Скачивается по запросу.\n\n"
+                   "Пока запущена игра с античитом, обход не включается и гаснет сам — бан отменить нельзя."));
+            connect(dpiModuleToggle, &QPushButton::clicked, this, &MainShell::dpiModuleToggled);
+            row->addWidget(dpiModuleToggle);
+
             box->addWidget(strip, 0, Qt::AlignHCenter);
+
+            // Строка состояния модуля: под полосой режимов, по центру, тем же
+            // приглушённым цветом. Пустая — скрыта, чтобы не занимать место у
+            // тех, кто про этот ярус вообще не спрашивал.
+            dpiModuleState = muted(page, QString(), 0.9);
+            dpiModuleState->setAlignment(Qt::AlignCenter);
+            dpiModuleState->setWordWrap(true);
+            dpiModuleState->hide();
+            box->addSpacing(6);
+            box->addWidget(dpiModuleState, 0, Qt::AlignHCenter);
         }
         box->addSpacing(26);
 
@@ -616,6 +638,17 @@ namespace GreenRhythm {
         if (modeProxy != nullptr) modeProxy->setChecked(systemProxy);
         if (gamesToggle != nullptr) gamesToggle->setChecked(gamesViaTunnel);
         if (dpiToggle != nullptr) dpiToggle->setChecked(dpiFragment);
+    }
+
+    void MainShell::setDpiModule(bool enabled, bool running, const QString &text) {
+        if (dpiModuleToggle != nullptr) dpiModuleToggle->setChecked(enabled);
+        if (dpiModuleState == nullptr) return;
+        // Строка нужна ровно тогда, когда включено и НЕ работает: это и есть
+        // расхождение между желанием и действительностью. Когда работает —
+        // фишка уже всё сказала; когда выключено — говорить нечего.
+        const bool show = enabled && !running && !text.isEmpty();
+        dpiModuleState->setText(show ? tr("Усиленный обход: %1").arg(text) : QString());
+        dpiModuleState->setVisible(show);
     }
 
     void MainShell::setState(State next, const QString &reason) {

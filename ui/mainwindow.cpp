@@ -1,5 +1,8 @@
 #include "ui/mainwindow_common.hpp"
 
+#include "dpi/DpiBundle.hpp"
+#include "dpi/DpiModule.hpp"
+
 #ifdef Q_OS_WIN
 static void RegisterGreenRhythmScheme();
 #endif
@@ -204,6 +207,23 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // по страницам. Поэтому сортировка, перетаскивание, контекстное меню, поиск
     // и проверка задержки продолжают работать: это те же объекты, к которым
     // привязан весь код выше.
+    // МОДУЛЬ ОБХОДА создаётся всегда, даже когда выключен и не скачан: он и
+    // есть то место, где живёт ответ «почему не работает». Выключенный модуль
+    // не делает ничего — ни процесса, ни таймера, ни обращения к системе.
+    dpi_module = new GreenRhythm::Dpi::DpiModule(this);
+    connect(dpi_module, &GreenRhythm::Dpi::DpiModule::stateChanged, this, [this] {
+        show_log_impl(tr("Усиленный обход: %1").arg(dpi_module->stateText()));
+        refresh_status();
+    });
+    connect(dpi_module, &GreenRhythm::Dpi::DpiModule::coreRestartWanted, this, [this] {
+        // Ярус ядра и winws взаимно исключены (правило 4), а ярус ядра живёт в
+        // конфиге, который читается один раз при старте. Значит, переход модуля
+        // требует пересборки — но только если ядру и правда есть что менять.
+        if (!NekoGui::dataStore->dpi_fragment) return;
+        if (running == nullptr) return;
+        MW_dialog_message("", "RouteChanged");
+    });
+
     {
         shell = new GreenRhythm::MainShell(this);
         shell->adopt(ui->tabWidget, ui->down_tab);
@@ -323,6 +343,48 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
                                   "Игры и античиты остаются на своём адресе.")
                              : tr("Обход фильтрации выключен."));
             MW_dialog_message("", "UpdateDataStore,RouteChanged");
+        });
+        connect(shell, &GreenRhythm::MainShell::dpiModuleToggled, this, [this](bool on) {
+            NekoGui::dataStore->dpi_module_enabled = on;
+            if (on) {
+                const auto problems = GreenRhythm::Dpi::bundleProblems(GreenRhythm::Dpi::bundleDir());
+                if (!problems.isEmpty()) {
+                    // Файлов нет — спрашиваем, а не качаем молча: это 7,6 МБ,
+                    // кернел-драйвер и антивирус, который положит его в
+                    // карантин как RiskTool. Человек имеет право знать заранее.
+                    if (QMessageBox::question(
+                            this, tr("Усиленный обход"),
+                            tr("Нужно скачать %1 (около 7,6 МБ) с github.com/bol-van/zapret.\n\n"
+                               "Это отдельная программа под лицензией MIT и системный драйвер WinDivert. "
+                               "Антивирус может пометить его как RiskTool — это известное свойство "
+                               "самого драйвера, а не признак заражения.\n\n"
+                               "Драйвер поднимается только на время работы обхода и снимается сразу "
+                               "после. Пока запущена игра с античитом, обход не включается вовсе.\n\n"
+                               "Скачать?")
+                                .arg(GreenRhythm::Dpi::bundleVersion()))
+                        != QMessageBox::Yes) {
+                        NekoGui::dataStore->dpi_module_enabled = false;
+                        refresh_status();
+                        return;
+                    }
+                    runOnNewThread([this] {
+                        QString err;
+                        const bool ok = dpi_module->install(&err);
+                        runOnUiThread([this, ok, err] {
+                            if (!ok) {
+                                NekoGui::dataStore->dpi_module_enabled = false;
+                                show_log_impl(tr("Усиленный обход не установлен: %1").arg(err));
+                            }
+                            MW_dialog_message("", "UpdateDataStore");
+                            refresh_status();
+                        });
+                    });
+                    return;
+                }
+            }
+            MW_dialog_message("", "UpdateDataStore");
+            sync_dpi_module();
+            refresh_status();
         });
         connect(shell, &GreenRhythm::MainShell::routesRequested, this,
                 [this] { on_menu_routing_settings_triggered(); });
@@ -1036,9 +1098,32 @@ void MainWindow::on_commitDataRequest() {
     qDebug() << "End of data save";
 }
 
+/**
+ * Свести желаемое с действительным для модуля обхода.
+ *
+ * Окно НЕ РЕШАЕТ, работать модулю или нет. Оно сообщает две вещи: включил ли
+ * человек модуль и к какому серверу мы подключены. Всё остальное — античит,
+ * права, чужой перехватчик, смена адаптера — решает сам модуль, потому что
+ * только он знает, чем это кончится.
+ *
+ * Адрес сервера нужен ровно для одного: не портить рукопожатие СВОЕГО же
+ * туннеля. Он уходит по тому же физическому адаптеру и попадает winws в поле
+ * зрения; исключение по адресу оставляет его нетронутым.
+ */
+void MainWindow::sync_dpi_module() {
+    if (dpi_module == nullptr) return;
+    const QString host = running == nullptr ? QString() : running->bean->serverAddress;
+    dpi_module->reconcile(NekoGui::dataStore->dpi_module_enabled, host);
+}
+
 void MainWindow::on_menu_exit_triggered() {
     if (mu_exit.tryLock()) {
         NekoGui::dataStore->prepare_exit = true;
+        // ПЕРВЫМ ДЕЛОМ — снять обход и выгрузить драйвер. Job-объект убьёт winws
+        // и сам, но драйвер после этого останется в памяти до перезагрузки, а
+        // именно резидентный WinDivert и находят античиты. Порядок здесь важнее
+        // краткости: всё остальное ниже может показать диалог и вернуться.
+        if (dpi_module != nullptr) dpi_module->shutdown();
         //
         neko_set_spmode_system_proxy(false, false);
         neko_set_spmode_vpn(false, false);
@@ -1306,6 +1391,15 @@ void MainWindow::refresh_status(const QString &traffic_update) {
                             NekoGui::dataStore->spmode_system_proxy,
                             NekoGui::dataStore->games_via_tunnel,
                             NekoGui::dataStore->dpi_fragment);
+            // Усиленный обход показывается СОСТОЯНИЕМ, а не галкой. Галка врала
+            // бы ровно в тот момент, когда это важнее всего: человек её нажал,
+            // а модуль не встал — идёт игра с античитом, нет прав, чужой
+            // перехватчик. Строка состояния говорит, что происходит на самом
+            // деле, и почему.
+            shell->setDpiModule(NekoGui::dataStore->dpi_module_enabled,
+                                dpi_module != nullptr ? dpi_module->running() : false,
+                                dpi_module != nullptr ? dpi_module->stateText() : QString());
+            sync_dpi_module();
 
             // Пока не подключено, карточка называет того, кого подключит кнопка:
             // выбранного под кнопкой, иначе запомненного, иначе самого быстрого.
