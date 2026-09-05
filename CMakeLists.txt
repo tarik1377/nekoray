@@ -519,6 +519,13 @@ target_link_libraries(mainwindow_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 # СТОРОЖ ВРЕМЕНИ ЖИЗНИ ВИДЖЕТОВ. Нужен заголовок, собранный uic для
 # приложения, и оболочка — как у предпросмотра выше, по той же причине: второй
 # AUTOUIC на один .ui дал бы две расходящиеся вёрстки.
+# СТОРОЖ САМОЙ РАЗРУШИТЕЛЬНОЙ ФУНКЦИИ. Читает исходник и проверяет отношения:
+# своё исключается во всех проходах, обещание окна совпадает со скриптом.
+# Только Qt::Core — ни виджетов, ни системных вызовов.
+add_executable(network_repair_test EXCLUDE_FROM_ALL test/NetworkRepairTest.cpp)
+target_link_libraries(network_repair_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+target_include_directories(network_repair_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
 add_executable(widget_lifetime_test EXCLUDE_FROM_ALL
         test/WidgetLifetimeTest.cpp
         ui/MainShell.cpp
@@ -591,6 +598,7 @@ set(GR_TEST_TARGETS
         program_trouble_test
         port_health_test
         widget_lifetime_test
+        network_repair_test
 )
 
 add_custom_target(build-tests DEPENDS ${GR_TEST_TARGETS})
