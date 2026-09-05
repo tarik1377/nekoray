@@ -205,7 +205,7 @@
     </message>
     <message>
         <source>Interval (minute, invalid if less than 30)</source>
-        <translation>Интервал (в минутах, значение считается неправильным, если меньше 30)</translation>
+        <translation>Интервал, мин (не меньше 30)</translation>
     </message>
     <message>
         <source>Share VMess Link with v2rayN Format</source>
@@ -246,6 +246,22 @@
     <message>
         <source>core_name</source>
         <translation>Ядро</translation>
+    </message>
+    <message>
+        <source>Local proxy</source>
+        <translation>Локальный прокси</translation>
+    </message>
+    <message>
+        <source>Server tests</source>
+        <translation>Проверка серверов</translation>
+    </message>
+    <message>
+        <source>Appearance</source>
+        <translation>Вид</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>Прочее</translation>
     </message>
 </context>
 <context>

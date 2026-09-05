@@ -53,6 +53,10 @@ namespace {
 
     void save(QWidget &w, const QString &dir, const QString &name) {
         w.show();
+        // Два прохода событий: у окна с прокруткой первая раскладка идёт до
+        // появления полосы, вторая — после, и снимок с одного прохода показывал
+        // содержимое под полосой.
+        QApplication::processEvents();
         QApplication::processEvents();
         const QPixmap shot = w.grab();
         const QString path = QDir(dir).filePath(QStringLiteral("dlg-%1.png").arg(name));
