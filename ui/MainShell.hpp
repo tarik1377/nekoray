@@ -156,6 +156,8 @@ namespace GreenRhythm {
 
         /** Инструменты, переехавшие из верхнего ряда. */
         void routesRequested();
+        /** «Что мешает подключению» — только под Windows. */
+        void interferenceRequested();
         void updateSubscriptionRequested();
         void checkUpdateRequested();
 

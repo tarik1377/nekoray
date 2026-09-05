@@ -1915,7 +1915,7 @@ https://verdantvibe.ru</translation>
     </message>
     <message>
         <source>Connection</source>
-        <translation>Подключение</translation>
+        <translation>Соединения</translation>
     </message>
     <message>
         <source>Status</source>
@@ -1923,11 +1923,11 @@ https://verdantvibe.ru</translation>
     </message>
     <message>
         <source>Outbound</source>
-        <translation>Outbound</translation>
+        <translation>Путь</translation>
     </message>
     <message>
         <source>Destination</source>
-        <translation>Пункт назначения</translation>
+        <translation>Куда</translation>
     </message>
     <message>
         <source>Active Server</source>

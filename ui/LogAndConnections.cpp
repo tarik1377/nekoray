@@ -1,5 +1,7 @@
 #include "ui/mainwindow_common.hpp"
 
+#include "main/ConnectionRow.hpp"
+
 /**
  * Журнал и список соединений — две поверхности, которыми чинят подключение.
  *
@@ -305,31 +307,29 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
         if (obColor.isValid()) f->setForeground(QBrush(obColor));
         ui->tableWidget_conn->setItem(row, 1, f);
 
-        // C2: Destination
+        // C3: Куда. Имя впереди, адрес хвостом — см. ConnectionRow.hpp: раньше
+        // адрес стоял первым в скобках, и имя, которое глаз ищет, было вторым.
         f = f0->clone();
-        QString target1 = item["Dest"].toString();
-        QString target2 = item["RDest"].toString();
-        if (target2.isEmpty() || target1 == target2) {
-            target2 = "";
-        }
-        f->setText("[" + target1 + "] " + target2);
-        // Stash the bare host (no port) so the context menu can build a rule from it.
-        // Prefer the resolved domain (RDest) over a bare IP when both exist.
-        QString host = !target2.isEmpty() ? target2 : target1;
-        int colon = host.lastIndexOf(':');
-        if (colon > 0) {
-            bool okPort = false;
-            host.mid(colon + 1).toInt(&okPort);
-            if (okPort) host = host.left(colon);
-        }
-        f->setData(Qt::UserRole, host);
-        // C2: Program that opened the connection — the answer to "what actually goes
-        // through the VPN", which the tab could never show before.
+        const QString target1 = item["Dest"].toString();
+        const QString target2 = item["RDest"].toString();
+        f->setText(GreenRhythm::destinationLabel(target1, target2));
+        f->setToolTip(target2.isEmpty() ? target1 : target2 + QStringLiteral("\n") + target1);
+        // Голый хост (без порта) — контекстному меню, чтобы собрать правило.
+        // Имя предпочтительнее адреса, когда есть оба.
+        f->setData(Qt::UserRole,
+                   GreenRhythm::hostWithoutPort(!target2.isEmpty() && target2 != target1 ? target2 : target1));
+
+        // C2: Программа. Без процесса и к серверу профиля — это наш собственный
+        // туннель, а не неизвестная программа мимо VPN; так и подписываем.
         {
-            auto proc = item["Process"].toString();
-            if (proc.isEmpty()) proc = "—";
+            const QString serverHost = running != nullptr ? running->bean->serverAddress : QString();
+            const auto proc = GreenRhythm::programLabel(item["Process"].toString(), target1, serverHost);
             auto fp = new QTableWidgetItem(proc);
-            fp->setToolTip(proc);
+            fp->setToolTip(proc == GreenRhythm::tunnelLabel()
+                               ? tr("Соединение самого клиента с сервером профиля. Это не программа мимо VPN — "
+                                    "это и есть туннель.")
+                               : proc);
+            if (proc == GreenRhythm::tunnelLabel()) fp->setForeground(QBrush(QColor(0x8B, 0x94, 0x9E)));
             ui->tableWidget_conn->setItem(row, 2, fp);
         }
 
@@ -401,7 +401,8 @@ void MainWindow::show_conn_context_menu(const QPoint &pos) {
     // угаданное имя не совпадает ни с чем и молча не делает ничего.
     auto *procItem = ui->tableWidget_conn->item(cell->row(), 2);
     const QString program = procItem != nullptr ? procItem->text().trimmed() : QString();
-    const bool knownProgram = !program.isEmpty() && program != QStringLiteral("—");
+    const bool knownProgram = !program.isEmpty() && program != QStringLiteral("—")
+                              && program != GreenRhythm::tunnelLabel();
     const auto bypassList =
         NekoGui::dataStore->vpn_rule_process.split(QChar(0x0A), Qt::SkipEmptyParts);
     bool alreadyDirect = false;

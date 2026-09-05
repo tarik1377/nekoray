@@ -278,6 +278,7 @@ set(PROJECT_SOURCES
         main/PortHealth.cpp
         main/ProgramTrouble.cpp
         main/Interference.cpp
+        main/ConnectionRow.cpp
         ui/dialog_interference.cpp
         ui/dialog_greenrhythm.cpp
         ui/dialog_manage_routes.cpp
@@ -516,6 +517,7 @@ add_executable(mainwindow_preview EXCLUDE_FROM_ALL
         test/MainWindowPreview.cpp
         ui/MainShell.cpp
         ui/ServerCardDelegate.cpp
+        main/ConnectionRow.cpp
         # Ресурсы: без них значки в колонке возьмутся из пустоты, и снимок
         # покажет аккуратную вёрстку без единого значка — то есть соврёт.
         res/neko.qrc
@@ -560,6 +562,16 @@ target_link_libraries(widget_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widget
 # мы выключаем ЧУЖУЮ работающую программу, — и цена ошибки не в нашем клиенте, а
 # в рабочем VPN человека, который он не свяжет с нами. Проверять на живой машине
 # нечем: каждая проверка означала бы выключить себе сеть.
+# Подписи строки соединений. Таблица — то, куда смотрят, когда не работает;
+# три строки со снимка владельца там читались как программы мимо VPN, а были
+# нашим же туннелем.
+add_executable(connection_row_test EXCLUDE_FROM_ALL
+        test/ConnectionRowTest.cpp
+        main/ConnectionRow.cpp
+)
+target_link_libraries(connection_row_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+target_include_directories(connection_row_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
 add_executable(interference_test EXCLUDE_FROM_ALL
         test/InterferenceTest.cpp
         main/Interference.cpp
@@ -638,6 +650,7 @@ set(GR_TEST_TARGETS
         network_repair_test
         dpi_plan_test
         interference_test
+        connection_row_test
 )
 
 add_custom_target(build-tests DEPENDS ${GR_TEST_TARGETS})

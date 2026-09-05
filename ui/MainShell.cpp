@@ -114,14 +114,25 @@ namespace GreenRhythm {
             return b;
         }
 
-        /** Инструмент: маленькая ровная кнопка для сетки. */
+        /**
+         * Инструмент: строка списка с подписью слева.
+         *
+         * Плоская, без рамки — тот же язык, что у пунктов навигации, но без
+         * значка и на тон тише: инструменты нужны реже, чем страницы, и не
+         * должны спорить с ними за внимание.
+         */
         QPushButton *tool(QWidget *p, const QString &text) {
             auto *b = new QPushButton(text, p);
             b->setCursor(Qt::PointingHandCursor);
             b->setMinimumHeight(30);
             QFont f = b->font();
-            f.setPointSizeF(f.pointSizeF() * 0.9);
+            f.setPointSizeF(f.pointSizeF() * 0.92);
             b->setFont(f);
+            b->setStyleSheet(QStringLiteral(
+                                 "QPushButton { text-align: left; padding-left: 14px; border: none;"
+                                 " border-radius: 7px; color: %1; background: transparent; }"
+                                 "QPushButton:hover { background: %2; color: %3; }")
+                                 .arg(kMuted, kSurface, kText));
             return b;
         }
 
@@ -214,24 +225,28 @@ namespace GreenRhythm {
         box->addSpacing(14);
         box->addWidget(caption(bar, tr("ИНСТРУМЕНТЫ")));
         {
-            // Короткие подписи — парой, длинные — во всю ширину. Сетка два на
-            // два резала «Обновить подписку» пополам; подпись, которую нельзя
-            // прочитать, хуже лишней строки.
-            auto *grid = new QGridLayout();
-            grid->setSpacing(6);
-            auto *routes = tool(bar, tr("Маршруты"));
-            connect(routes, &QPushButton::clicked, this, &MainShell::routesRequested);
-            grid->addWidget(routes, 0, 0);
-            auto *settings = tool(bar, tr("Настройки"));
-            connect(settings, &QPushButton::clicked, this, &MainShell::settingsRequested);
-            grid->addWidget(settings, 0, 1);
-            auto *sub = tool(bar, tr("Обновить подписку"));
-            connect(sub, &QPushButton::clicked, this, &MainShell::updateSubscriptionRequested);
-            grid->addWidget(sub, 1, 0, 1, 2);
-            auto *upd = tool(bar, tr("Проверить обновление клиента"));
-            connect(upd, &QPushButton::clicked, this, &MainShell::checkUpdateRequested);
-            grid->addWidget(upd, 2, 0, 1, 2);
-            box->addLayout(grid);
+            // РОВНЫМ СПИСКОМ, а не сеткой. Сетка «две короткие в ряд, две
+            // длинные во всю ширину» читалась как четыре кнопки разного сорта.
+            // Это один сорт — инструменты, и стоят они одинаково: строкой, с
+            // подписью слева, как пункты навигации выше, только тише.
+            auto *list = new QVBoxLayout();
+            list->setSpacing(2);
+            auto row = [&](const QString &text, auto signal) {
+                auto *b = tool(bar, text);
+                connect(b, &QPushButton::clicked, this, signal);
+                list->addWidget(b);
+                return b;
+            };
+            row(tr("Маршруты"), &MainShell::routesRequested);
+#ifdef Q_OS_WIN
+            // Есть только под Windows: разведка службами и адаптерами системы.
+            // На маке пункт не показывается вовсе, а не открывает окно с отказом.
+            row(tr("Что мешает подключению"), &MainShell::interferenceRequested);
+#endif
+            row(tr("Обновить подписку"), &MainShell::updateSubscriptionRequested);
+            row(tr("Проверить обновление"), &MainShell::checkUpdateRequested);
+            row(tr("Настройки"), &MainShell::settingsRequested);
+            box->addLayout(list);
         }
 
         box->addStretch(1);
@@ -325,7 +340,7 @@ namespace GreenRhythm {
         {
             auto *row = new QHBoxLayout();
             row->setSpacing(6);
-            auto *more = new QPushButton(tr("Ещё"), bar);
+            auto *more = new QPushButton(tr("Меню"), bar);
             more->setCursor(Qt::PointingHandCursor);
             more->setMinimumHeight(34);
             connect(more, &QPushButton::clicked, this, [this, more] {
@@ -333,7 +348,7 @@ namespace GreenRhythm {
             });
             row->addWidget(more, 1);
 
-            auto *panel = new QPushButton(tr("Панель"), bar);
+            auto *panel = new QPushButton(tr("Действия"), bar);
             panel->setCursor(Qt::PointingHandCursor);
             panel->setMinimumHeight(34);
             connect(panel, &QPushButton::clicked, this, &MainShell::panelRequested);

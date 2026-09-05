@@ -19,6 +19,7 @@
 
 #include "ui/MainShell.hpp"
 #include "ui/ServerCardDelegate.hpp"
+#include "main/ConnectionRow.hpp"
 
 #include <QApplication>
 #include <QFile>
@@ -81,6 +82,58 @@ int main(int argc, char *argv[]) {
     addServer(ui.proxyListTable, "VLESS", "31.77.129.38:443", "Germany-admin", "");
     addServer(ui.proxyListTable, "VLESS", "192.124.181.171:443", "tarik", "32 ms");
     addServer(ui.proxyListTable, "VLESS", "orsana.adshkola.ru:443", "orsana-admin", "106 ms");
+
+    // ТАБЛИЦА СОЕДИНЕНИЙ — С НАСТОЯЩИМИ СТРОКАМИ со снимка владельца 05.09.2026,
+    // через те же подписи, что и в живом окне (ConnectionRow). Три строки
+    // «без программы, напрямую, на 185.194.32.150» там читались как неизвестные
+    // программы мимо VPN; здесь видно, как они подписаны теперь.
+    {
+        const QString server = QStringLiteral("185.194.32.150");
+        struct Row {
+            const char *tag;
+            const char *process;
+            const char *dest;
+            const char *rdest;
+        };
+        const Row rows[]{
+            {"proxy", "Telegram.exe", "149.154.167.41:443", ""},
+            {"direct", "rustdesk.exe", "95.183.11.208:21116", ""},
+            {"direct", "", "185.194.32.150:1193", ""},
+            {"direct", "", "185.194.32.150:1192", ""},
+            {"proxy", "claude.exe", "160.79.104.10:443", "a.claude.ai:443"},
+            {"proxy", "Discord.exe", "162.159.129.233:443", "cdn.discordapp.com:443"},
+            {"proxy", "WardogsClient-Win64-Shipping.exe", "52.51.161.65:443",
+             "game.live.wardogs.bulkhead.pragmaengine.com:443"},
+            {"block", "nvcontainer.exe", "18.195.56.114:443", "events.telemetry.data.nvidia.com:443"},
+        };
+        auto *t = ui.tableWidget_conn;
+        t->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+        t->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+        t->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+        t->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
+        for (const auto &r: rows) {
+            const int row = t->rowCount();
+            t->insertRow(row);
+            const QString tag = QString::fromLatin1(r.tag);
+            auto *c1 = new QTableWidgetItem(tag == QStringLiteral("proxy")
+                                                ? QString::fromUtf8("\xF0\x9F\x8C\x8D Прокси")
+                                            : tag == QStringLiteral("block")
+                                                ? QString::fromUtf8("\xE2\x9B\x94 Блокировка")
+                                                : QString::fromUtf8("\xF0\x9F\x87\xB7\xF0\x9F\x87\xBA Напрямую"));
+            c1->setForeground(QBrush(tag == QStringLiteral("proxy")   ? QColor(0x4C, 0x9A, 0xFF)
+                                     : tag == QStringLiteral("block") ? QColor(0xE5, 0x48, 0x4D)
+                                                                      : QColor(0x3F, 0xB9, 0x50)));
+            t->setItem(row, 1, c1);
+            const auto program = GreenRhythm::programLabel(QString::fromUtf8(r.process), QString::fromLatin1(r.dest), server);
+            auto *c2 = new QTableWidgetItem(program);
+            if (program == GreenRhythm::tunnelLabel()) c2->setForeground(QBrush(QColor(0x8B, 0x94, 0x9E)));
+            t->setItem(row, 2, c2);
+            t->setItem(row, 3, new QTableWidgetItem(GreenRhythm::destinationLabel(QString::fromLatin1(r.dest),
+                                                                                  QString::fromLatin1(r.rdest))));
+        }
+        // Страница журнала открывается на соединениях: их и правили.
+        ui.down_tab->setCurrentIndex(1);
+    }
 
     ui.label_running->setText(QStringLiteral("[По умолчанию] Germanyyy-admin"));
     ui.label_inbound->setText(QStringLiteral("Mixed: 127.0.0.1:2080"));

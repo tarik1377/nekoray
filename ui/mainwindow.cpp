@@ -419,6 +419,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         });
         connect(shell, &GreenRhythm::MainShell::routesRequested, this,
                 [this] { on_menu_routing_settings_triggered(); });
+        connect(shell, &GreenRhythm::MainShell::interferenceRequested, this,
+                [this] { on_menu_interference_triggered(); });
         connect(shell, &GreenRhythm::MainShell::settingsRequested, this,
                 [this] { on_menu_basic_settings_triggered(); });
         connect(shell, &GreenRhythm::MainShell::updateSubscriptionRequested, this,
@@ -1528,21 +1530,38 @@ void MainWindow::refresh_status(const QString &traffic_update) {
         ui->label_running->setToolTip({});
     }
 
+    // ЗАГОЛОВОК — ФРАЗОЙ, А НЕ РЯДОМ СКОБОК. Было «[Admin] [Tun] GreenRhythm
+    // (v1.7.5) [VLESS] tarik@По умолчанию»: шесть квадратных скобок, английские
+    // метки в русском окне и «@» между сервером и группой. Читается как дамп
+    // состояния. Теперь: имя, сервер, режим, права — через точку, по-русски.
+    // В трее то же самое строками: подсказка узкая.
     auto make_title = [=](bool isTray) {
         QStringList tt;
-        if (!isTray && NekoGui::IsAdmin()) tt << "[Admin]";
-        if (select_mode) tt << "[" + tr("Select") + "]";
-        if (!title_error.isEmpty()) tt << "[" + title_error + "]";
-        if (NekoGui::dataStore->spmode_vpn && !NekoGui::dataStore->spmode_system_proxy) tt << "[Tun]";
-        if (!NekoGui::dataStore->spmode_vpn && NekoGui::dataStore->spmode_system_proxy) tt << "[" + tr("System Proxy") + "]";
-        if (NekoGui::dataStore->spmode_vpn && NekoGui::dataStore->spmode_system_proxy) tt << "[Tun+" + tr("System Proxy") + "]";
-        tt << software_name;
-        if (!isTray) tt << "(" + QString(NKR_VERSION) + ")";
-        if (!NekoGui::dataStore->active_routing.isEmpty() && NekoGui::dataStore->active_routing != "Default") {
-            tt << "[" + NekoGui::dataStore->active_routing + "]";
+        tt << (isTray ? QString(software_name) : QStringLiteral("%1 %2").arg(software_name, NKR_VERSION));
+        if (running != nullptr) {
+            // Группу показываем только не «По умолчанию»: единственная группа —
+            // не признак, а шум.
+            const bool namedGroup = !group_name.isEmpty() && group_name != tr("Default")
+                                    && group_name != QStringLiteral("По умолчанию");
+            tt << (namedGroup ? QStringLiteral("%1 (%2, %3)")
+                                    .arg(running->bean->DisplayName(), running->bean->DisplayType(), group_name)
+                              : QStringLiteral("%1 (%2)")
+                                    .arg(running->bean->DisplayName(), running->bean->DisplayType()));
         }
-        if (running != nullptr) tt << running->bean->DisplayTypeAndName() + "@" + group_name;
-        return tt.join(isTray ? "\n" : " ");
+        if (NekoGui::dataStore->spmode_vpn && NekoGui::dataStore->spmode_system_proxy) {
+            tt << tr("туннель + системный прокси");
+        } else if (NekoGui::dataStore->spmode_vpn) {
+            tt << tr("туннель");
+        } else if (NekoGui::dataStore->spmode_system_proxy) {
+            tt << tr("системный прокси");
+        }
+        if (!NekoGui::dataStore->active_routing.isEmpty() && NekoGui::dataStore->active_routing != "Default") {
+            tt << tr("маршруты: %1").arg(NekoGui::dataStore->active_routing);
+        }
+        if (select_mode) tt << tr("выбор");
+        if (!isTray && NekoGui::IsAdmin()) tt << tr("администратор");
+        if (!title_error.isEmpty()) tt << title_error;
+        return tt.join(isTray ? QStringLiteral("\n") : QStringLiteral("  ·  "));
     };
 
     auto icon_status_new = Icon::NONE;
