@@ -1,5 +1,6 @@
 #include "./ui_mainwindow.h"
 #include "main/Interference.hpp"
+#include "main/TunLifecycle.hpp"
 #include "mainwindow.h"
 
 #include "db/Database.hpp"
@@ -447,6 +448,18 @@ void MainWindow::neko_start(int _id) {
         conn_health = Health_Unknown; // wait for the first probe before claiming green
 
         runOnUiThread([=] {
+            // Start удался — SOCKS-вход основного ядра уже слушает, и внешний
+            // туннель, выбранный заранее или запомненный с прошлого раза, можно
+            // поднимать: раньше он увёл бы весь трафик в закрытый порт
+            // (main/TunLifecycle.hpp).
+            if (GreenRhythm::TunLifecycle::shouldStartExternal(
+                    NekoGui::dataStore->spmode_vpn, NekoGui::UseInternalTun(),
+                    running != nullptr, vpn_pid != 0)) {
+                // Не поднялся (отменён пароль, упал скрипт) — режим снимается
+                // тем же путём, что и переключателем: с сохранением и
+                // обновлением состояния, а не прямой записью в настройки.
+                if (!StartVPNProcess()) neko_set_spmode_vpn(false);
+            }
             refresh_status();
             refresh_proxy_list(ent->id);
         });
@@ -511,11 +524,33 @@ void MainWindow::neko_start(int _id) {
     });
 }
 
-void MainWindow::neko_stop(bool crash, bool sem) {
+void MainWindow::neko_stop(bool crash, bool sem, bool keep_tunnel) {
     auto id = NekoGui::dataStore->started_id;
     if (id < 0) {
         if (sem) sem_stopped.release();
         return;
+    }
+
+    /*
+     * ВНЕШНИЙ ТУННЕЛЬ СНИМАЕТСЯ ДО ОСТАНОВКИ ЯДРА — иначе маршрут по умолчанию
+     * ведёт в закрытый порт, и мак остаётся без сети до ручного выключения.
+     *
+     * Не снимается: при передаче между профилями (sem) — ядро вернётся через
+     * секунду; и на путях без человека (crash, keep_tunnel) — там снятие было
+     * бы запросом пароля посреди аварии. Правила — в main/TunLifecycle.hpp.
+     *
+     * ОТКАЗ НЕ ОБРЫВАЕТ ОСТАНОВКУ. Ранний return при неудаче здесь стоять не
+     * должен: отменённый запрос пароля оставлял бы ядро «подключённым» на
+     * экране при мёртвом RPC. Остановка идёт дальше, а о поднятом туннеле
+     * сказано вслух — его снимет переключатель.
+     */
+    if (GreenRhythm::TunLifecycle::shouldStopExternalBeforeDisconnect(
+            NekoGui::dataStore->spmode_vpn, NekoGui::UseInternalTun(),
+            vpn_pid != 0, sem, crash || keep_tunnel)) {
+        if (!StopVPNProcess()) {
+            MW_show_log(tr("Туннель остался поднятым: снимите его переключателем «Туннель», "
+                           "иначе сеть будет вести в закрытый порт."));
+        }
     }
 
     auto neko_stop_stage2 = [=] {

@@ -1,6 +1,9 @@
 #include "ui/mainwindow_common.hpp"
 
 #include "main/Interference.hpp"
+#include "main/TunLifecycle.hpp"
+
+#include <memory>
 
 #include "dpi/DpiBundle.hpp"
 #include "dpi/DpiModule.hpp"
@@ -1077,7 +1080,10 @@ void MainWindow::dialog_message_impl(const QString &sender, const QString &info)
         }
     } else if (sender == "ExternalProcess") {
         if (info == "Crashed") {
-            neko_stop();
+            // Упал внешний процесс, основное ядро живо. Туннель не трогаем: на
+            // маке его снятие — запрос пароля, а посреди аварии его никто не
+            // ждёт (см. main/TunLifecycle.hpp).
+            neko_stop(false, false, true);
         } else if (info == "CoreCrashed") {
             neko_stop(true);
         } else if (info.startsWith("CoreStarted")) {
@@ -1354,8 +1360,17 @@ void MainWindow::neko_set_spmode_vpn(bool enable, bool save) {
                     MessageBoxWarning(software_name, tr("Current server is incompatible with Tun. Please stop the server first, enable Tun Mode, and then restart."));
                     neko_set_spmode_FAILED
                 }
-                if (!StartVPNProcess()) {
-                    neko_set_spmode_FAILED
+                // Внешний туннель ведёт весь трафик в SOCKS-вход основного ядра.
+                // Пока профиль не подключён, порта нет, и поднятый сейчас туннель
+                // увёл бы весь мак в закрытый порт. Поэтому до подключения только
+                // запоминаем выбор; поднимет туннель neko_start, когда порт
+                // появится (main/TunLifecycle.hpp).
+                if (running != nullptr) {
+                    if (!StartVPNProcess()) {
+                        neko_set_spmode_FAILED
+                    }
+                } else {
+                    MW_show_log(tr("Туннель выбран и включится после подключения к серверу."));
                 }
             }
         } else {
@@ -2710,17 +2725,42 @@ bool MainWindow::StartVPNProcess() {
                                          {"--disable-color", "run", "-c", configPath}, "",
                                          NekoGui::dataStore->vpn_hide_console ? WinCommander::SW_HIDE : WinCommander::SW_SHOWMINIMIZED); // blocking
         vpn_pid = 0;
-        runOnUiThread([=] { neko_set_spmode_vpn(false); });
+        // Намеренная остановка (StopVPNProcess) оставляет режим выбранным —
+        // туннель поднимется при следующем подключении. Гаснет режим только
+        // когда процесс ушёл сам. Та же логика, что в ветке ниже для мака.
+        runOnUiThread([=] {
+            const bool intentional = vpn_stop_requested;
+            vpn_stop_requested = false;
+            if (!intentional) neko_set_spmode_vpn(false);
+        });
     });
 #else
     //
     auto vpn_process = new QProcess;
+    /*
+     * ЧЕЙ ЭТО ВЫХОД — ПРОВЕРЯЕТСЯ, а не подразумевается.
+     *
+     * Сигнал о завершении приходит с опозданием, и между «отключиться» и
+     * «подключиться» человек успевает поднять НОВЫЙ помощник. Без проверки
+     * запоздалый сигнал старого обнулял бы vpn_pid живого — и дальше приложение
+     * считало бы туннель снятым: не снимало бы его при отключении и «выключало»
+     * переключателем, ничего не убивая. Поэтому обработчик действует только на
+     * свой процесс. Номер известен лишь после запуска, отсюда общий держатель.
+     *
+     * Намеренная остановка (StopVPNProcess) оставляет режим выбранным: туннель
+     * поднимется при следующем подключении. Гаснет режим только когда помощник
+     * ушёл сам.
+     */
+    auto ownPid = std::make_shared<qint64>(0);
     QProcess::connect(vpn_process, &QProcess::stateChanged, this, [=](QProcess::ProcessState state) {
-        if (state == QProcess::NotRunning) {
-            vpn_pid = 0;
-            vpn_process->deleteLater();
-            GetMainWindow()->neko_set_spmode_vpn(false);
-        }
+        if (state != QProcess::NotRunning) return;
+        const bool mine = *ownPid != 0 && vpn_pid == *ownPid;
+        const bool intentional = vpn_stop_requested;
+        vpn_process->deleteLater();
+        if (!mine) return;
+        vpn_stop_requested = false;
+        vpn_pid = 0;
+        if (!intentional) GetMainWindow()->neko_set_spmode_vpn(false);
     });
     //
     /*
@@ -2785,6 +2825,7 @@ bool MainWindow::StartVPNProcess() {
         vpn_process->deleteLater();
         return false;
     }
+    *ownPid = vpn_process->processId();
     // Умирает такой процесс мгновенно: осталось дать ему это сделать.
     if (vpn_process->waitForFinished(1500)) {
         const auto tail = QString::fromLocal8Bit(vpn_process->readAll()).trimmed();
@@ -2795,7 +2836,7 @@ bool MainWindow::StartVPNProcess() {
         vpn_process->deleteLater();
         return false;
     }
-    vpn_pid = vpn_process->processId(); // actually it's pkexec or bash PID
+    vpn_pid = *ownPid; // на маке это osascript, на Linux — pkexec; сам помощник — их потомок от root
 #endif
     return true;
 }
@@ -2803,7 +2844,11 @@ bool MainWindow::StartVPNProcess() {
 bool MainWindow::StopVPNProcess(bool unconditional) {
     if (unconditional || vpn_pid != 0) {
         bool ok;
-        core_process->processId();
+        // Намеренная остановка: обработчик выхода помощника не гасит режим, и
+        // туннель поднимется при следующем подключении. Флаг снимается ниже,
+        // если остановка не удалась, — иначе он сработал бы на следующем
+        // самопроизвольном выходе.
+        if (!unconditional) vpn_stop_requested = true;
 #ifdef Q_OS_WIN
         auto ret = WinCommander::runProcessElevated(System32Exe("taskkill.exe"), {"/IM", "greenrhythm_core.exe",
                                                                  "/FI",
@@ -2812,8 +2857,23 @@ bool MainWindow::StopVPNProcess(bool unconditional) {
 #else
         QProcess p;
 #ifdef Q_OS_MACOS
+        /*
+         * ОСНОВНОЕ ЯДРО ИСКЛЮЧАЕТСЯ ЯВНО, как и в ветке Windows выше.
+         *
+         * Стояло `pkill -2 -U 0 greenrhythm_core` — «все ядра от root». Пока
+         * интерфейс запущен обычно, от root только помощник, и это работало.
+         * Но у тестировщика интерфейс был запущен от root (в заголовке
+         * «администратор»), значит от root было и основное ядро — и каждое
+         * отключение убивало его вместе с помощником: отказ RPC, перезапуск,
+         * повторное подключение. Двойных кавычек в команде нет намеренно: она
+         * идёт литералом AppleScript, и кавычка внутри разорвала бы его.
+         */
+        const auto stopScript = QStringLiteral(
+                                    "for p in $(pgrep -U 0 greenrhythm_core); do "
+                                    "if [ $p != %1 ]; then kill -2 $p || exit 1; fi; done")
+                                    .arg(core_process->processId());
         p.start("osascript", {"-e", QStringLiteral("do shell script \"%1\" with administrator privileges")
-                                        .arg("pkill -2 -U 0 greenrhythm_core")});
+                                        .arg(stopScript)});
 #else
         if (unconditional) {
             p.start("pkexec", {"killall", "-2", "greenrhythm_core"});
@@ -2821,11 +2881,29 @@ bool MainWindow::StopVPNProcess(bool unconditional) {
             p.start("pkexec", {"pkill", "-2", "-P", Int2String(vpn_pid)});
         }
 #endif
-        p.waitForFinished();
-        ok = p.exitCode() == 0;
+        /*
+         * ОЖИДАНИЕ ПРОВЕРЯЕТСЯ. Стояло `p.waitForFinished(); ok = p.exitCode() == 0;`,
+         * а срок у waitForFinished по умолчанию — полминуты, и по его истечении
+         * exitCode ещё не заполнен и равен нулю. То есть запрос пароля, на
+         * который никто не ответил, читался как удачная остановка: vpn_pid
+         * обнулялся, помощник от root оставался жить, а следующее подключение
+         * поднимало второго. Две минуты — с запасом на человека, который отошёл
+         * при открытом окне пароля.
+         */
+        if (p.waitForFinished(120000)) {
+            ok = p.exitStatus() == QProcess::NormalExit && p.exitCode() == 0;
+        } else {
+            p.kill();
+            ok = false;
+        }
 #endif
         if (!unconditional) {
-            ok ? vpn_pid = 0 : MessageBoxWarning(tr("Error"), tr("Failed to stop Tun process"));
+            if (ok) {
+                vpn_pid = 0;
+            } else {
+                vpn_stop_requested = false;
+                MessageBoxWarning(tr("Error"), tr("Failed to stop Tun process"));
+            }
         }
         return ok;
     }

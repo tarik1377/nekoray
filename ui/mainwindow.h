@@ -68,7 +68,7 @@ public:
 
     void neko_start(int _id = -1);
 
-    void neko_stop(bool crash = false, bool sem = false);
+    void neko_stop(bool crash = false, bool sem = false, bool keep_tunnel = false);
 
     void neko_set_spmode_system_proxy(bool enable, bool save = true);
 
@@ -174,6 +174,10 @@ private:
     //
     NekoGui_sys::CoreProcess *core_process;
     qint64 vpn_pid = 0;
+    // Намеренная остановка помощника (StopVPNProcess) оставляет режим
+    // выбранным — туннель поднимется при следующем подключении. Гаснет режим
+    // только когда помощник ушёл сам.
+    bool vpn_stop_requested = false;
     //
     bool qvLogAutoScoll = true;
     QTextDocument *qvLogDocument = new QTextDocument(this);
