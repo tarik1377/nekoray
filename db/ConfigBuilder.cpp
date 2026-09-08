@@ -1105,7 +1105,12 @@ namespace NekoGui {
         // write config
         QFile file;
         file.setFileName(QFileInfo(configFn).fileName());
-        file.open(QIODevice::ReadWrite | QIODevice::Truncate);
+        // ОТКАЗ ЗАПИСИ — ПУСТОЙ ПУТЬ, а не путь к тому, что лежало раньше. После
+        // запуска от root файл принадлежит root, и молчаливый отказ здесь
+        // поднимал бы туннель по прошлому конфигу — с прошлым портом и прошлыми
+        // исключениями, без единого слова. Вызывающий говорит человеку, что
+        // делать (StartVPNProcess).
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) return {};
         file.write(config.toUtf8());
         file.close();
         return QFileInfo(file).absoluteFilePath();
@@ -1115,6 +1120,7 @@ namespace NekoGui {
 #ifdef Q_OS_WIN
         return {};
 #endif
+        if (configPath.isEmpty()) return {}; // конфиг не записался — скрипту нечего запускать
         // gen script
         auto scriptFn = ":/neko/vpn/vpn-run-root.sh";
         if (QFile::exists("vpn/vpn-run-root.sh")) scriptFn = "vpn/vpn-run-root.sh";
@@ -1124,7 +1130,7 @@ namespace NekoGui {
         // write script
         QFile file2;
         file2.setFileName(QFileInfo(scriptFn).fileName());
-        file2.open(QIODevice::ReadWrite | QIODevice::Truncate);
+        if (!file2.open(QIODevice::WriteOnly | QIODevice::Truncate)) return {}; // см. WriteVPNSingBoxConfig
         file2.write(script.toUtf8());
         file2.close();
         return QFileInfo(file2).absoluteFilePath();

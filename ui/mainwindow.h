@@ -68,7 +68,7 @@ public:
 
     void neko_start(int _id = -1);
 
-    void neko_stop(bool crash = false, bool sem = false);
+    void neko_stop(bool crash = false, bool sem = false, bool keep_tunnel = false);
 
     void neko_set_spmode_system_proxy(bool enable, bool save = true);
 
@@ -174,6 +174,25 @@ private:
     //
     NekoGui_sys::CoreProcess *core_process;
     qint64 vpn_pid = 0;
+    // Намеренная остановка помощника (StopVPNProcess) оставляет режим
+    // выбранным — туннель поднимется при следующем подключении. Гаснет режим
+    // только когда помощник ушёл сам.
+    bool vpn_stop_requested = false;
+    // Наблюдение за помощником внешнего туннеля: живой журнал и проверка
+    // цепочки после подъёма. См. vpn_watch_tick.
+    QTimer *vpn_watch = nullptr;
+    qint64 vpn_log_offset = 0;
+    qint64 vpn_helper_seen_ms = 0;
+    bool vpn_probe_busy = false;
+    bool vpn_probe_done = false;
+    // Номер поколения наблюдения. Проверка цепочки живёт до семи секунд в
+    // рабочем потоке, и за это время помощника успевают снять и поднять
+    // заново: без поколения ответ про ПРОШЛЫЙ туннель применялся бы к новому.
+    int vpn_watch_gen = 0;
+    void vpn_watch_begin();
+    void vpn_watch_tick();
+    void vpn_watch_drain();
+    void vpn_helper_exited(const QString &output, int exitCode);
     //
     bool qvLogAutoScoll = true;
     QTextDocument *qvLogDocument = new QTextDocument(this);

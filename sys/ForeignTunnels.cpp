@@ -1,8 +1,20 @@
 #include "ForeignTunnels.hpp"
 #include "sys/WinShell.hpp"
 
+#include <QDir>
+#include <QEventLoop>
+#include <QNetworkAccessManager>
+#include <QNetworkProxy>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QTcpSocket>
+#include <QTimer>
+
+#ifndef Q_OS_WIN
+#include <unistd.h>
+#endif
 
 namespace NekoGui_sys {
 
@@ -233,6 +245,85 @@ namespace NekoGui_sys {
      * wintun-адаптер, на маке — utun со случайным номером, который система
      * выдаёт сама, и по имени его не найти.
      */
+    bool HelperAlive(qint64 pid) {
+#ifdef Q_OS_WIN
+        Q_UNUSED(pid)
+        return false;
+#else
+        if (pid <= 0) return false;
+        // Имя, а не просто наличие: ps печатает путь запуска, поэтому сравнение
+        // по концу строки.
+        return ask("ps", {"-p", QString::number(pid), "-o", "comm="}, 5000)
+            .trimmed()
+            .endsWith(QStringLiteral("greenrhythm_core"));
+#endif
+    }
+
+    GreenRhythm::TunHelper::Chain ProbeTunChain(qint64 helperPid, const QString &socksAddr, int socksPort) {
+        GreenRhythm::TunHelper::Chain c;
+#ifdef Q_OS_WIN
+        Q_UNUSED(helperPid)
+        Q_UNUSED(socksAddr)
+        Q_UNUSED(socksPort)
+        return c;
+#else
+        c.helperAlive = HelperAlive(helperPid);
+#ifdef Q_OS_MACOS
+        c.adapter = GreenRhythm::TunHelper::interfaceWithAddress(ask("ifconfig", {"-a"}, 8000),
+                                                                 GreenRhythm::TunHelper::ourAddress());
+        c.routeVia = GreenRhythm::TunHelper::routeInterface(ask("route", {"-n", "get", "1.1.1.1"}, 8000));
+#else
+        // Linux: `ip -br addr` даёт «имя состояние адреса», `ip route get` — «… dev имя …».
+        for (const auto &ln: ask("ip", {"-br", "addr", "show"}, 8000).split('\n')) {
+            if (ln.contains(GreenRhythm::TunHelper::ourAddress() + "/")) {
+                c.adapter = ln.section(' ', 0, 0).trimmed();
+                break;
+            }
+        }
+        const auto rg = ask("ip", {"route", "get", "1.1.1.1"}, 8000);
+        const auto devAt = rg.indexOf(QStringLiteral(" dev "));
+        if (devAt >= 0) c.routeVia = rg.mid(devAt + 5).section(' ', 0, 0).trimmed();
+#endif
+        {
+            QTcpSocket s;
+            s.connectToHost(socksAddr, quint16(socksPort));
+            c.socksOpen = s.waitForConnected(1500);
+            s.abort();
+        }
+        {
+            /*
+             * ОТВЕТ, А НЕ РУКОПОЖАТИЕ, И ЭТО ИСПРАВЛЕНИЕ СОБСТВЕННОЙ ОШИБКИ.
+             *
+             * Здесь стоял простой connect к 1.1.1.1:443, и он доказывал ровно
+             * ничего. Стек «system» — тот, что стоит у тестировщика, — принимает
+             * соединение СВОИМ слушателем в ядре (sing-tun, stack_system.go:
+             * listener.Accept, и только потом NewConnectionEx). Рукопожатие
+             * заканчивается до того, как помощник вообще попробует дозвониться
+             * до SOCKS основного ядра. То есть проверка отвечала «туннель
+             * работает» при наглухо мёртвом канале — хуже, чем не проверять.
+             *
+             * Ответ по HTTP пройти без всей цепочки не может: устройство,
+             * помощник, SOCKS основного ядра, сервер. Адрес тот же, что у
+             * собственной проверки связи приложения (ui/Diagnostics.cpp), чтобы
+             * два ответа об одном и том же не расходились.
+             *
+             * Прокси снимается явно: приложение может держать системный, и
+             * тогда запрос ушёл бы мимо маршрутов — мимо того, что проверяем.
+             */
+            QNetworkAccessManager nam;
+            nam.setProxy(QNetworkProxy::NoProxy);
+            auto *r = nam.get(QNetworkRequest(QUrl(QStringLiteral("http://cp.cloudflare.com/generate_204"))));
+            QEventLoop loop;
+            QTimer::singleShot(7000, r, &QNetworkReply::abort);
+            QObject::connect(r, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+            loop.exec();
+            c.throughTunnel = r->error() == QNetworkReply::NoError;
+            r->deleteLater();
+        }
+        return c;
+#endif
+    }
+
     QString DescribeTunAdapter() {
         QStringList out;
 #ifdef Q_OS_WIN
@@ -254,24 +345,42 @@ namespace NekoGui_sys {
 #elif defined(Q_OS_MACOS)
         // На маке имя не наше: sing-tun берёт первый свободный utun. Поэтому
         // ищем не по имени, а по НАШЕМУ адресу — он из шаблона и постоянен.
-        const auto raw = ask("ifconfig", {"-a"}, 8000);
-        QString current;
-        bool found = false;
-        for (const auto &ln: raw.split('\n')) {
-            if (!ln.startsWith(' ') && !ln.startsWith('\t')) current = ln.section(':', 0, 0).trimmed();
-            if (ln.contains(QStringLiteral("172.19.0.1")) && !current.isEmpty()) {
-                out << QStringLiteral("adapter=%1 (наш адрес поднят)").arg(current);
-                found = true;
-                break;
-            }
-        }
-        if (!found) out << QStringLiteral("adapter=absent (нашего адреса нет ни на одном utun)");
+        const auto adapter = GreenRhythm::TunHelper::interfaceWithAddress(ask("ifconfig", {"-a"}, 8000),
+                                                                          GreenRhythm::TunHelper::ourAddress());
+        out << (adapter.isEmpty() ? QStringLiteral("adapter=absent (нашего адреса нет ни на одном utun)")
+                                  : QStringLiteral("adapter=%1 (наш адрес поднят)").arg(adapter));
         const auto routes = ask("netstat", {"-rn", "-f", "inet"}, 8000);
         int viaUtun = 0;
         for (const auto &ln: routes.split('\n')) {
             if (ln.contains(QStringLiteral("utun"))) viaUtun++;
         }
         out << QStringLiteral("routes-via-utun=%1").arg(viaUtun);
+        // Куда система поведёт обычный адрес: через туннель или мимо. Это и
+        // есть ответ на «включено, но не работает» — один взгляд вместо круга
+        // переписки.
+        const auto via = GreenRhythm::TunHelper::routeInterface(ask("route", {"-n", "get", "1.1.1.1"}, 8000));
+        out << QStringLiteral("route-1.1.1.1=%1").arg(via.isEmpty() ? QStringLiteral("?") : via);
+        // ШЕСТАЯ ВЕРСИЯ СПРАШИВАЕТСЯ ОТДЕЛЬНО. При выключенном IPv6 в настройках
+        // туннеля sing-tun не трогает его маршруты вовсе: браузер на сети с
+        // двумя стеками ходит мимо туннеля, а всё остальное показывает
+        // «работает». Одна строка отвечает на это заранее.
+        const auto via6 = GreenRhythm::TunHelper::routeInterface(
+            ask("route", {"-n", "get", "-inet6", "2606:4700:4700::1111"}, 8000));
+        out << QStringLiteral("route6=%1").arg(via6.isEmpty() ? QStringLiteral("нет маршрута") : via6);
+        // Помощник: номер из файла скрипта и жив ли он. Журнал — путём, чтобы
+        // поддержка попросила ровно его.
+        const auto dir = QDir::currentPath();
+        const auto pid = GreenRhythm::TunHelper::readPid(dir);
+        if (pid > 0) {
+            const bool alive = !ask("ps", {"-p", QString::number(pid), "-o", "comm="}, 5000).trimmed().isEmpty();
+            out << QStringLiteral("helper-pid=%1 alive=%2").arg(pid).arg(alive ? "yes" : "no");
+        } else {
+            out << QStringLiteral("helper-pid=none");
+        }
+        out << QStringLiteral("helper-log=%1").arg(GreenRhythm::TunHelper::logPath(dir));
+        // От root приложение работать не должно (main.cpp отказывает), но
+        // старые сборки могли, и поддержке важно это видеть сразу.
+        out << QStringLiteral("uid=%1").arg(geteuid());
 #else
         const auto raw = ask("ip", {"-br", "addr", "show"}, 8000);
         bool found = false;

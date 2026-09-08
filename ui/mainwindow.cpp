@@ -1,6 +1,17 @@
 #include "ui/mainwindow_common.hpp"
 
 #include "main/Interference.hpp"
+#include "main/TunHelper.hpp"
+#include "main/TunLifecycle.hpp"
+
+#include <QDateTime>
+#include <QDir>
+#include <memory>
+
+#ifndef Q_OS_WIN
+#include <signal.h>
+#include <sys/types.h>
+#endif
 
 #include "dpi/DpiBundle.hpp"
 #include "dpi/DpiModule.hpp"
@@ -1077,7 +1088,10 @@ void MainWindow::dialog_message_impl(const QString &sender, const QString &info)
         }
     } else if (sender == "ExternalProcess") {
         if (info == "Crashed") {
-            neko_stop();
+            // Упал внешний процесс, основное ядро живо. Туннель не трогаем: на
+            // маке его снятие — запрос пароля, а посреди аварии его никто не
+            // ждёт (см. main/TunLifecycle.hpp).
+            neko_stop(false, false, true);
         } else if (info == "CoreCrashed") {
             neko_stop(true);
         } else if (info.startsWith("CoreStarted")) {
@@ -1354,8 +1368,17 @@ void MainWindow::neko_set_spmode_vpn(bool enable, bool save) {
                     MessageBoxWarning(software_name, tr("Current server is incompatible with Tun. Please stop the server first, enable Tun Mode, and then restart."));
                     neko_set_spmode_FAILED
                 }
-                if (!StartVPNProcess()) {
-                    neko_set_spmode_FAILED
+                // Внешний туннель ведёт весь трафик в SOCKS-вход основного ядра.
+                // Пока профиль не подключён, порта нет, и поднятый сейчас туннель
+                // увёл бы весь мак в закрытый порт. Поэтому до подключения только
+                // запоминаем выбор; поднимет туннель neko_start, когда порт
+                // появится (main/TunLifecycle.hpp).
+                if (running != nullptr) {
+                    if (!StartVPNProcess()) {
+                        neko_set_spmode_FAILED
+                    }
+                } else {
+                    MW_show_log(tr("Туннель выбран и включится после подключения к серверу."));
                 }
             }
         } else {
@@ -2700,8 +2723,73 @@ bool MainWindow::StartVPNProcess() {
         return true;
     }
     //
+    vpn_stop_requested = false; // новый помощник начинает с чистого признака
     auto configPath = NekoGui::WriteVPNSingBoxConfig();
     auto scriptPath = NekoGui::WriteVPNLinuxScript(configPath);
+    /*
+     * ФАЙЛЫ НЕ ЗАПИСАЛИСЬ — ГОВОРИМ И НАЗЫВАЕМ ПРИЧИНУ. Самый частый случай на
+     * маке: приложение однажды запустили через sudo, и файлы в каталоге
+     * настроек принадлежат root. Прежде запись молча проваливалась, а туннель
+     * поднимался по тому конфигу, что лежал раньше.
+     */
+    const bool scriptMissing =
+#ifdef Q_OS_WIN
+        false;
+#else
+        scriptPath.isEmpty();
+#endif
+    if (configPath.isEmpty() || scriptMissing) {
+        const auto dir = QDir::currentPath();
+        // Совет про sudo — только там, где sudo есть. На Windows он был бы
+        // указанием выполнить несуществующую команду.
+#ifdef Q_OS_WIN
+        const auto advice = tr("Проверьте, что папка доступна для записи.");
+#else
+        const auto advice = tr("Если приложение раньше запускали через sudo, файлы там принадлежат root. "
+                               "Верните их себе командой в Терминале:") +
+                            "\n\nsudo chown -R \"$(whoami)\" " +
+                            GreenRhythm::TunHelper::shellSingleQuote(QDir::cleanPath(dir + "/.."));
+#endif
+        MessageBoxWarning(software_name, tr("Не удалось записать файлы туннеля в %1.").arg(dir) + "\n\n" + advice);
+        return false;
+    }
+    /*
+     * СЛЕДЫ ПРОШЛОГО ЗАПУСКА УБИРАЮТСЯ ЗДЕСЬ, ДО ЗАПРОСА ПАРОЛЯ.
+     *
+     * Скрипт чистит их сам, но только после того, как пароль введён, — а
+     * наблюдение начинается сразу. До правки первый же его оборот вываливал в
+     * журнал приложения весь вчерашний журнал помощника как сегодняшний и
+     * начинал отсчёт по номеру процесса, которого давно нет.
+     *
+     * Живой помощник от прошлого запуска — отдельный случай и самый неприятный:
+     * приложение закрыли силой, а туннель остался и держит маршруты всего мака.
+     * Второй рядом с ним не уживётся, поэтому спрашиваем.
+     */
+#ifndef Q_OS_WIN
+    {
+        const auto dir = QDir::currentPath();
+        const auto oldPid = GreenRhythm::TunHelper::readPid(dir);
+        if (NekoGui_sys::HelperAlive(oldPid)) {
+            const auto answer = QMessageBox::question(
+                GetMessageBoxParent(), software_name,
+                tr("Туннель от прошлого запуска ещё работает (процесс %1).").arg(oldPid) + "\n\n" +
+                    tr("Так бывает, когда программу закрыли силой: помощник остался и держит "
+                       "маршруты всей машины. Два туннеля рядом не уживутся — прежний нужно снять.") +
+                    "\n\n" + tr("Снять прежний и включить туннель заново?"),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+            if (answer != QMessageBox::Yes) return false;
+            if (!StopVPNProcess(true)) {
+                MessageBoxWarning(software_name,
+                                  tr("Не удалось снять прежний туннель.") + "\n\n" +
+                                      tr("Скорее всего, запрос прав администратора был отменён. "
+                                         "Попробуйте снова и подтвердите его."));
+                return false;
+            }
+        }
+        QFile::remove(GreenRhythm::TunHelper::pidPath(dir));
+        QFile::remove(GreenRhythm::TunHelper::logPath(dir));
+    }
+#endif
     //
 #ifdef Q_OS_WIN
     runOnNewThread([=] {
@@ -2710,17 +2798,49 @@ bool MainWindow::StartVPNProcess() {
                                          {"--disable-color", "run", "-c", configPath}, "",
                                          NekoGui::dataStore->vpn_hide_console ? WinCommander::SW_HIDE : WinCommander::SW_SHOWMINIMIZED); // blocking
         vpn_pid = 0;
-        runOnUiThread([=] { neko_set_spmode_vpn(false); });
+        // Намеренная остановка (StopVPNProcess) оставляет режим выбранным —
+        // туннель поднимется при следующем подключении. Гаснет режим только
+        // когда процесс ушёл сам. Та же логика, что в ветке ниже для мака.
+        runOnUiThread([=] {
+            const bool intentional = vpn_stop_requested;
+            vpn_stop_requested = false;
+            if (!intentional) neko_set_spmode_vpn(false);
+        });
     });
 #else
     //
     auto vpn_process = new QProcess;
+    /*
+     * ЧЕЙ ЭТО ВЫХОД — ПРОВЕРЯЕТСЯ, а не подразумевается.
+     *
+     * Сигнал о завершении приходит с опозданием, и между «отключиться» и
+     * «подключиться» человек успевает поднять НОВЫЙ помощник. Без проверки
+     * запоздалый сигнал старого обнулял бы vpn_pid живого — и дальше приложение
+     * считало бы туннель снятым: не снимало бы его при отключении и «выключало»
+     * переключателем, ничего не убивая. Поэтому обработчик действует только на
+     * свой процесс. Номер известен лишь после запуска, отсюда общий держатель.
+     *
+     * Намеренная остановка (StopVPNProcess) оставляет режим выбранным: туннель
+     * поднимется при следующем подключении. Гаснет режим только когда помощник
+     * ушёл сам.
+     */
+    auto ownPid = std::make_shared<qint64>(0);
+    // Весь вывод osascript копится: по нему отличают отменённый пароль от
+    // упавшего помощника, а readyRead ниже отдаёт его в журнал по кускам.
+    auto outBuf = std::make_shared<QString>();
     QProcess::connect(vpn_process, &QProcess::stateChanged, this, [=](QProcess::ProcessState state) {
-        if (state == QProcess::NotRunning) {
-            vpn_pid = 0;
-            vpn_process->deleteLater();
-            GetMainWindow()->neko_set_spmode_vpn(false);
-        }
+        if (state != QProcess::NotRunning) return;
+        const bool mine = *ownPid != 0 && vpn_pid == *ownPid;
+        const bool intentional = vpn_stop_requested;
+        *outBuf += QString::fromLocal8Bit(vpn_process->readAll());
+        const auto code = vpn_process->exitCode();
+        vpn_process->deleteLater();
+        if (!mine) return;
+        vpn_stop_requested = false;
+        vpn_pid = 0;
+        if (intentional) return;
+        GetMainWindow()->neko_set_spmode_vpn(false);
+        vpn_helper_exited(outBuf->trimmed(), code);
     });
     //
     /*
@@ -2734,6 +2854,7 @@ bool MainWindow::StartVPNProcess() {
     vpn_process->setProcessChannelMode(QProcess::MergedChannels);
     QProcess::connect(vpn_process, &QProcess::readyRead, this, [=] {
         const auto text = QString::fromLocal8Bit(vpn_process->readAll());
+        *outBuf += text;
         for (const auto &line: text.split(QChar(10), Qt::SkipEmptyParts)) {
             MW_show_log_ext("tun", line.trimmed());
         }
@@ -2757,11 +2878,11 @@ bool MainWindow::StartVPNProcess() {
      * слэшами она уже однажды свернулась в три при первой же правке. Ошибка
      * такого рода не видна глазом и всплывает на одном пути из тысячи.
      */
-    const auto shellQuoted = "'" + QString(scriptPath).replace("'", R"('\'')") + "'";
-    auto asLiteral = QString("bash " + shellQuoted);
-    asLiteral.replace("\\", "\\\\").replace("\"", "\\\"");
+    // Оба уровня кавычек — в GreenRhythm::TunHelper::macStartCommand, и у него
+    // есть набор: последовательность из четырёх символов для одинарной кавычки
+    // уже однажды свернулась в три при правке, а глазом это не видно.
     vpn_process->start("osascript", {"-e", QStringLiteral("do shell script \"%1\" with administrator privileges")
-                                               .arg(asLiteral)});
+                                               .arg(GreenRhythm::TunHelper::macStartCommand(scriptPath))});
 #else
     vpn_process->start("pkexec", {"bash", scriptPath});
 #endif
@@ -2785,25 +2906,204 @@ bool MainWindow::StartVPNProcess() {
         vpn_process->deleteLater();
         return false;
     }
+    *ownPid = vpn_process->processId();
     // Умирает такой процесс мгновенно: осталось дать ему это сделать.
     if (vpn_process->waitForFinished(1500)) {
-        const auto tail = QString::fromLocal8Bit(vpn_process->readAll()).trimmed();
+        /*
+         * ВЫВОД БЕРЁТСЯ ИЗ НАКОПЛЕННОГО. Свой readAll() здесь всегда пуст:
+         * waitForFinished успевает разослать readyRead и stateChanged, и всё
+         * прочитал обработчик выше. Из-за этого отмена пароля в первые полторы
+         * секунды объяснялась человеку иначе, чем такая же отмена секундой
+         * позже, — одно действие, два разных ответа.
+         */
+        const auto tail = outBuf->trimmed();
+        const auto code = vpn_process->exitCode();
+        vpn_process->deleteLater();
         MW_show_log_ext("tun", tail.isEmpty() ? tr("процесс туннеля завершился сразу") : tail);
+        if (GreenRhythm::TunHelper::looksCancelledExit(code, tail)) {
+            MessageBoxInfo(software_name,
+                           tr("Запрос пароля отменён — туннель не включён.") + "\n\n" +
+                               tr("Включите туннель снова и подтвердите запрос."));
+            return false;
+        }
         MessageBoxWarning(software_name,
                           tr("Туннель запустился и сразу закрылся.") + "\n\n" +
                               tr("Подробности — в журнале приложения, раздел «tun»."));
-        vpn_process->deleteLater();
         return false;
     }
-    vpn_pid = vpn_process->processId(); // actually it's pkexec or bash PID
+    vpn_pid = *ownPid; // на маке это osascript, на Linux — pkexec; сам помощник — их потомок от root
+    vpn_watch_begin();
 #endif
     return true;
+}
+
+/*
+ * НАБЛЮДЕНИЕ ЗА ПОМОЩНИКОМ: журнал вживую и проверка цепочки.
+ *
+ * Помощник пишет журнал в файл рядом с конфигом (см. res/vpn/vpn-run-root.sh):
+ * osascript отдал бы его только после выхода процесса, то есть никогда, пока
+ * туннель жив. Раз в секунду новые строки уходят в журнал приложения под
+ * меткой «tun». Как только появился файл с номером процесса — пароль введён и
+ * ядро запущено, — через несколько секунд проверяется вся цепочка: помощник
+ * жив, устройство поднято, маршрут через него, порт ядра слушает, и наконец
+ * TCP-соединение ИЗ ЭТОГО ПРИЛОЖЕНИЯ проходит — оно идёт по тем же маршрутам,
+ * что и у любой другой программы, и потому проверяет туннель насквозь.
+ * Первое разорванное звено называется человеку словами, а не «не работает».
+ */
+void MainWindow::vpn_watch_begin() {
+    vpn_watch_gen++;
+    vpn_log_offset = 0;
+    vpn_helper_seen_ms = 0;
+    vpn_probe_busy = false;
+    vpn_probe_done = false;
+    if (vpn_watch == nullptr) {
+        vpn_watch = new QTimer(this);
+        vpn_watch->setInterval(1000);
+        connect(vpn_watch, &QTimer::timeout, this, &MainWindow::vpn_watch_tick);
+    }
+    vpn_watch->start();
+}
+
+/**
+ * Дочитать журнал помощника до конца и отдать новые строки в журнал приложения.
+ *
+ * Зовётся не только по таймеру, но и перед каждым приговором: ядро успевает
+ * умереть между двумя оборотами, и решающая строка про причину оставалась
+ * только в мелькнувшем окне — а человек присылает как раз журнал.
+ */
+void MainWindow::vpn_watch_drain() {
+    QStringList fresh;
+    vpn_log_offset = GreenRhythm::TunHelper::readNewLines(
+        GreenRhythm::TunHelper::logPath(QDir::currentPath()), vpn_log_offset, fresh);
+    for (const auto &line: fresh) show_log_impl("[tun] " + line);
+}
+
+void MainWindow::vpn_watch_tick() {
+    if (vpn_pid == 0) {
+        vpn_watch->stop();
+        return;
+    }
+    const auto dir = QDir::currentPath();
+    vpn_watch_drain();
+
+    if (vpn_helper_seen_ms == 0) {
+        const auto pid = GreenRhythm::TunHelper::readPid(dir);
+        if (pid > 0) {
+            vpn_helper_seen_ms = QDateTime::currentMSecsSinceEpoch();
+            // Отметка «пароль принят, ядро пущено» — по ней в присланном журнале
+            // видно, сколько человек искал пароль и когда пошёл отсчёт.
+            show_log_impl("[tun] " + tr("помощник запущен, процесс %1").arg(pid));
+        }
+        return;
+    }
+    if (vpn_probe_done || vpn_probe_busy) return;
+    // Ядру нужно время поднять устройство и маршруты.
+    if (QDateTime::currentMSecsSinceEpoch() - vpn_helper_seen_ms < 3000) return;
+
+    vpn_probe_busy = true;
+    const auto helperPid = GreenRhythm::TunHelper::readPid(dir);
+    const auto socksAddr = NekoGui::dataStore->inbound_address;
+    const int socksPort = NekoGui::dataStore->inbound_socks_port;
+    const int gen = vpn_watch_gen;
+    runOnNewThread([=] {
+        // Спрашивает систему и открывает соединения — только из рабочего потока.
+        const auto chain = NekoGui_sys::ProbeTunChain(helperPid, socksAddr, socksPort);
+        runOnUiThread([=] {
+            // Ответ про ТОТ туннель, который спрашивали. Проверка длится до семи
+            // секунд, и за это время помощника успевают снять и поднять заново.
+            if (gen != vpn_watch_gen) return;
+            vpn_probe_busy = false;
+            if (vpn_pid == 0) return;
+            const auto broken = GreenRhythm::TunHelper::firstBrokenLink(chain, socksAddr, socksPort);
+            if (broken.isEmpty()) {
+                vpn_probe_done = true;
+                show_log_impl("[tun] " + tr("туннель работает: устройство %1, маршрут через %2, соединение через туннель установлено")
+                                             .arg(chain.adapter, chain.routeVia));
+                // Дальше помощник пишет по строке на каждое соединение — то же,
+                // что уже показывает основное ядро. Наблюдение снимается: за его
+                // выходом следит обработчик процесса, а журнал остаётся в файле.
+                show_log_impl("[tun] " + tr("журнал помощника дальше — в файле %1")
+                                             .arg(GreenRhythm::TunHelper::logPath(dir)));
+                vpn_watch->stop();
+                return;
+            }
+            // Не всё поднялось — ждём до 20 секунд с появления помощника, потом говорим.
+            if (QDateTime::currentMSecsSinceEpoch() - vpn_helper_seen_ms < 20000) return;
+            vpn_probe_done = true;
+            vpn_watch_drain(); // причина из журнала — до окна, а не после
+            show_log_impl("[tun] " + tr("проверка цепочки: %1").arg(broken));
+            // Дальше помощник пишет по строке на соединение; следить больше не
+            // за чем, а журнал остаётся в файле целиком.
+            vpn_watch->stop();
+            const auto tail = GreenRhythm::TunHelper::lastLines(GreenRhythm::TunHelper::logPath(dir), 8);
+            MessageBoxWarning(software_name,
+                              tr("Туннель включён, но трафик через него не идёт.") + "\n\n" + broken +
+                                  (tail.isEmpty() ? QString() : "\n\n" + tr("Последние строки помощника:") + "\n" + tail) +
+                                  "\n\n" + tr("Полный журнал помощника: %1").arg(GreenRhythm::TunHelper::logPath(dir)));
+        });
+    });
+}
+
+/*
+ * ПОМОЩНИК ВЫШЕЛ САМ — ЧЕЛОВЕКУ ГОВОРИТСЯ, ПОЧЕМУ. Раньше галка просто
+ * отщёлкивалась: отменённый пароль, упавший скрипт и убитое ядро выглядели
+ * одинаково. Отмена пароля узнаётся по коду -128 в выводе osascript, всё
+ * остальное — по последним строкам журнала помощника.
+ */
+void MainWindow::vpn_helper_exited(const QString &output, int exitCode) {
+    // Сначала дочитать, потом останавливать: ядро умирает за доли секунды после
+    // пароля, и строка с причиной приходит между двумя оборотами таймера.
+    vpn_watch_drain();
+    if (vpn_watch != nullptr) vpn_watch->stop();
+    if (GreenRhythm::TunHelper::looksCancelledExit(exitCode, output)) {
+        MessageBoxInfo(software_name,
+                       tr("Запрос пароля отменён — туннель не включён.") + "\n\n" +
+                           tr("Включите туннель снова и подтвердите запрос."));
+        return;
+    }
+    const auto logFile = GreenRhythm::TunHelper::logPath(QDir::currentPath());
+    const auto tail = GreenRhythm::TunHelper::lastLines(logFile, 8);
+    QString details;
+    if (!tail.isEmpty()) {
+        details = tr("Последние строки помощника:") + "\n" + tail;
+    } else if (!output.isEmpty()) {
+        details = output;
+    } else {
+        details = tr("Помощник не оставил записей в журнале.");
+    }
+    MessageBoxWarning(software_name,
+                      tr("Туннель закрылся сам.") + "\n\n" + details + "\n\n" +
+                          tr("Полный журнал помощника: %1").arg(logFile));
 }
 
 bool MainWindow::StopVPNProcess(bool unconditional) {
     if (unconditional || vpn_pid != 0) {
         bool ok;
-        core_process->processId();
+        // Намеренная остановка: обработчик выхода помощника не гасит режим и не
+        // показывает «туннель закрылся сам». Признак ставится только при живом
+        // помощнике и снимается ниже, если остановка не удалась, — иначе он
+        // сработал бы на следующем самопроизвольном выходе.
+        if (vpn_pid != 0) vpn_stop_requested = true;
+#ifndef Q_OS_WIN
+        /*
+         * ПОМОЩНИК ЕЩЁ НЕ ЗАПУЩЕН — ГАСИМ СВОЙ ЗАПУСКАТЕЛЬ, А НЕ СПРАШИВАЕМ
+         * ПАРОЛЬ ВТОРОЙ РАЗ.
+         *
+         * Пока человек смотрит на окно пароля, файла с номером ещё нет. Обход
+         * тогда никого не находит, выходит с нулём — «сняли», — приложение
+         * забывает номер и гасит режим. А человек следом подтверждает пароль, и
+         * поднимается туннель, за которым уже никто не следит: маршруты всего
+         * мака ведут в ядро, о котором приложение не знает. Запускатель наш
+         * собственный потомок, прав на него не нужно, и вместе с ним закрывается
+         * окно пароля.
+         */
+        if (!unconditional && vpn_pid != 0 &&
+            GreenRhythm::TunHelper::readPid(QDir::currentPath()) == 0) {
+            ::kill(static_cast<pid_t>(vpn_pid), SIGTERM);
+            vpn_pid = 0;
+            return true;
+        }
+#endif
 #ifdef Q_OS_WIN
         auto ret = WinCommander::runProcessElevated(System32Exe("taskkill.exe"), {"/IM", "greenrhythm_core.exe",
                                                                  "/FI",
@@ -2812,8 +3112,26 @@ bool MainWindow::StopVPNProcess(bool unconditional) {
 #else
         QProcess p;
 #ifdef Q_OS_MACOS
+        /*
+         * ОСНОВНОЕ ЯДРО ИСКЛЮЧАЕТСЯ ЯВНО, как и в ветке Windows выше.
+         *
+         * Стояло `pkill -2 -U 0 greenrhythm_core` — «все ядра от root». Пока
+         * интерфейс запущен обычно, от root только помощник, и это работало.
+         * Но у тестировщика интерфейс был запущен от root (в заголовке
+         * «администратор»), значит от root было и основное ядро — и каждое
+         * отключение убивало его вместе с помощником: отказ RPC, перезапуск,
+         * повторное подключение. Двойных кавычек в команде нет намеренно: она
+         * идёт литералом AppleScript, и кавычка внутри разорвала бы его.
+         */
+        /*
+         * НОМЕР ПОМОЩНИКА — ИЗ ФАЙЛА, но безусловная остановка («Сброс» в
+         * настройках туннеля) идёт обходом намеренно: её зовут как раз тогда,
+         * когда состояние потеряно и файл может быть чужим или устаревшим.
+         * Имя процесса перед сигналом проверяется в macStopCommand.
+         */
+        const auto helperPid = unconditional ? 0 : GreenRhythm::TunHelper::readPid(QDir::currentPath());
         p.start("osascript", {"-e", QStringLiteral("do shell script \"%1\" with administrator privileges")
-                                        .arg("pkill -2 -U 0 greenrhythm_core")});
+                                        .arg(GreenRhythm::TunHelper::macStopCommand(helperPid, core_process->processId()))});
 #else
         if (unconditional) {
             p.start("pkexec", {"killall", "-2", "greenrhythm_core"});
@@ -2821,11 +3139,42 @@ bool MainWindow::StopVPNProcess(bool unconditional) {
             p.start("pkexec", {"pkill", "-2", "-P", Int2String(vpn_pid)});
         }
 #endif
-        p.waitForFinished();
-        ok = p.exitCode() == 0;
+        /*
+         * ОЖИДАНИЕ ПРОВЕРЯЕТСЯ. Стояло `p.waitForFinished(); ok = p.exitCode() == 0;`,
+         * а срок у waitForFinished по умолчанию — полминуты, и по его истечении
+         * exitCode ещё не заполнен и равен нулю. То есть запрос пароля, на
+         * который никто не ответил, читался как удачная остановка: vpn_pid
+         * обнулялся, помощник от root оставался жить, а следующее подключение
+         * поднимало второго. Две минуты — с запасом на человека, который отошёл
+         * при открытом окне пароля.
+         */
+        if (p.waitForFinished(120000)) {
+            ok = p.exitStatus() == QProcess::NormalExit && p.exitCode() == 0;
+        } else {
+            p.kill();
+            ok = false;
+        }
 #endif
-        if (!unconditional) {
-            ok ? vpn_pid = 0 : MessageBoxWarning(tr("Error"), tr("Failed to stop Tun process"));
+        if (!ok) vpn_stop_requested = false;
+        if (unconditional) {
+            /*
+             * ПОСЛЕ «СБРОСА» СОСТОЯНИЕ ОБЯЗАНО ОТРАЖАТЬ ДЕЙСТВИТЕЛЬНОСТЬ.
+             *
+             * Признак намеренной остановки гасит сообщение «туннель закрылся
+             * сам» — и заодно оставлял бы переключатель включённым при снятом
+             * помощнике: человек видит «Туннель», а туннеля нет. Поэтому режим
+             * снимается здесь явно, а не обработчиком выхода.
+             */
+            if (ok && vpn_pid != 0) {
+                vpn_pid = 0;
+                neko_set_spmode_vpn(false);
+            }
+        } else {
+            if (ok) {
+                vpn_pid = 0;
+            } else {
+                MessageBoxWarning(tr("Error"), tr("Failed to stop Tun process"));
+            }
         }
         return ok;
     }
