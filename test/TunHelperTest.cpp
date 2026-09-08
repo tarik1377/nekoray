@@ -195,6 +195,48 @@ int main(int argc, char *argv[]) {
         is("«убить все ядра от root» из окна ушло", !mw.contains("\"pkill -2 -U 0 greenrhythm_core\""));
     }
 
+    // ── строковые литералы не разорваны переводом строки ─────────────────
+    //
+    // ПОЧЕМУ ЭТА ПРОВЕРКА ЗДЕСЬ. Ветки macOS и Linux в этих файлах закрыты
+    // условной компиляцией: на Windows их не видит ни компилятор, ни один
+    // набор, и опечатка внутри них доезжает до сборки в CI, а до неё десять
+    // минут. Один такой разрыв уже случился: правка превратила «\n» в живой
+    // перевод строки внутри литерала, и MSVC прошёл мимо, потому что строка
+    // лежала в ветке не своей платформы.
+    //
+    // Проверка грубая намеренно: считаются кавычки в строке, экранированные и
+    // сырые литералы пропускаются. Она не заменяет компилятор — она ловит ровно
+    // тот класс поломки, который у нас нечем поймать иначе.
+    {
+        const QStringList guarded{QStringLiteral("ui/mainwindow.cpp"), QStringLiteral("main/main.cpp"),
+                                  QStringLiteral("sys/ForeignTunnels.cpp"), QStringLiteral("main/TunHelper.cpp")};
+        QStringList broken;
+        for (const auto &path: guarded) {
+            const auto text = slurp(path);
+            if (text.isEmpty()) {
+                broken << path + QStringLiteral(" (не прочитан)");
+                continue;
+            }
+            int lineNo = 0;
+            for (const auto &raw: text.split('\n')) {
+                lineNo++;
+                const auto t = raw.trimmed();
+                if (t.startsWith(QStringLiteral("//")) || t.startsWith('*') ||
+                    t.startsWith(QStringLiteral("/*")) || raw.contains(QStringLiteral("R\"")))
+                    continue;
+                auto cleaned = raw;
+                cleaned.replace(QStringLiteral("\\\\"), QString());
+                cleaned.replace(QStringLiteral("\\\""), QString());
+                if (cleaned.count('"') % 2 == 1) {
+                    broken << QStringLiteral("%1:%2").arg(path).arg(lineNo);
+                }
+            }
+        }
+        is(QStringLiteral("строковые литералы не разорваны переводом строки%1")
+               .arg(broken.isEmpty() ? QString() : QStringLiteral(" — ") + broken.join(QStringLiteral(", "))),
+           broken.isEmpty());
+    }
+
     std::printf("\nпроверок %d, провалов %d\n", checks, fails);
     return fails == 0 ? 0 : 1;
 }

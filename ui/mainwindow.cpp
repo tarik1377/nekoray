@@ -2780,9 +2780,7 @@ bool MainWindow::StartVPNProcess() {
             if (answer != QMessageBox::Yes) return false;
             if (!StopVPNProcess(true)) {
                 MessageBoxWarning(software_name,
-                                  tr("Не удалось снять прежний туннель.") + "
-
-" +
+                                  tr("Не удалось снять прежний туннель.") + "\n\n" +
                                       tr("Скорее всего, запрос прав администратора был отменён. "
                                          "Попробуйте снова и подтвердите его."));
                 return false;
