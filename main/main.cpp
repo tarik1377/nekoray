@@ -11,8 +11,13 @@
 #include <QThread>
 #include <QTimer>
 
+#ifndef Q_OS_WIN
+#include <unistd.h>
+#endif
+
 #include "3rdparty/RunGuard.hpp"
 #include "main/NekoGui.hpp"
+#include "main/TunHelper.hpp"
 
 #include "ui/mainwindow_interface.h"
 
@@ -122,6 +127,22 @@ int main(int argc, char* argv[]) {
     NekoGui::dataStore->flag_debug = true;
 #endif
 
+    /*
+     * ЗАПУЩЕНЫ ЛИ ОТ ROOT — СПРАШИВАЕТСЯ ДО ТОГО, КАК ЧТО-ЛИБО СОЗДАНО.
+     *
+     * Сказать об этом можно только после появления QApplication (окно), а вот
+     * каталоги создаются раньше — и создались бы от root, то есть ровно то, о
+     * чём мы собираемся предупредить, уже случилось бы. Поэтому признак
+     * снимается здесь, работа с каталогами под ним пропускается, а окно
+     * показывается ниже.
+     */
+    const bool running_as_root =
+#ifdef Q_OS_MACOS
+        geteuid() == 0;
+#else
+        false;
+#endif
+
     // dirs & clean
     auto wd = QDir(QApplication::applicationDirPath());
     if (NekoGui::dataStore->flag_use_appdata) {
@@ -132,10 +153,12 @@ int main(int argc, char* argv[]) {
             wd.setPath(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation));
         }
     }
-    if (!wd.exists()) wd.mkpath(wd.absolutePath());
-    if (!wd.exists("config")) wd.mkdir("config");
-    QDir::setCurrent(wd.absoluteFilePath("config"));
-    QDir("temp").removeRecursively();
+    if (!running_as_root) {
+        if (!wd.exists()) wd.mkpath(wd.absolutePath());
+        if (!wd.exists("config")) wd.mkdir("config");
+        if (wd.exists("config")) QDir::setCurrent(wd.absoluteFilePath("config"));
+        QDir("temp").removeRecursively();
+    }
 
     // init QApplication
     delete preQApp;
@@ -203,6 +226,47 @@ int main(int argc, char* argv[]) {
                         "Это обычное поведение системы для программ, скачанных из интернета, "
                         "а не ошибка.\n\n"
                         "Перенесите GreenRhythm в «Программы» и запустите оттуда."));
+        box.exec();
+        return 0;
+    }
+
+    /*
+     * ЗАПУСК ОТ ROOT — ОТКАЗ, А НЕ ПРЕДУПРЕЖДЕНИЕ.
+     *
+     * Так запускают, чтобы «туннель точно заработал», и получают обратное:
+     * файлы настроек записываются от root и при следующем обычном запуске уже
+     * не пишутся; основное ядро тоже становится root, и снятие туннеля,
+     * убирающее «все ядра от root», гасило и его. Замечено у тестировщика:
+     * в заголовке было «администратор», а туннель «не работал». Пароль туннель
+     * спрашивает сам, когда он ему нужен, — root ему не помогает ничем.
+     *
+     * В сообщении — команда починки для тех, кто уже запускал так: без неё
+     * человек увидит «настройки не сохраняются» и не свяжет это с sudo.
+     */
+    if (running_as_root) {
+        const auto owned = wd.absolutePath();
+        QMessageBox box(QMessageBox::Information, "GreenRhythm",
+                        QObject::tr("Запустите GreenRhythm обычным способом, без sudo"),
+                        QMessageBox::Ok, nullptr);
+        QString text =
+            QObject::tr("Сейчас приложение запущено от имени root. Так не нужно: туннель сам "
+                        "спрашивает пароль, когда он ему нужен, а файлы настроек, записанные "
+                        "от root, станут недоступны при обычном запуске.\n\n"
+                        "Закройте это окно и откройте GreenRhythm двойным щелчком из «Программ».");
+        /*
+         * СОВЕТ ПРО ВОЗВРАТ ФАЙЛОВ — ТОЛЬКО ПРО СВОИ ФАЙЛЫ. Под обычным sudo
+         * домашний каталог здесь /var/root, и советовать забрать себе каталог
+         * root значит советовать бессмыслицу. Путь берётся в кавычки той же
+         * функцией, что и везде: пробел в «Application Support» иначе разорвал
+         * бы команду пополам.
+         */
+        if (!owned.startsWith(QStringLiteral("/var/root"))) {
+            text += "\n\n" +
+                    QObject::tr("Если после этого настройки не сохраняются — файлы уже принадлежат root. "
+                                "Верните их себе командой в Терминале:") +
+                    "\n\nsudo chown -R \"$(whoami)\" " + GreenRhythm::TunHelper::shellSingleQuote(owned);
+        }
+        box.setInformativeText(text);
         box.exec();
         return 0;
     }

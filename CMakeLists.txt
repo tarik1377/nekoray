@@ -280,6 +280,7 @@ set(PROJECT_SOURCES
         main/PortHealth.cpp
         main/ProgramTrouble.cpp
         main/Interference.cpp
+        main/TunHelper.cpp
         main/ConnectionRow.cpp
         main/AppFont.cpp
         ui/dialog_interference.cpp
@@ -511,10 +512,20 @@ add_executable(tun_report_test EXCLUDE_FROM_ALL
 target_link_libraries(tun_report_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 target_include_directories(tun_report_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Порядок подъёма и снятия внешнего туннеля — чистые правила, без Qt.
 add_executable(tun_lifecycle_test EXCLUDE_FROM_ALL
         test/TunLifecycleTest.cpp
 )
 target_include_directories(tun_lifecycle_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Помощник внешнего туннеля: кавычки для osascript, разбор route/ifconfig,
+# чтение журнала по мере записи. Исполняется только на маке, проверяется здесь.
+add_executable(tun_helper_test EXCLUDE_FROM_ALL
+        test/TunHelperTest.cpp
+        main/TunHelper.cpp
+)
+target_link_libraries(tun_helper_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+target_include_directories(tun_helper_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(relay_component_test EXCLUDE_FROM_ALL
         test/RelayComponentTest.cpp
@@ -721,6 +732,7 @@ set(GR_TEST_TARGETS
         tun_exclude_test
         tun_report_test
         tun_lifecycle_test
+        tun_helper_test
         route_order_test
         program_trouble_test
         port_health_test
