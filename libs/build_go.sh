@@ -57,7 +57,13 @@ if [ -z "$SING_BOX_VERSION" ]; then
   exit 1
 fi
 echo "sing-box version: $SING_BOX_VERSION"
+# ПРАВКА КЛИЕНТА REALITY (patches/README.md): без неё ядро не соединяется с
+# серверами Xray 26.9.8 и новее. prepare.sh собирает копию sing-box с правкой и
+# go.overlay.mod с replace на неё, а заодно сверяет версию sing-box с копией
+# файла и отказывает при расхождении — под set -e отказ в подстановке
+# останавливает и этот скрипт.
+MODFILE=$(bash _overlay/prepare.sh)
 # Quote each -X value: the Go tool splits -ldflags on whitespace, so an unquoted
 # version would silently become extra arguments for the linker instead of an error.
-go build -v -o $DEST/greenrhythm_core${GO_EXT} -trimpath -ldflags "-w -s -X 'github.com/matsuridayo/libneko/neko_common.Version_neko=$version_standalone' -X 'github.com/sagernet/sing-box/constant.Version=$SING_BOX_VERSION'" -tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api"
+go build -v -modfile "$MODFILE" -o $DEST/greenrhythm_core${GO_EXT} -trimpath -ldflags "-w -s -X 'github.com/matsuridayo/libneko/neko_common.Version_neko=$version_standalone' -X 'github.com/sagernet/sing-box/constant.Version=$SING_BOX_VERSION'" -tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api"
 popd

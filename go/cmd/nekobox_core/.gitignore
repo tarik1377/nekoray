@@ -1,0 +1,3 @@
+# Их пишет _overlay/prepare.sh на каждой сборке (patches/README.md).
+go.overlay.mod
+go.overlay.sum

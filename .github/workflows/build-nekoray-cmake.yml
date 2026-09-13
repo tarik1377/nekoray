@@ -83,7 +83,11 @@ jobs:
         shell: bash
         run: |
           (cd go/grpc_server && go test ./...)
-          (cd go/cmd/nekobox_core && go test -tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api" ./...)
+          # С ТОЙ ЖЕ ПРАВКОЙ SING-BOX, ЧТО И СБОРКА (patches/README.md, _overlay).
+          # Без неё здесь проверялся бы штатный клиент REALITY, а в выпуск шёл бы
+          # исправленный — и reality_mlkem_test.go, который стережёт правку, был
+          # бы красным на ровном месте.
+          (cd go/cmd/nekobox_core && MODFILE=$(bash _overlay/prepare.sh) && go test -modfile "$MODFILE" -tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api" ./...)
           # Свой модуль, поэтому в перечисление выше он не попадал. Здесь
           # лежит проверка на обход каталога при распаковке обновления:
           # не запущенная, она неотличима от отсутствующей.
@@ -393,19 +397,25 @@ jobs:
       # внешнее ядро: xhttp и Reality с постквантовым обменом. Человек увидел бы
       # не «не поддерживается», а молчаливый отказ подключения.
       #
-      # Версия и суммы закреплены так же, как для Windows, и суммы не переписаны
-      # из чужого файла: обе скачаны и посчитаны, а затем сверены с
-      # опубликованными .dgst — совпали. Обновлять пару «версия + сумма» только
-      # вместе и только после проверки.
+      # Версия и суммы закреплены так же, как для Windows. Обновлять пару
+      # «версия + сумма» только вместе и только после проверки.
+      #
+      # v26.9.9 (14.09.2026) — ради серверов Xray 26.9.8+, которые не узнают
+      # клиентов без постквантовой доли X25519MLKEM768 (patches/README.md).
+      # Проверено 13.09.2026 на панели orsana: xray 26.3.27 и 26.7.11 такой
+      # сервер проходят, так что это обновление ради свежести ядра, а не
+      # починка; чинился клиент sing-box. Суммы взяты из опубликованных .dgst
+      # выпуска; шаг ниже сверяет с ними каждую загрузку, и неверная сумма
+      # остановит сборку, а не пропустит чужой файл.
       - name: Fetch pinned xray
         shell: bash
         env:
-          XRAY_VERSION: "v26.3.27"
+          XRAY_VERSION: "v26.9.9"
         run: |
           set -e
           case "${{ matrix.arch }}" in
-            arm64) ASSET="Xray-macos-arm64-v8a.zip"; SHA="2e93a67e8aa1936ecefb307e120830fcbd4c643ab9b1c46a2d0838d5f8409eaf" ;;
-            amd64) ASSET="Xray-macos-64.zip";        SHA="f5b0471d3459eff1b82e48af0aeac186abcc3298210070afbbbd8437a4e8b203" ;;
+            arm64) ASSET="Xray-macos-arm64-v8a.zip"; SHA="b7cf765d60ccc703853d4218c49a1eacc5bca764543b9540bdeaf45c951afc7d" ;;
+            amd64) ASSET="Xray-macos-64.zip";        SHA="32b5d106b9936f3ae2044cd283d9e22749b57fd30b34a58792b86c90018bb5e4" ;;
             *) echo "неизвестная архитектура"; exit 1 ;;
           esac
           mkdir -p deployment
@@ -716,8 +726,10 @@ jobs:
           # ./xray.exe. Pin the version and verify the checksum so every build of a tag is
           # reproducible and a new upstream xray can't silently ride into a release; bump
           # XRAY_VERSION/XRAY_SHA256 deliberately after testing.
-          XRAY_VERSION="v26.3.27"
-          XRAY_SHA256="d004c39288ce9ada487c6f398c7c545f7d749e44bdfdd59dbc9f865afba4e1ad"
+          # v26.9.9: см. комментарий к шагу «Fetch pinned xray» у macOS — там же
+          # откуда сумма и что именно проверено на живом сервере.
+          XRAY_VERSION="v26.9.9"
+          XRAY_SHA256="244deaba2098c2964e49bba90df3707777e5f5f428a82d2f29604015f24beec2"
           curl -fsSL -o /tmp/xray.zip \
             "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-windows-64.zip"
           echo "${XRAY_SHA256}  /tmp/xray.zip" | sha256sum -c -
