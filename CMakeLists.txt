@@ -637,6 +637,22 @@ target_include_directories(widget_lifetime_test PRIVATE
         ${CMAKE_BINARY_DIR}/greenrhythm_autogen/include)
 target_link_libraries(widget_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg)
 
+# КНОПКА ПИТАНИЯ НАЖИМАЕТСЯ МЫШЬЮ. Нажатие отдаётся окну, а не кнопке: ломался
+# именно поиск виджета под курсором (ореол, прозрачный для мыши вместе с кнопкой
+# внутри), и прямой вызов кнопки этого не увидел бы. Оболочка собирается тем же
+# набором файлов, что и у сторожа выше.
+add_executable(power_button_test EXCLUDE_FROM_ALL
+        test/PowerButtonTest.cpp
+        ui/MainShell.cpp
+        ui/Icons.cpp
+        ui/ServerCardDelegate.cpp
+        res/neko.qrc
+)
+set_property(TARGET power_button_test PROPERTY AUTORCC ON)
+set_property(TARGET power_button_test PROPERTY AUTOMOC ON)
+target_include_directories(power_button_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(power_button_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg)
+
 # План запуска winws — золотым набором. Аргументы строятся один раз и уезжают
 # в кернел-драйвер: ошибка в порядке профилей или пустой список означают не
 # «не сработало», а «дурим весь трафик машины». Набор чистый: ни сети, ни
@@ -737,6 +753,7 @@ set(GR_TEST_TARGETS
         program_trouble_test
         port_health_test
         widget_lifetime_test
+        power_button_test
         network_repair_test
         dpi_plan_test
         interference_test

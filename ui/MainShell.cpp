@@ -177,9 +177,12 @@ namespace GreenRhythm {
      */
     class PowerGlow : public QWidget {
     public:
-        explicit PowerGlow(QWidget *parent) : QWidget(parent) {
-            setAttribute(Qt::WA_TransparentForMouseEvents);
-        }
+        // Qt::WA_TransparentForMouseEvents здесь стоять НЕ ДОЛЖЕН, хоть и просится.
+        // Кнопка питания — ребёнок ореола, а Qt снимает доставку мыши с виджета
+        // ВМЕСТЕ С ДЕТЬМИ: с этим флагом кнопка не нажималась мышью с 1.8.0 по
+        // 1.8.2. Нажатие мимо кнопки ореол и без флага не удерживает —
+        // необработанное, оно уходит родителю. Сторож: test/PowerButtonTest.cpp.
+        explicit PowerGlow(QWidget *parent) : QWidget(parent) {}
         void set(const QColor &c, bool on) {
             color = c;
             active = on;
@@ -421,8 +424,9 @@ namespace GreenRhythm {
         // системе, и на разных машинах был разной толщины и высоты.
         power->setIconSize(QSize(64, 64));
         connect(power, &QPushButton::clicked, this, &MainShell::connectToggled);
-        // Кнопка лежит поверх ореола: у того размер с запасом в 40 точек по
-        // кругу, и он прозрачен для мыши — нажимается сама кнопка.
+        // Кнопка лежит внутри ореола: у того размер с запасом в 40 точек по
+        // кругу. Прозрачным для мыши ореол не делать — вместе с ним оглохнет и
+        // кнопка (см. PowerGlow).
         glow = new PowerGlow(page);
         glow->setFixedSize(248, 248);
         auto *glowBox = new QGridLayout(glow);
