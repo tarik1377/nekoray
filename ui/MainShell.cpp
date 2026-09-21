@@ -21,17 +21,17 @@ namespace GreenRhythm {
         // Токены темы — в одном месте. Палитрой их не задать: таблица стилей Qt
         // перекрывает QPalette, и цвет, выставленный палитрой, молча не
         // применяется. Значения те же, что в res/theme/feiyangqingyun/qss/modern.css.
-        constexpr auto kAccent = "#3fb950";
-        constexpr auto kAccentDim = "#2ea043";
-        constexpr auto kSurface = "#1e2126";
-        constexpr auto kSurfaceUp = "#262a30";
+        constexpr auto kAccent = "#bad65b";
+        constexpr auto kAccentDim = "#a9c64b";
+        constexpr auto kSurface = "#0c1710";
+        constexpr auto kSurfaceUp = "#17251a";
         // Колонка ТЕМНЕЕ страницы, карточки СВЕТЛЕЕ. Три яруса вместо одного:
         // так глубина читается без рамок. Те же значения — в modern.css; менять
         // только парой.
-        constexpr auto kSidebar = "#181b20";
-        constexpr auto kText = "#e4e6eb";
-        constexpr auto kMuted = "#9aa0a8";
-        constexpr auto kLine = "#2f343b";
+        constexpr auto kSidebar = "#0a140d";
+        constexpr auto kText = "#e8eee4";
+        constexpr auto kMuted = "#99a795";
+        constexpr auto kLine = "#293923";
         constexpr auto kAmber = "#e3a008";
         constexpr auto kRed = "#e5484d";
 
@@ -95,8 +95,8 @@ namespace GreenRhythm {
             b->setStyleSheet(QStringLiteral(
                                  "QPushButton { border: none; border-radius: 9px;"
                                  " color: %1; background: %2; padding: 0 12px; }"
-                                 "QPushButton:hover { color: %3; background: #2e333a; }"
-                                 "QPushButton:checked { background: rgba(63,185,80,0.18); color: %4; }")
+                                 "QPushButton:hover { color: %3; background: #21331f; }"
+                                 "QPushButton:checked { background: rgba(186,214,91,0.18); color: %4; }")
                                  .arg(kMuted, kSurfaceUp, kText, kAccent));
             return b;
         }
@@ -121,8 +121,7 @@ namespace GreenRhythm {
         QWidget *tile(QWidget *p, const QString &caption, QLabel **value, const char *valueColor, double scale) {
             auto *card = new QWidget(p);
             card->setObjectName(QStringLiteral("grTile"));
-            card->setStyleSheet(QStringLiteral("QWidget#grTile { background: %1; border-radius: 12px; }")
-                                    .arg(QString::fromLatin1(kSurfaceUp)));
+            card->setStyleSheet(QStringLiteral("QWidget#grTile { background: transparent; border-radius: 12px; }"));
             auto *v = new QVBoxLayout(card);
             v->setContentsMargins(14, 10, 14, 10);
             v->setSpacing(2);
@@ -228,16 +227,14 @@ namespace GreenRhythm {
 
     QWidget *MainShell::buildSidebar() {
         auto *bar = new QWidget(this);
-        // 236, а не 216: в колонку вернулись режимы и инструменты, и на прежней
-        // ширине «Обновить подписку» резалось до «овить подп». Снимок это
-        // показал до того, как увидел бы человек.
-        bar->setFixedWidth(236);
+        // Compact navigation; secondary tools stay available in a disclosure.
+        bar->setFixedWidth(220);
         bar->setObjectName(QStringLiteral("grSidebar"));
         bar->setStyleSheet(QStringLiteral("QWidget#grSidebar { background: %1; border-right: 1px solid %2; }")
                                .arg(kSidebar, kLine));
 
         auto *box = new QVBoxLayout(bar);
-        box->setContentsMargins(16, 16, 16, 14);
+        box->setContentsMargins(12, 20, 12, 16);
         box->setSpacing(6);
 
         // Шапка: имя и точка состояния. Точка — самый дешёвый способ ответить на
@@ -248,7 +245,7 @@ namespace GreenRhythm {
         big.setBold(true);
         big.setPointSizeF(big.pointSizeF() * 1.25);
         title->setFont(big);
-        title->setStyleSheet(QStringLiteral("color: %1;").arg(kText));
+        title->setStyleSheet(QStringLiteral("color: %1;").arg(kAccent));
         head->addWidget(title, 1);
 
         stateDot = new QLabel(bar);
@@ -306,7 +303,7 @@ namespace GreenRhythm {
                                  "QPushButton { text-align: left; padding-left: 14px; border: none;"
                                  " border-radius: 8px; color: %1; background: transparent; }"
                                  "QPushButton:hover { background: %2; }"
-                                 "QPushButton:checked { background: rgba(63,185,80,0.16); color: %3;"
+                                 "QPushButton:checked { background: rgba(186,214,91,0.16); color: %3;"
                                  " font-weight: bold; }")
                                  .arg(kMuted, kSurfaceUp, kAccent));
             const int page = item.page;
@@ -320,13 +317,27 @@ namespace GreenRhythm {
         // не живут: они про подключение и стоят на его странице, под кнопкой,
         // — колонка остаётся навигации и инструментам.
         box->addSpacing(10);
-        box->addWidget(caption(bar, tr("ИНСТРУМЕНТЫ")));
+        auto *settings = tool(bar, tr("Настройки"));
+        settings->setMinimumHeight(38);
+        settings->setIcon(Icons::icon(QStringLiteral("gr-sliders"), QColor(kMuted), QColor(kAccent), 19));
+        connect(settings, &QPushButton::clicked, this, &MainShell::settingsRequested);
+        box->addWidget(settings);
+        auto *toolsToggle = tool(bar, tr("Инструменты ▸"));
+        toolsToggle->setCheckable(true);
+        box->addWidget(toolsToggle);
+        auto *toolsPanel = new QWidget(bar);
+        toolsPanel->setVisible(false);
+        connect(toolsToggle, &QPushButton::toggled, toolsPanel, &QWidget::setVisible);
+        connect(toolsToggle, &QPushButton::toggled, toolsToggle, [toolsToggle](bool open) {
+            toolsToggle->setText(open ? tr("Инструменты ▾") : tr("Инструменты ▸"));
+        });
         {
             // РОВНЫМ СПИСКОМ, а не сеткой. Сетка «две короткие в ряд, две
             // длинные во всю ширину» читалась как четыре кнопки разного сорта.
             // Это один сорт — инструменты, и стоят они одинаково: строкой, с
             // подписью слева, как пункты навигации выше, только тише.
-            auto *list = new QVBoxLayout();
+            auto *list = new QVBoxLayout(toolsPanel);
+            list->setContentsMargins(0, 0, 0, 0);
             list->setSpacing(0);
             auto row = [&](const QString &text, const QString &icon, auto signal) {
                 auto *b = tool(bar, text);
@@ -344,8 +355,7 @@ namespace GreenRhythm {
 #endif
             row(tr("Обновить подписку"), QStringLiteral("gr-refresh"), &MainShell::updateSubscriptionRequested);
             row(tr("Проверить обновление"), QStringLiteral("gr-download"), &MainShell::checkUpdateRequested);
-            row(tr("Настройки"), QStringLiteral("gr-sliders"), &MainShell::settingsRequested);
-            box->addLayout(list);
+            box->addWidget(toolsPanel);
         }
         // Воздух между инструментами и карточками — ДО растяжки. На высоте 720
         // растяжка сжимается в ноль, и без этого зазора карточка «Сейчас»
@@ -388,15 +398,15 @@ namespace GreenRhythm {
         box->addWidget(subBlock);
 
         auto *add = new QPushButton(tr("Добавить сервер"), bar);
-        add->setIcon(Icons::icon(QStringLiteral("gr-plus"), QColor("#08170c"), QColor("#08170c"), 16));
+        add->setIcon(Icons::icon(QStringLiteral("gr-plus"), QColor(kAccent), QColor(kAccent), 16));
         add->setIconSize(QSize(16, 16));
         add->setCursor(Qt::PointingHandCursor);
         add->setMinimumHeight(42);
         add->setStyleSheet(QStringLiteral(
-                               "QPushButton { background: %1; color: #08170c; border: none;"
+                               "QPushButton { background: rgba(186,214,91,0.12); color: %1; border: 1px solid %2;"
                                " border-radius: 10px; font-weight: bold; }"
-                               "QPushButton:hover { background: %2; }")
-                               .arg(kAccent, kAccentDim));
+                               "QPushButton:hover { background: rgba(186,214,91,0.20); }")
+                               .arg(kAccent, kLine));
         connect(add, &QPushButton::clicked, this, &MainShell::addServerRequested);
         box->addWidget(add);
 
@@ -406,10 +416,29 @@ namespace GreenRhythm {
     QWidget *MainShell::buildConnectPage() {
         auto *page = new QWidget(this);
         auto *box = new QVBoxLayout(page);
-        box->setContentsMargins(40, 40, 40, 40);
+        box->setContentsMargins(28, 24, 28, 24);
         box->setSpacing(0);
-        box->addStretch(1);
+        auto *brand = new QLabel(QStringLiteral("GreenRhythm"), page);
+        QFont brandFont = brand->font();
+        brandFont.setPointSizeF(brandFont.pointSizeF() * 1.65);
+        brandFont.setBold(true);
+        brand->setFont(brandFont);
+        brand->setStyleSheet(QStringLiteral("color: %1;").arg(kAccent));
+        box->addWidget(brand, 0, Qt::AlignHCenter);
+        box->addSpacing(12);
 
+        {
+            auto *tiles = new QWidget(page);
+            tiles->setFixedWidth(460);
+            auto *row = new QHBoxLayout(tiles);
+            row->setContentsMargins(0, 0, 0, 0);
+            row->setSpacing(8);
+            row->addWidget(tile(tiles, tr("через VPN"), &liveVpn, kAccent, 1.35), 1);
+            row->addWidget(tile(tiles, tr("напрямую"), &liveDirect, kText, 1.35), 1);
+            row->addWidget(tile(tiles, tr("трафик"), &liveTraffic, kText, 1.05), 2);
+            box->addWidget(tiles, 0, Qt::AlignHCenter);
+        }
+        box->addSpacing(12);
         // Кнопка — главный предмет на экране, и она обязана быть крупной. Прежде
         // подключение включалось галкой «Режим TUN» в углу панели инструментов:
         // человек не находил её и не понимал, включено у него что-нибудь или нет.
@@ -418,27 +447,27 @@ namespace GreenRhythm {
         // QPushButton, и при равной точности выигрывает не наше. Круглая кнопка
         // от этого получалась квадратной — скругление просто не применялось.
         power->setObjectName(QStringLiteral("grPower"));
-        power->setFixedSize(168, 168);
+        power->setFixedSize(144, 144);
         power->setCursor(Qt::PointingHandCursor);
         // Значок, а не символ ⏻ из шрифта: символ рисовался тем, что нашлось в
         // системе, и на разных машинах был разной толщины и высоты.
         power->setIconSize(QSize(64, 64));
         connect(power, &QPushButton::clicked, this, &MainShell::connectToggled);
-        // Кнопка лежит внутри ореола: у того размер с запасом в 40 точек по
+        // Кнопка лежит внутри ореола: у того размер с запасом в 20 точек по
         // кругу. Прозрачным для мыши ореол не делать — вместе с ним оглохнет и
         // кнопка (см. PowerGlow).
         glow = new PowerGlow(page);
-        glow->setFixedSize(248, 248);
+        glow->setFixedSize(184, 184);
         auto *glowBox = new QGridLayout(glow);
         glowBox->setContentsMargins(0, 0, 0, 0);
         glowBox->addWidget(power, 0, 0, Qt::AlignCenter);
         box->addWidget(glow, 0, Qt::AlignHCenter);
-        box->addSpacing(20);
+        box->addSpacing(10);
 
         powerHint = muted(page, tr("Нажмите для подключения"), 1.15);
         powerHint->setAlignment(Qt::AlignHCenter);
         box->addWidget(powerHint);
-        box->addSpacing(22);
+        box->addSpacing(16);
 
         // РЕЖИМ — ЗДЕСЬ, ПОД КНОПКОЙ, А НЕ В КОЛОНКЕ. Режим — это свойство
         // подключения, и место ему рядом с тем, что он меняет. Слева
@@ -446,9 +475,16 @@ namespace GreenRhythm {
         // отдельными фишками: они не исключают друг друга.
         {
             auto *strip = new QWidget(page);
-            auto *row = new QHBoxLayout(strip);
+            auto *stripBox = new QVBoxLayout(strip);
+            stripBox->setContentsMargins(0, 0, 0, 0);
+            stripBox->setSpacing(8);
+            auto *row = new QHBoxLayout();
             row->setContentsMargins(0, 0, 0, 0);
             row->setSpacing(10);
+            stripBox->addLayout(row);
+            auto *options = new QHBoxLayout();
+            options->setSpacing(8);
+            stripBox->addLayout(options);
 
             auto *seg = new QWidget(strip);
             seg->setObjectName(QStringLiteral("grSeg"));
@@ -488,14 +524,14 @@ namespace GreenRhythm {
                 tr("Обычно игры идут мимо туннеля: пинг ниже, адрес российский, античит спокоен.\n"
                "Включите, если серверы игры фильтруются у провайдера и мимо туннеля она не работает."));
             connect(gamesToggle, &QPushButton::clicked, this, &MainShell::gamesViaTunnelToggled);
-            row->addWidget(gamesToggle);
+            options->addWidget(gamesToggle);
 
             dpiToggle = toggle(strip, tr("Обход фильтрации"));
             dpiToggle->setToolTip(
                 tr("Дробит приветствие TLS у того, что идёт мимо туннеля, — игры и античиты остаются на своём адресе,\n"
                "а фильтр провайдера не видит имени сервера. Без драйвера, внутри ядра. Против простых фильтров; если не помогло — скажите."));
             connect(dpiToggle, &QPushButton::clicked, this, &MainShell::dpiFragmentToggled);
-            row->addWidget(dpiToggle);
+            options->addWidget(dpiToggle);
 
             // ВТОРОЙ ЯРУС — ОТДЕЛЬНОЙ ФИШКОЙ, А НЕ ГАЛКОЙ В НАСТРОЙКАХ. Он
             // качает чужую программу и поднимает системный драйвер; такое
@@ -507,7 +543,10 @@ namespace GreenRhythm {
                    "(проект zapret, лицензия MIT) и системный драйвер. Скачивается по запросу.\n\n"
                    "Пока запущена игра с античитом, обход не включается и гаснет сам — бан отменить нельзя."));
             connect(dpiModuleToggle, &QPushButton::clicked, this, &MainShell::dpiModuleToggled);
-            row->addWidget(dpiModuleToggle);
+            options->addWidget(dpiModuleToggle);
+#ifndef Q_OS_WIN
+            dpiModuleToggle->hide(); // winws is only available on Windows
+#endif
 
             box->addWidget(strip, 0, Qt::AlignHCenter);
 
@@ -521,7 +560,7 @@ namespace GreenRhythm {
             box->addSpacing(6);
             box->addWidget(dpiModuleState, 0, Qt::AlignHCenter);
         }
-        box->addSpacing(26);
+        box->addSpacing(18);
 
         auto *caption = muted(page, tr("ТЕКУЩИЙ СЕРВЕР"), 0.85);
         QFont cf = caption->font();
@@ -537,8 +576,8 @@ namespace GreenRhythm {
         currentCard = new QWidget(page);
         currentCard->setFixedWidth(460);
         currentCard->setObjectName(QStringLiteral("grCurrent"));
-        currentCard->setStyleSheet(QStringLiteral("QWidget#grCurrent { background: %1; border-radius: 12px; }")
-                                       .arg(kSurfaceUp));
+        currentCard->setStyleSheet(QStringLiteral("QWidget#grCurrent { background: %1; border: 1px solid %2; border-radius: 14px; }")
+                                       .arg(kSurfaceUp, kLine));
         auto *cardBox = new QVBoxLayout(currentCard);
         cardBox->setContentsMargins(18, 14, 18, 14);
         cardBox->setSpacing(4);
@@ -588,7 +627,7 @@ namespace GreenRhythm {
                                       " border-right: 5px solid transparent; border-top: 6px solid %4;"
                                       " width: 0; height: 0; margin-right: 10px; }"
                                       "QComboBox QAbstractItemView { background: %1; color: %2;"
-                                      " selection-background-color: rgba(63,185,80,0.18); border: 1px solid %3; }")
+                                      " selection-background-color: rgba(186,214,91,0.18); border: 1px solid %3; }")
                                       .arg(kSurfaceUp, kText, kLine, kAccent));
         serverPick->addItem(tr("Автовыбор — самый быстрый"), -1);
         // activated, а не currentIndexChanged: второе срабатывает и от нашей же
@@ -598,21 +637,6 @@ namespace GreenRhythm {
         });
         box->addWidget(serverPick, 0, Qt::AlignHCenter);
 
-        // ЖИВЫЕ ЧИСЛА — ЗДЕСЬ, ПОД СЕРВЕРОМ, а не в колонке. Они про это
-        // подключение: сколько идёт через него и сколько мимо. В колонке они
-        // висели на каждой странице и ни на одной не были к месту.
-        box->addSpacing(14);
-        {
-            auto *tiles = new QWidget(page);
-            tiles->setFixedWidth(460);
-            auto *row = new QHBoxLayout(tiles);
-            row->setContentsMargins(0, 0, 0, 0);
-            row->setSpacing(8);
-            row->addWidget(tile(tiles, tr("через VPN"), &liveVpn, kAccent, 1.35), 1);
-            row->addWidget(tile(tiles, tr("напрямую"), &liveDirect, kText, 1.35), 1);
-            row->addWidget(tile(tiles, tr("трафик"), &liveTraffic, kText, 1.05), 2);
-            box->addWidget(tiles, 0, Qt::AlignHCenter);
-        }
         // Под плитками — две ссылки: список исключений и разбор поломок. Оба
         // стояли в колонке кнопками; кнопка обещает действие, а это вопросы,
         // которые задают, глядя на цифры выше.
@@ -794,7 +818,7 @@ namespace GreenRhythm {
                 break;
             case State::Connected:
                 ring = glyph = kAccent;
-                fill = QStringLiteral("rgba(63,185,80,0.12)");
+                fill = QStringLiteral("rgba(186,214,91,0.12)");
                 hint = tr("Подключено — нажмите, чтобы отключить");
                 break;
             case State::Failed:
@@ -811,15 +835,17 @@ namespace GreenRhythm {
                                     .arg(next == State::Connected ? QString(kAccent)
                                                                   : QString(kLine)));
         power->setEnabled(enabled);
+        power->setAccessibleName(hint);
+        power->setToolTip(hint);
         power->setStyleSheet(
-            QStringLiteral("QPushButton#grPower { min-width: 168px; max-width: 168px;"
-                           " min-height: 168px; max-height: 168px; padding: 0;"
-                           " border-radius: 84px; color: %1; background: %2;"
-                           " border: 3px solid %3; }"
+            QStringLiteral("QPushButton#grPower { min-width: 144px; max-width: 144px;"
+                           " min-height: 144px; max-height: 144px; padding: 0;"
+                           " border-radius: 72px; color: %1; background: %2;"
+                           " border: 2px solid %3; }"
                            "QPushButton#grPower:hover { border-color: %4; }")
                 .arg(glyph, fill, ring, next == State::Connected ? QString(kAccent)
                                                                  : QString(kAccent)));
-        power->setIcon(QIcon(Icons::pixmap(QStringLiteral("gr-power"), QColor(glyph), 64)));
+        power->setIcon(QIcon(Icons::pixmap(next == State::Connected ? QStringLiteral("gr-shield-check") : QStringLiteral("gr-power"), QColor(glyph), 64)));
         // Ореол только у живых состояний: подключено — акцент, подключаюсь —
         // янтарь, не вышло — красный. В покое кнопка стоит на ровном фоне.
         if (glow != nullptr) glow->set(QColor(glyph), next != State::Idle);
@@ -847,7 +873,7 @@ namespace GreenRhythm {
             f.setLetterSpacing(QFont::AbsoluteSpacing, 0.6);
             chip->setFont(f);
             chip->setStyleSheet(QStringLiteral(
-                                    "color: %1; background: rgba(63,185,80,0.14);"
+                                    "color: %1; background: rgba(186,214,91,0.14);"
                                     " border: none; border-radius: 6px; padding: 2px 7px;")
                                     .arg(kAccent));
             box->addWidget(chip);

@@ -9,12 +9,12 @@ namespace GreenRhythm {
     namespace {
 
         // Те же токены, что в теме и в оболочке.
-        const QColor kAccent(0x3f, 0xb9, 0x50);
-        const QColor kText(0xe4, 0xe6, 0xeb);
-        const QColor kMuted(0x9a, 0xa0, 0xa8);
-        const QColor kLine(0x2f, 0x34, 0x3b);
-        const QColor kCard(0x22, 0x26, 0x2b);
-        const QColor kCardHover(0x28, 0x2d, 0x33);
+        const QColor kAccent(0xba, 0xd6, 0x5b);
+        const QColor kText(0xe8, 0xee, 0xe4);
+        const QColor kMuted(0x99, 0xa7, 0x95);
+        const QColor kLine(0x29, 0x39, 0x23);
+        const QColor kCard(0x12, 0x21, 0x16);
+        const QColor kCardHover(0x21, 0x33, 0x1f);
         const QColor kAmber(0xe3, 0xa0, 0x08);
         const QColor kRed(0xe5, 0x48, 0x4d);
 
@@ -75,7 +75,7 @@ namespace GreenRhythm {
         QRectF card = QRectF(option.rect).adjusted(6, 4, -6, -4);
         QPainterPath path;
         path.addRoundedRect(card, 10, 10);
-        painter->fillPath(path, selected ? QColor(63, 185, 80, 38)
+        painter->fillPath(path, selected ? QColor(186, 214, 91, 28)
                                          : (hovered ? kCardHover : kCard));
         if (selected) {
             painter->setPen(QPen(kAccent, 1.5));
