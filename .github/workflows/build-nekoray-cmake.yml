@@ -7,9 +7,13 @@ on:
         description: "Release Tag"
         required: true
       publish:
-        description: "Publish release (yes/no)"
+        # ПО УМОЛЧАНИЮ — НЕТ. С 21.09.2026 у репозитория есть соавтор, и «Run
+        # workflow» с настройками по умолчанию выпускал бы его сборку людям.
+        # Выпуск — решение владельца: yes он ставит сам, а шаг публикации ниже
+        # примет его только из main и только от него.
+        description: "Publish release (yes/no) — только владелец и только из main"
         required: false
-        default: "yes"
+        default: "no"
   # СОБИРАЕМ И РАБОЧИЕ ВЕТКИ, а не только main.
   #
   # Раньше здесь стоял один main, и это давало ровно ту картину, из-за которой
@@ -25,8 +29,12 @@ on:
   pull_request:
     branches: [main]
 
+# ПРАВО ПИСАТЬ В РЕПОЗИТОРИЙ — ТОЛЬКО У ПУБЛИКАЦИИ. Прежде contents: write
+# стоял здесь на весь прогон: его получала каждая сборка каждой ветки и любой
+# сторонний шаг внутри неё. Собирать можно и с чтением; писать нужно одному
+# publish — создать выпуск и залить файлы, — и там право выдано отдельно.
 permissions:
-  contents: write
+  contents: read
 
 # ЯДРО КЛИЕНТА ПРИБИТО КОММИТОМ.
 #
@@ -675,6 +683,9 @@ jobs:
       && needs.build-windows.result == 'success'
       && needs.build-go.result == 'success'
     runs-on: ubuntu-latest
+    # Единственный job, которому нужна запись: выпуск и его файлы.
+    permissions:
+      contents: write
     # build-macos ЗДЕСЬ НАМЕРЕННО НЕТ.
     #
     # Это главная ловушка всей затеи с маком, и попасть в неё легко: кажется
@@ -788,8 +799,35 @@ jobs:
           name: GreenRhythm-Release-${{ github.sha }}
           path: deployment
 
+      # ВЫПУСК — ТОЛЬКО ВЛАДЕЛЕЦ И ТОЛЬКО ИЗ MAIN. Запускать сборку может любой
+      # соавтор, а выпуск уходит людям обновлением. Отказ громкий: молча
+      # пропущенный шаг выглядел бы как вышедший выпуск.
+      #
+      # Это защита от ошибки, а не от умысла: со своей ветки соавтор запускает
+      # свой файл сборки, и эти строки там можно убрать. От умысла защищает
+      # сайт — он раздаёт только выпуск, выложенный прогоном владельца из main
+      # (verdant-vibe, src/server/utils/releaseProvenance.js).
+      #
+      # Имена — через env, а не подстановкой в текст скрипта: имя ветки
+      # выбирает тот, кто её создал, и $(…) в нём исполнился бы.
+      - name: Publish is the owner's call
+        if: >-
+          github.event.inputs.publish == 'yes'
+          && (github.ref != 'refs/heads/main' || github.triggering_actor != github.repository_owner)
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+          WHO: ${{ github.triggering_actor }}
+          REF: ${{ github.ref_name }}
+        run: |
+          echo "::error::Выпуск публикует только $OWNER и только из main. Запустил: $WHO, ветка: $REF. Сборка лежит в артефактах этого прогона."
+          exit 1
+
       - name: Create GitHub Release
-        if: github.event.inputs.publish == 'yes'
+        if: >-
+          github.event.inputs.publish == 'yes'
+          && github.ref == 'refs/heads/main'
+          && github.triggering_actor == github.repository_owner
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag }}
