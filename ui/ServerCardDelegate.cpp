@@ -1,4 +1,5 @@
 #include "ui/ServerCardDelegate.hpp"
+#include "ui/Icons.hpp"
 
 #include <QAbstractItemModel>
 #include <QPainter>
@@ -18,7 +19,7 @@ namespace GreenRhythm {
         const QColor kAmber(0xe3, 0xa0, 0x08);
         const QColor kRed(0xe5, 0x48, 0x4d);
 
-        constexpr int kRowHeight = 62;
+        constexpr int kRowHeight = 76;
         constexpr int kPad = 14;
 
         /**
@@ -100,7 +101,7 @@ namespace GreenRhythm {
         const qreal midY = card.center().y();
         painter->setPen(Qt::NoPen);
         painter->setBrush(selected ? kAccent : kLine);
-        painter->drawEllipse(QPointF(dotX, midY), 4.5, 4.5);
+        painter->drawPixmap(QPointF(card.left() + kPad, midY - 11), Icons::pixmap("gr-nav-servers", selected ? kAccent : kMuted, 22));
 
         // Пилюля задержки — справа, чтобы взгляд шёл «имя … насколько быстро».
         qreal rightEdge = card.right() - kPad;
@@ -126,7 +127,7 @@ namespace GreenRhythm {
         // Имя — крупно и белым. Подпись под ним — мелко и серым: протокол с
         // адресом человеку не нужны, но нужны поддержке, поэтому они не исчезают
         // совсем, а уходят на второй план.
-        const qreal textLeft = dotX + 16;
+        const qreal textLeft = card.left() + kPad + 36;
         const qreal textWidth = rightEdge - textLeft;
 
         QFont nameFont = option.font;

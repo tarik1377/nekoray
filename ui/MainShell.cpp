@@ -5,7 +5,12 @@
 #include <QPainter>
 #include <QRadialGradient>
 
-#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QLineEdit>
+#include <QListWidget>
+#include <QMenu>
+#include <QScrollArea>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -81,24 +86,33 @@ namespace GreenRhythm {
          * Не галка: галка в тёмной теме читается плохо, а состояние режима
          * человек должен видеть с расстояния — заливкой, а не крестиком.
          */
-        QPushButton *toggle(QWidget *p, const QString &text) {
-            auto *b = new QPushButton(text, p);
-            b->setCheckable(true);
-            b->setCursor(Qt::PointingHandCursor);
-            b->setMinimumHeight(32);
-            // Без жирного во включённом состоянии: жирный шире обычного, фишка
-            // прыгала по ширине и резала собственную подпись. Состояние читается
-            // по заливке и цвету, этого достаточно.
-            // Тем же языком, что кнопки темы: мягкая заливка, без обводки.
-            // Обведённые фишки рядом с залитым переключателем — два языка в
-            // одной строке, и это читалось как заимствование из веба 2015 года.
-            b->setStyleSheet(QStringLiteral(
-                                 "QPushButton { border: none; border-radius: 9px;"
-                                 " color: %1; background: %2; padding: 0 12px; }"
-                                 "QPushButton:hover { color: %3; background: #21331f; }"
-                                 "QPushButton:checked { background: rgba(186,214,91,0.18); color: %4; }")
-                                 .arg(kMuted, kSurfaceUp, kText, kAccent));
-            return b;
+        class ModeSwitch final : public QPushButton {
+        public:
+            explicit ModeSwitch(QWidget *parent) : QPushButton(parent) {
+                setCheckable(true);
+                setCursor(Qt::PointingHandCursor);
+                setFocusPolicy(Qt::StrongFocus);
+                setStyleSheet("min-width: 52px; max-width: 52px; min-height: 30px; max-height: 30px; padding: 0; border: none;");
+                setFixedSize(52, 30);
+            }
+        protected:
+            void paintEvent(QPaintEvent *) override {
+                QPainter painter(this); painter.setRenderHint(QPainter::Antialiasing);
+                const QRectF track(2, 3, width() - 4, height() - 6);
+                QColor fill(isChecked() ? kAccent : kLine);
+                if (!isEnabled()) fill.setAlpha(100);
+                painter.setPen(Qt::NoPen); painter.setBrush(fill); painter.drawRoundedRect(track, 12, 12);
+                painter.setBrush(QColor(isChecked() ? kSidebar : kText));
+                const qreal x = isChecked() ? width() - 16 : 16;
+                painter.drawEllipse(QPointF(x, height() / 2.0), isDown() ? 8.0 : 9.0, 9.0);
+                if (hasFocus()) { painter.setBrush(Qt::NoBrush); painter.setPen(QPen(QColor(kAccent), 1)); painter.drawRoundedRect(QRectF(0.5, 0.5, width()-1, height()-1), 14, 14); }
+            }
+        };
+
+        QPushButton *toggle(QWidget *parent, const QString &text) {
+            auto *button = new ModeSwitch(parent);
+            button->setAccessibleName(text);
+            return button;
         }
 
         /**
@@ -218,480 +232,217 @@ namespace GreenRhythm {
         row->addWidget(buildSidebar(), 0);
 
         pages = new QStackedWidget(this);
-        pages->setStyleSheet(QStringLiteral("background: %1;").arg(kSurface));
+        pages->setObjectName("grPages");
+        pages->setStyleSheet(QStringLiteral("QStackedWidget#grPages { background: %1; }").arg(kSurface));
         row->addWidget(pages, 1);
 
         pages->addWidget(buildConnectPage()); // 0 — подключение
+        pages->addWidget(buildSettingsPage()); // moved to 3 when legacy pages are adopted
         selectPage(0);
     }
 
     QWidget *MainShell::buildSidebar() {
         auto *bar = new QWidget(this);
-        // Compact navigation; secondary tools stay available in a disclosure.
-        bar->setFixedWidth(220);
+        bar->setFixedWidth(208);
         bar->setObjectName(QStringLiteral("grSidebar"));
-        bar->setStyleSheet(QStringLiteral("QWidget#grSidebar { background: %1; border-right: 1px solid %2; }")
-                               .arg(kSidebar, kLine));
-
+        bar->setStyleSheet(QStringLiteral("QWidget#grSidebar { background: %1; border-right: 1px solid %2; }").arg(kSidebar, kLine));
         auto *box = new QVBoxLayout(bar);
-        box->setContentsMargins(12, 20, 12, 16);
-        box->setSpacing(6);
-
-        // Шапка: имя и точка состояния. Точка — самый дешёвый способ ответить на
-        // вопрос «работает ли оно» до того, как человек начал искать ответ.
-        auto *head = new QHBoxLayout();
-        auto *title = new QLabel(tr("Зелёный Ритм"), bar);
-        QFont big = title->font();
-        big.setBold(true);
-        big.setPointSizeF(big.pointSizeF() * 1.25);
-        title->setFont(big);
-        title->setStyleSheet(QStringLiteral("color: %1;").arg(kAccent));
-        head->addWidget(title, 1);
-
-        stateDot = new QLabel(bar);
-        stateDot->setFixedSize(10, 10);
-        head->addWidget(stateDot, 0, Qt::AlignVCenter);
-
-        // «⋯» — прежняя полоса меню целиком, в углу шапки. Внизу колонки она
-        // стояла кнопкой «Меню» рядом с «Действиями», и обе читались как
-        // «тут что-то ещё, но что — неясно». Многоточие в углу — то место, где
-        // остальное ищут во всех современных окнах.
-        moreButton = new QPushButton(bar);
-        moreButton->setIcon(Icons::icon(QStringLiteral("gr-more"), QColor(kMuted), QColor(kText), 18));
-        moreButton->setIconSize(QSize(18, 18));
-        moreButton->setFixedSize(28, 28);
-        moreButton->setCursor(Qt::PointingHandCursor);
-        moreButton->setToolTip(tr("Меню"));
-        moreButton->setStyleSheet(QStringLiteral(
-                                      "QPushButton { border: none; border-radius: 8px; background: transparent;"
-                                      " color: %1; padding: 0; }"
-                                      "QPushButton:hover { background: %2; color: %3; }")
-                                      .arg(kMuted, kSurfaceUp, kText));
-        connect(moreButton, &QPushButton::clicked, this, [this] {
-            emit moreRequested(moreButton->mapToGlobal(QPoint(0, moreButton->height())));
-        });
-        head->addSpacing(6);
-        head->addWidget(moreButton, 0, Qt::AlignVCenter);
-        box->addLayout(head);
-        box->addSpacing(12);
-
-        struct Item {
-            QString text;
-            QString icon;
-            int page;
-        };
-        const QList<Item> items{
-            {tr("Подключение"), QStringLiteral("gr-nav-connect"), 0},
-            {tr("Серверы"), QStringLiteral("gr-nav-servers"), 1},
-            {tr("Журнал"), QStringLiteral("gr-nav-log"), 2},
-        };
-        for (const auto &item: items) {
-            // Значок рисуется линией и красится ЯВНО, в два состояния: серый у
-            // обычного пункта, акцентный у выбранного и под курсором. Раньше
-            // окраска доверялась currentColor внутри SVG — работало в кнопке и
-            // не работало больше нигде; см. ui/Icons.hpp.
-            auto *b = new QPushButton(Icons::icon(item.icon, QColor(kMuted), QColor(kAccent), 19),
-                                      QStringLiteral("  ") + item.text, bar);
-            b->setIconSize(QSize(19, 19));
-            b->setCheckable(true);
-            b->setCursor(Qt::PointingHandCursor);
-            b->setMinimumHeight(38);
-            // Состояния кнопки описаны здесь целиком: выбранный пункт заливается
-            // акцентом вполсилы, наведённый — поверхностью. Без этого колонка
-            // выглядит списком ссылок, а не навигацией.
-            b->setStyleSheet(QStringLiteral(
-                                 "QPushButton { text-align: left; padding-left: 14px; border: none;"
-                                 " border-radius: 8px; color: %1; background: transparent; }"
-                                 "QPushButton:hover { background: %2; }"
-                                 "QPushButton:checked { background: rgba(186,214,91,0.16); color: %3;"
-                                 " font-weight: bold; }")
-                                 .arg(kMuted, kSurfaceUp, kAccent));
-            const int page = item.page;
-            connect(b, &QPushButton::clicked, this, [this, page] { selectPage(page); });
-            navButtons += b;
-            box->addWidget(b);
+        box->setContentsMargins(16, 26, 16, 18);
+        box->setSpacing(8);
+        auto *brand = new QLabel(QStringLiteral("GreenRhythm"), bar);
+        QFont font = brand->font(); font.setBold(true); font.setPointSizeF(font.pointSizeF() * 1.2);
+        brand->setFont(font);
+        brand->setStyleSheet(QStringLiteral("color: %1; padding: 8px 4px;").arg(kText));
+        box->addWidget(brand);
+        box->addSpacing(24);
+        struct Nav { QString label; QString icon; int page; };
+        for (const auto &item : QList<Nav>{{tr("Подключение"), "gr-shield-check", 0},
+                                          {tr("Серверы"), "gr-nav-servers", 1},
+                                          {tr("Настройки"), "gr-sliders", 3}}) {
+            auto *button = new QPushButton(Icons::icon(item.icon, QColor(kMuted), QColor(kAccent), 20), "  " + item.label, bar);
+            button->setProperty("page", item.page);
+            button->setCheckable(true);
+            button->setMinimumHeight(44);
+            button->setCursor(Qt::PointingHandCursor);
+            button->setStyleSheet(QStringLiteral(
+                "QPushButton { text-align: left; min-height: 44px; padding: 0 14px; border: 1px solid transparent; border-radius: 12px; background: transparent; color: %1; }"
+                "QPushButton:hover { background: %2; color: %3; }"
+                "QPushButton:checked { background: rgba(186,214,91,0.10); color: %4; }"
+                "QPushButton:focus { border-color: %4; }").arg(kMuted, kSurfaceUp, kText, kAccent));
+            connect(button, &QPushButton::clicked, this, [this, item] { selectPage(item.page); });
+            navButtons << button;
+            box->addWidget(button);
         }
-
-        // ИНСТРУМЕНТЫ. То, ради чего раньше лезли в верхний ряд: маршруты,
-        // настройки, обновление подписки и проверка обновлений. Режимы здесь
-        // не живут: они про подключение и стоят на его странице, под кнопкой,
-        // — колонка остаётся навигации и инструментам.
-        box->addSpacing(10);
-        auto *settings = tool(bar, tr("Настройки"));
-        settings->setMinimumHeight(38);
-        settings->setIcon(Icons::icon(QStringLiteral("gr-sliders"), QColor(kMuted), QColor(kAccent), 19));
-        connect(settings, &QPushButton::clicked, this, &MainShell::settingsRequested);
-        box->addWidget(settings);
-        auto *toolsToggle = tool(bar, tr("Инструменты ▸"));
-        toolsToggle->setCheckable(true);
-        box->addWidget(toolsToggle);
-        auto *toolsPanel = new QWidget(bar);
-        toolsPanel->setVisible(false);
-        connect(toolsToggle, &QPushButton::toggled, toolsPanel, &QWidget::setVisible);
-        connect(toolsToggle, &QPushButton::toggled, toolsToggle, [toolsToggle](bool open) {
-            toolsToggle->setText(open ? tr("Инструменты ▾") : tr("Инструменты ▸"));
-        });
-        {
-            // РОВНЫМ СПИСКОМ, а не сеткой. Сетка «две короткие в ряд, две
-            // длинные во всю ширину» читалась как четыре кнопки разного сорта.
-            // Это один сорт — инструменты, и стоят они одинаково: строкой, с
-            // подписью слева, как пункты навигации выше, только тише.
-            auto *list = new QVBoxLayout(toolsPanel);
-            list->setContentsMargins(0, 0, 0, 0);
-            list->setSpacing(0);
-            auto row = [&](const QString &text, const QString &icon, auto signal) {
-                auto *b = tool(bar, text);
-                b->setIcon(Icons::icon(icon, QColor(kMuted), QColor(kText), 16));
-                b->setIconSize(QSize(16, 16));
-                connect(b, &QPushButton::clicked, this, signal);
-                list->addWidget(b);
-                return b;
-            };
-            row(tr("Маршруты"), QStringLiteral("gr-routes"), &MainShell::routesRequested);
-#ifdef Q_OS_WIN
-            // Есть только под Windows: разведка службами и адаптерами системы.
-            // На маке пункт не показывается вовсе, а не открывает окно с отказом.
-            row(tr("Что мешает подключению"), QStringLiteral("gr-shield-alert"), &MainShell::interferenceRequested);
-#endif
-            row(tr("Обновить подписку"), QStringLiteral("gr-refresh"), &MainShell::updateSubscriptionRequested);
-            row(tr("Проверить обновление"), QStringLiteral("gr-download"), &MainShell::checkUpdateRequested);
-            box->addWidget(toolsPanel);
-        }
-        // Воздух между инструментами и карточками — ДО растяжки. На высоте 720
-        // растяжка сжимается в ноль, и без этого зазора карточка «Сейчас»
-        // садилась прямо на последнюю строку списка.
-        box->addSpacing(8);
-
-        box->addStretch(1);
-
-        // КОЛОНКА — ДЛЯ НАВИГАЦИИ И ИНСТРУМЕНТОВ, И НИ ДЛЯ ЧЕГО БОЛЬШЕ.
-        //
-        // Здесь стояли ещё карточка живых чисел, карточка подписки с кнопкой и
-        // три кнопки в ряд: «Что-то не работает», «Меню», «Действия». Пятнадцать
-        // предметов пяти сортов в колонке шириной 236 — это пульт, а не
-        // навигация, и именно это владелец назвал «не современный формат».
-        //
-        // Живые числа и «Что-то не работает» уехали на страницу подключения:
-        // они про это подключение. «Меню» — многоточием в шапку. «Действия»
-        // дублировали страницу подключения и убраны; их панель открывается из
-        // «мимо VPN» на той же странице.
-        //
-        // Подписка осталась, но строкой, а не карточкой: это единственное, что
-        // человеку надо знать про свои деньги, и оно должно быть на виду — но
-        // карточка на 80 точек ради одной строки делала колонку витриной.
+        box->addStretch();
         subBlock = new QWidget(bar);
-        auto *subBox = new QHBoxLayout(subBlock);
-        subBox->setContentsMargins(4, 0, 0, 8);
-        subBox->setSpacing(8);
-        subSummary = new QLabel(subBlock);
-        QFont sf = subSummary->font();
-        sf.setPointSizeF(sf.pointSizeF() * 0.92);
-        subSummary->setFont(sf);
-        subBox->addWidget(subSummary, 1);
-        subButton = new QPushButton(tr("Продлить"), subBlock);
-        subButton->setCursor(Qt::PointingHandCursor);
-        subButton->setFlat(true);
-        subButton->setStyleSheet(linkStyle(kMuted));
+        auto *sub = new QVBoxLayout(subBlock); sub->setContentsMargins(4, 8, 4, 8);
+        subSummary = muted(subBlock, QString()); subSummary->setWordWrap(true);
+        subButton = new QPushButton(tr("Продлить подписку"), subBlock);
+        subButton->setStyleSheet(linkStyle(kAccent));
         connect(subButton, &QPushButton::clicked, this, &MainShell::renewRequested);
-        subBox->addWidget(subButton, 0);
-        subBlock->setVisible(false); // покажется, когда будет что показать
-        box->addWidget(subBlock);
-
-        auto *add = new QPushButton(tr("Добавить сервер"), bar);
-        add->setIcon(Icons::icon(QStringLiteral("gr-plus"), QColor(kAccent), QColor(kAccent), 16));
-        add->setIconSize(QSize(16, 16));
-        add->setCursor(Qt::PointingHandCursor);
-        add->setMinimumHeight(42);
-        add->setStyleSheet(QStringLiteral(
-                               "QPushButton { background: rgba(186,214,91,0.12); color: %1; border: 1px solid %2;"
-                               " border-radius: 10px; font-weight: bold; }"
-                               "QPushButton:hover { background: rgba(186,214,91,0.20); }")
-                               .arg(kAccent, kLine));
-        connect(add, &QPushButton::clicked, this, &MainShell::addServerRequested);
-        box->addWidget(add);
-
+        sub->addWidget(subSummary); sub->addWidget(subButton); subBlock->hide(); box->addWidget(subBlock);
+        auto *status = new QWidget(bar);
+        auto *statusRow = new QHBoxLayout(status); statusRow->setContentsMargins(10, 12, 10, 12);
+        stateDot = new QLabel(status); stateDot->setFixedSize(8, 8);
+        sidebarStatus = muted(status, tr("Не подключено"), 0.9);
+        statusRow->addWidget(stateDot); statusRow->addWidget(sidebarStatus, 1);
+        box->addWidget(status);
+        moreButton = new QPushButton(Icons::icon("gr-more", QColor(kMuted), QColor(kText), 20), tr("  Ещё"), bar);
+        moreButton->setMinimumHeight(40); moreButton->setCursor(Qt::PointingHandCursor);
+        connect(moreButton, &QPushButton::clicked, this, [this] {
+            QMenu menu(this);
+            menu.addAction(Icons::icon("gr-nav-log", QColor(kText), QColor(kAccent), 18), tr("Журнал и соединения"), this, [this] { selectPage(2); });
+            menu.addAction(tr("Проверить обновления"), this, &MainShell::checkUpdateRequested);
+            menu.addAction(tr("Помощь с подключением"), this, &MainShell::troubleRequested);
+            menu.addSeparator();
+            menu.addAction(tr("Все команды"), this, [this] { emit moreRequested(moreButton->mapToGlobal(QPoint(0, moreButton->height()))); });
+            menu.exec(moreButton->mapToGlobal(QPoint(0, moreButton->height())));
+        });
+        box->addWidget(moreButton);
         return bar;
     }
 
     QWidget *MainShell::buildConnectPage() {
         auto *page = new QWidget(this);
-        auto *box = new QVBoxLayout(page);
-        box->setContentsMargins(28, 24, 28, 24);
-        box->setSpacing(0);
-        auto *brand = new QLabel(QStringLiteral("GreenRhythm"), page);
-        QFont brandFont = brand->font();
-        brandFont.setPointSizeF(brandFont.pointSizeF() * 1.65);
-        brandFont.setBold(true);
-        brand->setFont(brandFont);
-        brand->setStyleSheet(QStringLiteral("color: %1;").arg(kAccent));
-        box->addWidget(brand, 0, Qt::AlignHCenter);
-        box->addSpacing(12);
-
-        {
-            auto *tiles = new QWidget(page);
-            tiles->setFixedWidth(460);
-            auto *row = new QHBoxLayout(tiles);
-            row->setContentsMargins(0, 0, 0, 0);
-            row->setSpacing(8);
-            row->addWidget(tile(tiles, tr("через VPN"), &liveVpn, kAccent, 1.35), 1);
-            row->addWidget(tile(tiles, tr("напрямую"), &liveDirect, kText, 1.35), 1);
-            row->addWidget(tile(tiles, tr("трафик"), &liveTraffic, kText, 1.05), 2);
-            box->addWidget(tiles, 0, Qt::AlignHCenter);
-        }
-        box->addSpacing(12);
-        // Кнопка — главный предмет на экране, и она обязана быть крупной. Прежде
-        // подключение включалось галкой «Режим TUN» в углу панели инструментов:
-        // человек не находил её и не понимал, включено у него что-нибудь или нет.
-        power = new QPushButton(page);
-        // Имя нужно ради селектора по имени: у темы есть своё правило для
-        // QPushButton, и при равной точности выигрывает не наше. Круглая кнопка
-        // от этого получалась квадратной — скругление просто не применялось.
-        power->setObjectName(QStringLiteral("grPower"));
-        power->setFixedSize(144, 144);
-        power->setCursor(Qt::PointingHandCursor);
-        // Значок, а не символ ⏻ из шрифта: символ рисовался тем, что нашлось в
-        // системе, и на разных машинах был разной толщины и высоты.
-        power->setIconSize(QSize(64, 64));
+        auto *outer = new QVBoxLayout(page);
+        outer->setContentsMargins(28, 24, 28, 24);
+        auto *heading = new QLabel(tr("Подключение"), page);
+        QFont headingFont = heading->font(); headingFont.setPointSizeF(headingFont.pointSizeF() * 1.45); headingFont.setBold(true);
+        heading->setFont(headingFont); outer->addWidget(heading);
+        outer->addStretch(1);
+        auto *body = new QWidget(page); body->setFixedWidth(480);
+        auto *box = new QVBoxLayout(body); box->setContentsMargins(0, 0, 0, 0); box->setSpacing(12);
+        statusTitle = new QLabel(tr("Готов к подключению"), body);
+        statusTitle->setAlignment(Qt::AlignCenter);
+        QFont titleFont = statusTitle->font(); titleFont.setBold(true); titleFont.setPointSizeF(titleFont.pointSizeF() * 1.35);
+        statusTitle->setFont(titleFont); box->addWidget(statusTitle);
+        powerHint = muted(body, tr("Выберите сервер и подключитесь"), 0.95);
+        powerHint->setAlignment(Qt::AlignCenter); powerHint->setWordWrap(true); box->addWidget(powerHint);
+        glow = new PowerGlow(body); glow->setFixedSize(192, 192);
+        auto *glowBox = new QGridLayout(glow); glowBox->setContentsMargins(0, 0, 0, 0);
+        power = new QPushButton(glow); power->setObjectName("grPower"); power->setFixedSize(144, 144);
+        power->setCursor(Qt::PointingHandCursor); power->setIconSize(QSize(52, 52));
         connect(power, &QPushButton::clicked, this, &MainShell::connectToggled);
-        // Кнопка лежит внутри ореола: у того размер с запасом в 20 точек по
-        // кругу. Прозрачным для мыши ореол не делать — вместе с ним оглохнет и
-        // кнопка (см. PowerGlow).
-        glow = new PowerGlow(page);
-        glow->setFixedSize(184, 184);
-        auto *glowBox = new QGridLayout(glow);
-        glowBox->setContentsMargins(0, 0, 0, 0);
-        glowBox->addWidget(power, 0, 0, Qt::AlignCenter);
-        box->addWidget(glow, 0, Qt::AlignHCenter);
-        box->addSpacing(10);
+        glowBox->addWidget(power, 0, 0, Qt::AlignCenter); box->addWidget(glow, 0, Qt::AlignCenter);
 
-        powerHint = muted(page, tr("Нажмите для подключения"), 1.15);
-        powerHint->setAlignment(Qt::AlignHCenter);
-        box->addWidget(powerHint);
-        box->addSpacing(16);
+        auto *card = new QPushButton(body); currentCard = card;
+        card->setObjectName("grServerChoice"); card->setCursor(Qt::PointingHandCursor);
+        card->setAccessibleName(tr("Выбрать сервер")); card->setMinimumHeight(86);
+        card->setStyleSheet(QStringLiteral(
+            "QPushButton#grServerChoice { min-height: 100px; background: %1; border: 1px solid %2; border-radius: 16px; padding: 0; }"
+            "QPushButton#grServerChoice:hover, QPushButton#grServerChoice:focus { border-color: %3; }").arg(kSurfaceUp, kLine, kAccent));
+        auto *cardRow = new QHBoxLayout(card); cardRow->setContentsMargins(18, 16, 18, 16); cardRow->setSpacing(14);
+        auto *serverIcon = new QLabel(card); serverIcon->setPixmap(Icons::pixmap("gr-nav-servers", QColor(kAccent), 24));
+        cardRow->addWidget(serverIcon);
+        auto *labels = new QVBoxLayout(); labels->setSpacing(4);
+        currentTitle = new QLabel(tr("Автовыбор сервера"), card); currentTitle->setWordWrap(true);
+        QFont nameFont = currentTitle->font(); nameFont.setBold(true); currentTitle->setFont(nameFont);
+        currentMeta = muted(card, tr("Выбрать из списка"), 0.9); currentMeta->setWordWrap(true);
+        labels->addWidget(currentTitle); labels->addWidget(currentMeta);
+        tagRow = new QWidget(card); auto *tags = new QHBoxLayout(tagRow); tags->setContentsMargins(0, 0, 0, 0); tags->setSpacing(6);
+        tagRow->setStyleSheet("background: transparent; border: none;"); tagRow->hide(); labels->addWidget(tagRow); cardRow->addLayout(labels, 1);
+        auto *arrow = new QLabel(card); arrow->setPixmap(Icons::pixmap("gr-arrow-right", QColor(kMuted), 18)); cardRow->addWidget(arrow);
+        for (auto *label : card->findChildren<QLabel *>()) label->setAttribute(Qt::WA_TransparentForMouseEvents);
+        tagRow->setAttribute(Qt::WA_TransparentForMouseEvents);
+        connect(card, &QPushButton::clicked, this, &MainShell::chooseServer); box->addWidget(card);
 
-        // РЕЖИМ — ЗДЕСЬ, ПОД КНОПКОЙ, А НЕ В КОЛОНКЕ. Режим — это свойство
-        // подключения, и место ему рядом с тем, что он меняет. Слева
-        // переключатель из двух положений одним куском, справа два дополнения
-        // отдельными фишками: они не исключают друг друга.
-        {
-            auto *strip = new QWidget(page);
-            auto *stripBox = new QVBoxLayout(strip);
-            stripBox->setContentsMargins(0, 0, 0, 0);
-            stripBox->setSpacing(8);
-            auto *row = new QHBoxLayout();
-            row->setContentsMargins(0, 0, 0, 0);
-            row->setSpacing(10);
-            stripBox->addLayout(row);
-            auto *options = new QHBoxLayout();
-            options->setSpacing(8);
-            stripBox->addLayout(options);
+        auto *mode = new QPushButton(body); mode->setObjectName("grConnectionOptions"); mode->setMinimumHeight(44);
+        mode->setAccessibleName(tr("Параметры подключения")); mode->setCursor(Qt::PointingHandCursor);
+        mode->setStyleSheet(QStringLiteral("QPushButton#grConnectionOptions { min-height: 44px; background: %1; border: 1px solid transparent; border-radius: 12px; padding: 0; } QPushButton#grConnectionOptions:hover, QPushButton#grConnectionOptions:focus { border-color: %2; }").arg(kSurfaceUp, kLine));
+        auto *modeRow = new QHBoxLayout(mode); modeRow->setContentsMargins(14, 6, 14, 6);
+        auto *modeIcon = new QLabel(mode); modeIcon->setPixmap(Icons::pixmap("gr-sliders", QColor(kMuted), 18)); modeRow->addWidget(modeIcon);
+        modeSummary = muted(mode, tr("Параметры подключения"), 0.95); modeRow->addWidget(modeSummary, 1);
+        auto *modeArrow = new QLabel(mode); modeArrow->setPixmap(Icons::pixmap("gr-arrow-right", QColor(kMuted), 16)); modeRow->addWidget(modeArrow);
+        for (auto *label : mode->findChildren<QLabel *>()) label->setAttribute(Qt::WA_TransparentForMouseEvents);
+        connect(mode, &QPushButton::clicked, this, [this] { selectPage(3); }); box->addWidget(mode);
 
-            auto *seg = new QWidget(strip);
-            seg->setObjectName(QStringLiteral("grSeg"));
-            seg->setStyleSheet(QStringLiteral("QWidget#grSeg { background: %1; border-radius: 12px; }")
-                                   .arg(kSurfaceUp));
-            auto *segBox = new QHBoxLayout(seg);
-            segBox->setContentsMargins(3, 3, 3, 3);
-            segBox->setSpacing(2);
-            const QString segStyle = QStringLiteral(
-                "QPushButton { border: none; border-radius: 9px; padding: 6px 16px;"
-                " color: %1; background: transparent; }"
-                "QPushButton:hover { color: %2; }"
-                // Без жирного во включённом состоянии — та же ловушка, что у фишек:
-                // жирный шире обычного, и «Туннель» терял первую букву.
-                "QPushButton:checked { background: %3; color: #08170c; }")
-                .arg(kMuted, kText, kAccent);
-
-            modeTun = new QPushButton(tr("Туннель"), seg);
-            modeTun->setCheckable(true);
-            modeTun->setCursor(Qt::PointingHandCursor);
-            modeTun->setStyleSheet(segStyle);
-            modeTun->setToolTip(tr("Весь трафик системы идёт через клиент (TUN). Нужны права администратора."));
-            connect(modeTun, &QPushButton::clicked, this, &MainShell::tunToggled);
-            segBox->addWidget(modeTun);
-
-            modeProxy = new QPushButton(tr("Системный прокси"), seg);
-            modeProxy->setCheckable(true);
-            modeProxy->setCursor(Qt::PointingHandCursor);
-            modeProxy->setStyleSheet(segStyle);
-            modeProxy->setToolTip(tr("Только программы, которые уважают системный прокси: браузеры и большинство мессенджеров."));
-            connect(modeProxy, &QPushButton::clicked, this, &MainShell::systemProxyToggled);
-            segBox->addWidget(modeProxy);
-            row->addWidget(seg);
-
-            gamesToggle = toggle(strip, tr("Игры через VPN"));
-            gamesToggle->setToolTip(
-                tr("Обычно игры идут мимо туннеля: пинг ниже, адрес российский, античит спокоен.\n"
-               "Включите, если серверы игры фильтруются у провайдера и мимо туннеля она не работает."));
-            connect(gamesToggle, &QPushButton::clicked, this, &MainShell::gamesViaTunnelToggled);
-            options->addWidget(gamesToggle);
-
-            dpiToggle = toggle(strip, tr("Обход фильтрации"));
-            dpiToggle->setToolTip(
-                tr("Дробит приветствие TLS у того, что идёт мимо туннеля, — игры и античиты остаются на своём адресе,\n"
-               "а фильтр провайдера не видит имени сервера. Без драйвера, внутри ядра. Против простых фильтров; если не помогло — скажите."));
-            connect(dpiToggle, &QPushButton::clicked, this, &MainShell::dpiFragmentToggled);
-            options->addWidget(dpiToggle);
-
-            // ВТОРОЙ ЯРУС — ОТДЕЛЬНОЙ ФИШКОЙ, А НЕ ГАЛКОЙ В НАСТРОЙКАХ. Он
-            // качает чужую программу и поднимает системный драйвер; такое
-            // решение человек должен принимать глядя на него, а не найдя
-            // случайно. Рядом — строка состояния: см. setDpiModule.
-            dpiModuleToggle = toggle(strip, tr("Усиленный обход"));
-            dpiModuleToggle->setToolTip(
-                tr("Второй ярус на случай, когда дробления в ядре не хватает: отдельная программа winws\n"
-                   "(проект zapret, лицензия MIT) и системный драйвер. Скачивается по запросу.\n\n"
-                   "Пока запущена игра с античитом, обход не включается и гаснет сам — бан отменить нельзя."));
-            connect(dpiModuleToggle, &QPushButton::clicked, this, &MainShell::dpiModuleToggled);
-            options->addWidget(dpiModuleToggle);
-#ifndef Q_OS_WIN
-            dpiModuleToggle->hide(); // winws is only available on Windows
-#endif
-
-            box->addWidget(strip, 0, Qt::AlignHCenter);
-
-            // Строка состояния модуля: под полосой режимов, по центру, тем же
-            // приглушённым цветом. Пустая — скрыта, чтобы не занимать место у
-            // тех, кто про этот ярус вообще не спрашивал.
-            dpiModuleState = muted(page, QString(), 0.9);
-            dpiModuleState->setAlignment(Qt::AlignCenter);
-            dpiModuleState->setWordWrap(true);
-            dpiModuleState->hide();
-            box->addSpacing(6);
-            box->addWidget(dpiModuleState, 0, Qt::AlignHCenter);
-        }
-        box->addSpacing(18);
-
-        auto *caption = muted(page, tr("ТЕКУЩИЙ СЕРВЕР"), 0.85);
-        QFont cf = caption->font();
-        cf.setBold(true);
-        cf.setLetterSpacing(QFont::AbsoluteSpacing, 1.2);
-        caption->setFont(cf);
-        box->addWidget(caption, 0, Qt::AlignHCenter);
-        box->addSpacing(8);
-
-        // Карточка вместо строки таблицы: имя крупно, подробности мелко и серым.
-        // Протокол и адрес человеку не нужны, но нужны поддержке — поэтому они
-        // не убраны совсем, а уведены в подпись.
-        currentCard = new QWidget(page);
-        currentCard->setFixedWidth(460);
-        currentCard->setObjectName(QStringLiteral("grCurrent"));
-        currentCard->setStyleSheet(QStringLiteral("QWidget#grCurrent { background: %1; border: 1px solid %2; border-radius: 14px; }")
-                                       .arg(kSurfaceUp, kLine));
-        auto *cardBox = new QVBoxLayout(currentCard);
-        cardBox->setContentsMargins(18, 14, 18, 14);
-        cardBox->setSpacing(4);
-
-        currentTitle = new QLabel(tr("Сервер не выбран"), currentCard);
-        QFont nameFont = currentTitle->font();
-        nameFont.setBold(true);
-        nameFont.setPointSizeF(nameFont.pointSizeF() * 1.15);
-        currentTitle->setFont(nameFont);
-        currentTitle->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(kText));
-        cardBox->addWidget(currentTitle);
-
-        currentMeta = muted(currentCard, tr("Выберите его на вкладке «Серверы»"), 0.9);
-        currentMeta->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(kMuted));
-        cardBox->addWidget(currentMeta);
-
-        // Метки протокола под именем: «VLESS · TCP · REALITY». Ряд создаётся
-        // пустым и прячется, пока меток нет, — пустая полоса под именем читается
-        // как недогруженное окно.
-        tagRow = new QWidget(currentCard);
-        auto *tagBox = new QHBoxLayout(tagRow);
-        tagBox->setContentsMargins(0, 6, 0, 0);
-        tagBox->setSpacing(6);
-        // Рамка карточки распространяется на детей — ряду меток она не нужна.
-        tagRow->setStyleSheet(QStringLiteral("background: transparent; border: none;"));
-        tagRow->setVisible(false);
-        cardBox->addWidget(tagRow);
-
-        box->addWidget(currentCard, 0, Qt::AlignHCenter);
-
-        // ВЫБОР СЕРВЕРА — ЗДЕСЬ ЖЕ, ПОД КНОПКОЙ. Страница стояла пустой, пока не
-        // сходишь на «Серверы» и не нажмёшь там; место под кнопкой при этом
-        // пустовало. Первая строка — автовыбор: подключит самый быстрый.
-        box->addSpacing(10);
-        serverPick = new QComboBox(page);
-        serverPick->setFixedWidth(460);
-        serverPick->setMinimumHeight(36);
-        serverPick->setCursor(Qt::PointingHandCursor);
-        // Стрелка рисуется своим знаком: тема прячет штатную, и поле выбора
-        // читалось как обычная надпись, которую незачем нажимать.
-        serverPick->setStyleSheet(QStringLiteral(
-                                      "QComboBox { background: %1; color: %2; border: 1px solid %3;"
-                                      " border-radius: 10px; padding: 4px 14px; }"
-                                      "QComboBox:hover { border-color: %4; }"
-                                      "QComboBox::drop-down { border: none; width: 28px; }"
-                                      "QComboBox::down-arrow { image: none; border-left: 5px solid transparent;"
-                                      " border-right: 5px solid transparent; border-top: 6px solid %4;"
-                                      " width: 0; height: 0; margin-right: 10px; }"
-                                      "QComboBox QAbstractItemView { background: %1; color: %2;"
-                                      " selection-background-color: rgba(186,214,91,0.18); border: 1px solid %3; }")
-                                      .arg(kSurfaceUp, kText, kLine, kAccent));
-        serverPick->addItem(tr("Автовыбор — самый быстрый"), -1);
-        // activated, а не currentIndexChanged: второе срабатывает и от нашей же
-        // перестройки списка, и тогда выбор «менялся» сам, без человека.
-        connect(serverPick, QOverload<int>::of(&QComboBox::activated), this, [this](int index) {
-            emit serverChosen(serverPick->itemData(index).toInt());
-        });
-        box->addWidget(serverPick, 0, Qt::AlignHCenter);
-
-        // Под плитками — две ссылки: список исключений и разбор поломок. Оба
-        // стояли в колонке кнопками; кнопка обещает действие, а это вопросы,
-        // которые задают, глядя на цифры выше.
-        box->addSpacing(6);
-        {
-            auto *links = new QWidget(page);
-            links->setFixedWidth(460);
-            auto *row = new QHBoxLayout(links);
-            row->setContentsMargins(6, 0, 6, 0);
-            row->setSpacing(8);
-            bypassLine = new QPushButton(tr("мимо VPN: нет программ"), links);
-            bypassLine->setCursor(Qt::PointingHandCursor);
-            bypassLine->setFlat(true);
-            bypassLine->setStyleSheet(linkStyle(kMuted));
-            bypassLine->setIcon(Icons::icon(QStringLiteral("gr-list"), QColor(kMuted), QColor(kAccent), 14));
-            bypassLine->setIconSize(QSize(14, 14));
-            connect(bypassLine, &QPushButton::clicked, this, &MainShell::bypassListRequested);
-            row->addWidget(bypassLine, 0, Qt::AlignLeft);
-            row->addStretch(1);
-            troubleLink = new QPushButton(tr("Что-то не работает"), links);
-            troubleLink->setCursor(Qt::PointingHandCursor);
-            troubleLink->setFlat(true);
-            troubleLink->setStyleSheet(linkStyle(kMuted));
-            troubleLink->setIcon(Icons::icon(QStringLiteral("gr-help"), QColor(kMuted), QColor(kAccent), 14));
-            troubleLink->setIconSize(QSize(14, 14));
-            connect(troubleLink, &QPushButton::clicked, this, &MainShell::troubleRequested);
-            row->addWidget(troubleLink, 0, Qt::AlignRight);
-            box->addWidget(links, 0, Qt::AlignHCenter);
-        }
-
-        // ПУСТОЙ СПИСОК — НЕ ПУСТОЙ ЭКРАН. Раньше человек, у которого ещё нет
-        // серверов, видел просто пустоту и не понимал, чего от него хотят.
-        emptyHint = new QWidget(page);
-        auto *emptyBox = new QVBoxLayout(emptyHint);
-        emptyBox->setContentsMargins(0, 0, 0, 0);
-        emptyBox->setSpacing(6);
-        auto *emptyTitle = new QLabel(tr("Серверов пока нет"), emptyHint);
-        QFont ef = emptyTitle->font();
-        ef.setBold(true);
-        ef.setPointSizeF(ef.pointSizeF() * 1.1);
-        emptyTitle->setFont(ef);
-        emptyTitle->setAlignment(Qt::AlignHCenter);
-        emptyBox->addWidget(emptyTitle);
-        auto *emptyWhat = muted(emptyHint,
-                                tr("Вставьте ссылку подписки — профили соберутся сами."), 0.95);
-        emptyWhat->setAlignment(Qt::AlignHCenter);
-        emptyBox->addWidget(emptyWhat);
-        emptyHint->setVisible(false);
-        box->addWidget(emptyHint, 0, Qt::AlignHCenter);
-
-        box->addStretch(2);
+        emptyHint = new QWidget(body); auto *emptyBox = new QVBoxLayout(emptyHint); emptyBox->setContentsMargins(0, 8, 0, 8);
+        auto *emptyText = muted(emptyHint, tr("Добавьте сервер или ссылку подписки")); emptyText->setAlignment(Qt::AlignCenter); emptyBox->addWidget(emptyText);
+        auto *add = new QPushButton(Icons::icon("gr-plus", QColor(kAccent), QColor(kAccent), 18), tr("Добавить подключение"), emptyHint);
+        add->setMinimumHeight(44); connect(add, &QPushButton::clicked, this, &MainShell::addServerRequested); emptyBox->addWidget(add); emptyHint->hide(); box->addWidget(emptyHint);
+        auto *metrics = new QHBoxLayout(); metrics->setContentsMargins(0, 10, 0, 0); metrics->setSpacing(6);
+        metrics->addWidget(tile(body, tr("соединений VPN"), &liveVpn, kText, 1.1), 1);
+        metrics->addWidget(tile(body, tr("напрямую"), &liveDirect, kText, 1.1), 1);
+        metrics->addWidget(tile(body, tr("получено / отправлено"), &liveTraffic, kText, 0.95), 2);
+        box->addLayout(metrics);
+        outer->addWidget(body, 0, Qt::AlignHCenter); outer->addStretch(2);
+        troubleLink = new QPushButton(tr("Нужна помощь с подключением?"), page); troubleLink->setStyleSheet(linkStyle(kMuted));
+        troubleLink->setCursor(Qt::PointingHandCursor); connect(troubleLink, &QPushButton::clicked, this, &MainShell::troubleRequested);
+        outer->addWidget(troubleLink, 0, Qt::AlignCenter);
         return page;
     }
 
-    QWidget *MainShell::framed(QWidget *content, const QString &title) {
+    QWidget *MainShell::buildSettingsPage() {
+        auto *scroll = new QScrollArea(this); scroll->setWidgetResizable(true); scroll->setFrameShape(QFrame::NoFrame);
+        auto *page = new QWidget(scroll); auto *box = new QVBoxLayout(page); box->setContentsMargins(28, 24, 28, 24); box->setSpacing(18);
+        auto *heading = new QLabel(tr("Настройки"), page); QFont f = heading->font(); f.setBold(true); f.setPointSizeF(f.pointSizeF() * 1.45); heading->setFont(f); box->addWidget(heading);
+        box->addWidget(muted(page, tr("Как подключаться и что направлять через VPN")));
+        auto addRow = [&](const QString &title, const QString &description, const QString &icon, QPushButton *button) {
+            auto *card = new QWidget(page); card->setObjectName("grSettingRow");
+            card->setStyleSheet(QStringLiteral("QWidget#grSettingRow { background: %1; border-radius: 14px; }").arg(kSurfaceUp));
+            auto *row = new QHBoxLayout(card); row->setContentsMargins(16, 14, 16, 14); row->setSpacing(14);
+            auto *glyph = new QLabel(card); glyph->setPixmap(Icons::pixmap(icon, QColor(kAccent), 22)); row->addWidget(glyph);
+            auto *labels = new QVBoxLayout(); auto *name = new QLabel(title, card); QFont font = name->font(); font.setBold(true); name->setFont(font); labels->addWidget(name);
+            auto *detail = muted(card, description, 0.9); detail->setWordWrap(true); labels->addWidget(detail); row->addLayout(labels, 1);
+            if (!button->isCheckable()) button->setStyleSheet(QStringLiteral("QPushButton { min-height: 36px; padding: 0 14px; background: %1; border-radius: 9px; color: %2; border: 1px solid transparent; } QPushButton:hover, QPushButton:focus { border-color: %3; }").arg(kSurface, kText, kAccent));
+            button->setCursor(Qt::PointingHandCursor); row->addWidget(button); box->addWidget(card);
+        };
+        box->addWidget(caption(page, tr("ПОДКЛЮЧЕНИЕ")));
+        modeTun = toggle(page, tr("Включить")); modeTun->setObjectName("grModeTun"); modeTun->setAccessibleName(tr("Туннель для всего устройства"));
+        connect(modeTun, &QPushButton::clicked, this, &MainShell::tunToggled);
+        addRow(tr("Туннель"), tr("Трафик всего устройства. Для запуска нужны права администратора."), "gr-shield-check", modeTun);
+        modeProxy = toggle(page, tr("Включить")); modeProxy->setAccessibleName(tr("Системный прокси"));
+        connect(modeProxy, &QPushButton::clicked, this, &MainShell::systemProxyToggled);
+        addRow(tr("Системный прокси"), tr("Для браузеров и приложений, использующих настройки прокси системы."), "gr-nav-connect", modeProxy);
+        box->addWidget(caption(page, tr("МАРШРУТИЗАЦИЯ")));
+        gamesToggle = toggle(page, tr("Включить")); gamesToggle->setAccessibleName(tr("Игры через VPN"));
+        connect(gamesToggle, &QPushButton::clicked, this, &MainShell::gamesViaTunnelToggled);
+        addRow(tr("Игры через VPN"), tr("Обычно игры подключаются напрямую. Включите, если игровые серверы недоступны."), "gr-routes", gamesToggle);
+        bypassLine = new QPushButton(tr("Настроить"), page); connect(bypassLine, &QPushButton::clicked, this, &MainShell::bypassListRequested);
+        addRow(tr("Исключения"), tr("Приложения и адреса, которые подключаются напрямую."), "gr-list", bypassLine);
+        auto *routes = new QPushButton(tr("Открыть"), page); connect(routes, &QPushButton::clicked, this, &MainShell::routesRequested);
+        addRow(tr("Правила маршрутизации"), tr("Собственные правила для доменов, адресов и приложений."), "gr-routes", routes);
+        box->addWidget(caption(page, tr("ОБХОД ФИЛЬТРАЦИИ")));
+        dpiToggle = toggle(page, tr("Включить")); dpiToggle->setAccessibleName(tr("Обход фильтрации"));
+        connect(dpiToggle, &QPushButton::clicked, this, &MainShell::dpiFragmentToggled);
+        addRow(tr("Обход фильтрации"), tr("Дробление TLS для прямых соединений. Используйте, если провайдер блокирует сайты."), "gr-shield-alert", dpiToggle);
+        dpiModuleToggle = toggle(page, tr("Включить")); connect(dpiModuleToggle, &QPushButton::clicked, this, &MainShell::dpiModuleToggled);
+#ifdef Q_OS_WIN
+        addRow(tr("Усиленный обход"), tr("Модуль winws. Требуется отдельная загрузка и системный драйвер."), "gr-shield-alert", dpiModuleToggle);
+        auto *interference = new QPushButton(tr("Проверить"), page); connect(interference, &QPushButton::clicked, this, &MainShell::interferenceRequested);
+        addRow(tr("Конфликты приложений"), tr("Проверить, что мешает подключению."), "gr-help", interference);
+#else
+        dpiModuleToggle->hide();
+#endif
+        dpiModuleState = muted(page, QString()); dpiModuleState->setWordWrap(true); dpiModuleState->hide(); box->addWidget(dpiModuleState);
+        box->addWidget(caption(page, tr("ПРИЛОЖЕНИЕ")));
+        auto *advanced = new QPushButton(tr("Открыть"), page); connect(advanced, &QPushButton::clicked, this, &MainShell::settingsRequested);
+        addRow(tr("Дополнительные настройки"), tr("Оформление, подписки, локальный прокси и параметры ядра."), "gr-sliders", advanced);
+        box->addStretch(); scroll->setWidget(page); return scroll;
+    }
+
+    void MainShell::chooseServer() {
+        QDialog dialog(this); dialog.setWindowTitle(tr("Выбрать сервер")); dialog.resize(480, 420);
+        auto *box = new QVBoxLayout(&dialog); box->setContentsMargins(20, 20, 20, 20); box->setSpacing(12);
+        auto *search = new QLineEdit(&dialog); search->setPlaceholderText(tr("Найти сервер")); search->setClearButtonEnabled(true); search->setAccessibleName(tr("Поиск сервера")); box->addWidget(search);
+        auto *list = new QListWidget(&dialog); list->setObjectName("grServerPicker"); list->setSpacing(4);
+        auto append = [&](int id, const QString &text) { auto *item = new QListWidgetItem(text, list); item->setData(Qt::UserRole, id); item->setSizeHint(QSize(0, 48)); if (id == selectedServerId) list->setCurrentItem(item); };
+        append(-1, tr("Автовыбор — самый быстрый"));
+        for (const auto &server : availableServers) append(server.id, server.latency.isEmpty() ? server.name : server.name + "  ·  " + server.latency);
+        box->addWidget(list, 1);
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog); buttons->button(QDialogButtonBox::Ok)->setText(tr("Выбрать")); buttons->button(QDialogButtonBox::Cancel)->setText(tr("Отмена")); box->addWidget(buttons);
+        const auto updateChoice = [list, buttons] { buttons->button(QDialogButtonBox::Ok)->setEnabled(list->currentItem() && !list->currentItem()->isHidden()); };
+        connect(search, &QLineEdit::textChanged, &dialog, [list, updateChoice](const QString &text) { for (int i = 0; i < list->count(); ++i) list->item(i)->setHidden(!list->item(i)->text().contains(text, Qt::CaseInsensitive)); updateChoice(); });
+        connect(list, &QListWidget::currentRowChanged, &dialog, [updateChoice] { updateChoice(); });
+        connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept); connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        connect(list, &QListWidget::itemActivated, &dialog, [&dialog](QListWidgetItem *) { dialog.accept(); }); updateChoice(); search->setFocus();
+        if (dialog.exec() == QDialog::Accepted && list->currentItem() && !list->currentItem()->isHidden()) {
+            emit serverChosen(list->currentItem()->data(Qt::UserRole).toInt());
+            selectPage(0);
+        }
+    }
+
+    QWidget *MainShell::framed(QWidget *content, const QString &title, bool serverPage) {
         // ПОЛЯ И ЗАГОЛОВОК — У КАЖДОЙ СТРАНИЦЫ, А НЕ ТОЛЬКО У ПОДКЛЮЧЕНИЯ. Список
         // серверов и таблица соединений упирались в край окна с зазором в шесть
         // точек, пока у подключения поля были в сорок; страницы выглядели из
@@ -708,6 +459,33 @@ namespace GreenRhythm {
         h->setFont(hf);
         h->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(kText));
         box->addWidget(h);
+        if (serverPage) {
+            serverSearch = new QLineEdit(page); serverSearch->setObjectName("grServerSearch");
+            serverSearch->setPlaceholderText(tr("Поиск по названию, адресу или протоколу"));
+            serverSearch->setAccessibleName(tr("Поиск серверов")); serverSearch->setMinimumHeight(38); serverSearch->setClearButtonEnabled(true);
+            connect(serverSearch, &QLineEdit::textChanged, this, &MainShell::serverSearchChanged); box->addWidget(serverSearch);
+            auto *actions = new QHBoxLayout(); actions->setSpacing(8);
+            auto action = [&](const QString &label, const QString &icon, auto signal) {
+                auto *button = new QPushButton(Icons::icon(icon, QColor(kMuted), QColor(kAccent), 18), label, page);
+                button->setMinimumHeight(36); button->setCursor(Qt::PointingHandCursor); button->setAccessibleName(label);
+                connect(button, &QPushButton::clicked, this, signal); actions->addWidget(button); return button;
+            };
+            action(tr("Выбрать"), "gr-nav-servers", &MainShell::chooseSelectedRequested);
+            action(tr("Добавить"), "gr-plus", &MainShell::addServerRequested);
+            action(tr("Вставить"), "gr-clipboard", &MainShell::pasteRequested);
+            auto *scan = action(tr("QR-код"), "gr-qr", &MainShell::scanRequested);
+#ifdef NKR_NO_ZXING
+            scan->setEnabled(false); scan->setToolTip(tr("Сканирование QR недоступно в этой сборке"));
+#endif
+            actions->addStretch();
+            auto *test = action(tr("Проверить задержку серверов"), "gr-activity", &MainShell::testServersRequested);
+            test->setText(QString()); test->setToolTip(tr("Проверить задержку серверов")); test->setFixedWidth(40);
+            auto *refresh = action(tr("Обновить подписки"), "gr-refresh", &MainShell::updateSubscriptionRequested);
+            refresh->setText(QString()); refresh->setToolTip(tr("Обновить подписки")); refresh->setFixedWidth(40);
+            box->addLayout(actions);
+            searchResult = muted(page, QString(), 0.9);
+            searchResult->setWordWrap(true); box->addWidget(searchResult);
+        }
         box->addWidget(content, 1);
         return page;
     }
@@ -715,7 +493,7 @@ namespace GreenRhythm {
     void MainShell::adopt(QWidget *servers, QWidget *logs) {
         // Виджеты переезжают, а не создаются заново: к ним привязана вся прежняя
         // проводка окна. addWidget сам меняет родителя.
-        if (servers != nullptr) pages->insertWidget(1, framed(servers, tr("Серверы")));
+        if (servers != nullptr) pages->insertWidget(1, framed(servers, tr("Серверы"), true));
         if (logs != nullptr) pages->insertWidget(2, framed(logs, tr("Журнал")));
         selectPage(0);
     }
@@ -725,7 +503,7 @@ namespace GreenRhythm {
     void MainShell::selectPage(int index) {
         if (index < 0 || index >= pages->count()) return;
         pages->setCurrentIndex(index);
-        for (int i = 0; i < navButtons.size(); i++) navButtons[i]->setChecked(i == index);
+        for (auto *button : navButtons) button->setChecked(button->property("page").toInt() == index);
     }
 
     void MainShell::setConnectionState(bool isConnected, const QString &server,
@@ -740,10 +518,10 @@ namespace GreenRhythm {
             // вместо того чтобы отправлять на другую вкладку.
             if (idleServerName.isEmpty()) {
                 currentTitle->setText(tr("Сервер не выбран"));
-                currentMeta->setText(tr("Выберите ниже или на вкладке «Серверы»"));
+                currentMeta->setText(tr("Нажмите, чтобы выбрать"));
             } else {
                 currentTitle->setText(idleServerName);
-                currentMeta->setText(tr("подключится при нажатии"));
+                currentMeta->setText(tr("Нажмите, чтобы сменить сервер"));
             }
         }
         setState(isConnected ? State::Connected : State::Idle);
@@ -755,28 +533,20 @@ namespace GreenRhythm {
     }
 
     void MainShell::setServers(const QList<ServerItem> &servers, int currentId) {
-        if (serverPick == nullptr) return;
-        QStringList signature;
-        for (const auto &s: servers) {
-            signature << QString::number(s.id) + QLatin1Char('|') + s.name + QLatin1Char('|') + s.latency;
-        }
-        if (signature != serverSignature) {
-            serverSignature = signature;
-            serverPick->blockSignals(true);
-            serverPick->clear();
-            serverPick->addItem(tr("Автовыбор — самый быстрый"), -1);
-            for (const auto &s: servers) {
-                const QString text = s.latency.isEmpty()
-                                         ? s.name
-                                         : QStringLiteral("%1  ·  %2").arg(s.name, s.latency);
-                serverPick->addItem(text, s.id);
-            }
-            serverPick->blockSignals(false);
-        }
-        const int at = serverPick->findData(currentId);
-        serverPick->blockSignals(true);
-        serverPick->setCurrentIndex(at >= 0 ? at : 0);
-        serverPick->blockSignals(false);
+        availableServers = servers;
+        selectedServerId = currentId;
+    }
+
+    void MainShell::setSearchResultCount(int visible, int total) {
+        if (!searchResult) return;
+        searchResult->setText(total == 0 ? tr("Серверов пока нет. Добавьте ссылку или вставьте её из буфера.") :
+                              visible == 0 ? tr("Ничего не найдено. Попробуйте другое название или адрес.") :
+                              tr("Показано %1 из %2").arg(visible).arg(total));
+    }
+
+    void MainShell::focusServerSearch() {
+        selectPage(1);
+        if (serverSearch) serverSearch->setFocus();
     }
 
     void MainShell::setModes(bool tun, bool systemProxy, bool gamesViaTunnel, bool dpiFragment) {
@@ -785,10 +555,12 @@ namespace GreenRhythm {
         if (modeProxy != nullptr) modeProxy->setChecked(systemProxy);
         if (gamesToggle != nullptr) gamesToggle->setChecked(gamesViaTunnel);
         if (dpiToggle != nullptr) dpiToggle->setChecked(dpiFragment);
+        for (auto *button : {modeTun, modeProxy, gamesToggle, dpiToggle}) if (button) button->setText(button->isChecked() ? tr("Включено") : tr("Включить"));
+        if (modeSummary) modeSummary->setText(tun ? (systemProxy ? tr("Туннель и системный прокси") : tr("Туннель для всего устройства")) : (systemProxy ? tr("Системный прокси") : tr("Режим подключения · настроить")));
     }
 
     void MainShell::setDpiModule(bool enabled, bool running, const QString &text) {
-        if (dpiModuleToggle != nullptr) dpiModuleToggle->setChecked(enabled);
+        if (dpiModuleToggle != nullptr) { dpiModuleToggle->setChecked(enabled); dpiModuleToggle->setText(enabled ? tr("Включено") : tr("Включить")); }
         if (dpiModuleState == nullptr) return;
         // Строка нужна ровно тогда, когда включено и НЕ работает: это и есть
         // расхождение между желанием и действительностью. Когда работает —
@@ -849,7 +621,10 @@ namespace GreenRhythm {
         // Ореол только у живых состояний: подключено — акцент, подключаюсь —
         // янтарь, не вышло — красный. В покое кнопка стоит на ровном фоне.
         if (glow != nullptr) glow->set(QColor(glyph), next != State::Idle);
-        powerHint->setText(hint);
+        powerHint->setText(next == State::Idle ? tr("Выберите сервер и нажмите кнопку") : hint);
+        const QString status = next == State::Connected ? tr("Подключено") : next == State::Connecting ? tr("Подключение…") : next == State::Failed ? tr("Не удалось подключиться") : tr("Не подключено");
+        if (statusTitle) statusTitle->setText(status);
+        if (sidebarStatus) sidebarStatus->setText(status);
         powerHint->setStyleSheet(
             QStringLiteral("color: %1;").arg(next == State::Failed ? QString(kRed)
                                                                    : QString(kMuted)));
@@ -900,11 +675,11 @@ namespace GreenRhythm {
         // Число, а не список: список длинный, а человеку нужно понять «есть ли
         // вообще исключения» и нажать, если есть.
         bypassLine->setText(
-            programs > 0 ? tr("мимо VPN: %1 %2")
+            programs > 0 ? tr("%1 %2")
                                .arg(programs)
                                .arg(plural(programs, tr("программа"), tr("программы"),
                                            tr("программ")))
-                         : tr("мимо VPN: нет программ"));
+                         : tr("Настроить"));
     }
 
     void MainShell::setSubscription(const QString &summary, bool low) {

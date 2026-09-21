@@ -189,7 +189,7 @@ QTableView, QTreeView, QListView {
     color: #e8eee4;
     border: none;
     gridline-color: transparent;
-    selection-background-color: rgba(63, 185, 80, 0.14);
+    selection-background-color: rgba(186, 214, 91, 0.06);
     selection-color: #e8eee4;
     outline: none;
 }
@@ -204,7 +204,7 @@ QTableView::item:hover, QTreeView::item:hover, QListView::item:hover {
 }
 
 QTableView::item:selected, QTreeView::item:selected, QListView::item:selected {
-    background-color: rgba(63, 185, 80, 0.14);
+    background-color: rgba(186, 214, 91, 0.06);
     color: #e8eee4;
 }
 
@@ -254,7 +254,7 @@ QTabBar::tab:hover {
 
 QTabBar::tab:selected {
     color: #bad65b;
-    background-color: rgba(63, 185, 80, 0.14);
+    background-color: rgba(186, 214, 91, 0.06);
     font-weight: 600;
 }
 
@@ -461,3 +461,10 @@ QScrollArea {
 QScrollArea > QWidget > QWidget {
     background: transparent;
 }
+
+/* Searchable server picker and consistent keyboard focus. */
+QListWidget#grServerPicker { background: transparent; border: none; outline: none; }
+QListWidget#grServerPicker::item { border: 1px solid transparent; border-radius: 10px; padding: 0 14px; background: #17251a; color: #e8eee4; }
+QListWidget#grServerPicker::item:hover { background: #21331f; }
+QListWidget#grServerPicker::item:selected { background: #26351c; border-color: #bad65b; color: #e8eee4; }
+QPushButton:focus { border: 1px solid #bad65b; }
