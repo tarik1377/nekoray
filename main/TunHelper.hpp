@@ -87,6 +87,10 @@ namespace GreenRhythm::TunHelper {
     /** Наш адрес на устройстве туннеля — из шаблона res/vpn/sing-box-vpn.json. */
     QString ourAddress();
 
+    // Subtract the TUN's own subnets from route exclusions. On macOS, the
+    // system TCP forwarder needs a return route to address.Next() inside them.
+    QStringList excludeWithoutTunSubnets(const QStringList &excludes, const QStringList &tunSubnets);
+
     /** Что проверяется после подъёма. Каждое поле — одно звено цепочки. */
     struct Chain {
         bool helperAlive = false;   // процесс с номером из файла жив
@@ -94,6 +98,7 @@ namespace GreenRhythm::TunHelper {
         QString routeVia;           // интерфейс маршрута к 1.1.1.1
         bool socksOpen = false;     // SOCKS-порт основного ядра слушает
         bool throughTunnel = false; // ответ из сети получен, а не только рукопожатие
+        QStringList diagnostics;    // bounded observations; never configuration credentials
     };
 
     /**

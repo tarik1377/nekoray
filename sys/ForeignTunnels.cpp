@@ -2,6 +2,8 @@
 #include "sys/WinShell.hpp"
 
 #include <QDir>
+#include <QDateTime>
+#include <QElapsedTimer>
 #include <QEventLoop>
 #include <QNetworkAccessManager>
 #include <QNetworkProxy>
@@ -259,12 +261,15 @@ namespace NekoGui_sys {
 #endif
     }
 
-    GreenRhythm::TunHelper::Chain ProbeTunChain(qint64 helperPid, const QString &socksAddr, int socksPort) {
+    GreenRhythm::TunHelper::Chain ProbeTunChain(qint64 helperPid, const QString &socksAddr, int socksPort,
+                                               const QString &socksUser, const QString &socksPassword) {
         GreenRhythm::TunHelper::Chain c;
 #ifdef Q_OS_WIN
         Q_UNUSED(helperPid)
         Q_UNUSED(socksAddr)
         Q_UNUSED(socksPort)
+        Q_UNUSED(socksUser)
+        Q_UNUSED(socksPassword)
         return c;
 #else
         c.helperAlive = HelperAlive(helperPid);
@@ -286,8 +291,11 @@ namespace NekoGui_sys {
 #endif
         {
             QTcpSocket s;
+            s.setProxy(QNetworkProxy::NoProxy);
             s.connectToHost(socksAddr, quint16(socksPort));
             c.socksOpen = s.waitForConnected(1500);
+            c.diagnostics << QStringLiteral("socks-listener=%1 error=%2")
+                                 .arg(c.socksOpen).arg(c.socksOpen ? QStringLiteral("none") : s.errorString());
             s.abort();
         }
         {
@@ -312,14 +320,55 @@ namespace NekoGui_sys {
              */
             QNetworkAccessManager nam;
             nam.setProxy(QNetworkProxy::NoProxy);
+            QElapsedTimer elapsed;
+            elapsed.start();
             auto *r = nam.get(QNetworkRequest(QUrl(QStringLiteral("http://cp.cloudflare.com/generate_204"))));
             QEventLoop loop;
             QTimer::singleShot(7000, r, &QNetworkReply::abort);
             QObject::connect(r, &QNetworkReply::finished, &loop, &QEventLoop::quit);
             loop.exec();
-            c.throughTunnel = r->error() == QNetworkReply::NoError;
+            const int status = r->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            c.throughTunnel = r->error() == QNetworkReply::NoError && status == 204;
+            c.diagnostics << QStringLiteral("tun-domain http=%1 qt-error=%2 elapsed-ms=%3 detail=%4")
+                                 .arg(status).arg(int(r->error())).arg(elapsed.elapsed())
+                                 .arg(r->error() == QNetworkReply::NoError ? QStringLiteral("none") : r->errorString());
             r->deleteLater();
         }
+        if (qEnvironmentVariableIsSet("GREENRHYTHM_TUN_DIAGNOSTICS")) {
+            // No system proxy: compare a numeric TUN destination with the same
+            // destination through the core's local SOCKS listener. The first
+            // probe above exercises DNS as well; these two do not need it.
+            const auto probe = [&](const QString &label, const QNetworkProxy &proxy) {
+                QNetworkAccessManager nam;
+                nam.setProxy(proxy);
+                QElapsedTimer elapsed;
+                elapsed.start();
+                auto *reply = nam.get(QNetworkRequest(QUrl(QStringLiteral("http://1.1.1.1/cdn-cgi/trace"))));
+                QEventLoop loop;
+                QTimer::singleShot(5000, reply, &QNetworkReply::abort);
+                QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+                loop.exec();
+                c.diagnostics << QStringLiteral("%1 http=%2 qt-error=%3 elapsed-ms=%4 detail=%5")
+                                     .arg(label)
+                                     .arg(reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt())
+                                     .arg(int(reply->error())).arg(elapsed.elapsed())
+                                     .arg(reply->error() == QNetworkReply::NoError ? QStringLiteral("none") : reply->errorString());
+                // Do not log the trace response: it contains the public IP.
+            };
+            probe(QStringLiteral("tun-numeric"), QNetworkProxy(QNetworkProxy::NoProxy));
+            probe(QStringLiteral("socks-numeric"), QNetworkProxy(QNetworkProxy::Socks5Proxy, socksAddr, quint16(socksPort),
+                                                                socksUser, socksPassword));
+#ifdef Q_OS_MACOS
+            c.diagnostics << QStringLiteral("routes-ipv4:\n") + ask("netstat", {"-rn", "-f", "inet"}, 3000).left(16000);
+            c.diagnostics << QStringLiteral("dns-resolvers:\n") + ask("scutil", {"--dns"}, 3000).left(12000);
+            c.diagnostics << QStringLiteral("system-tcp-peer-route:\n") + ask("route", {"-n", "get", "172.19.0.2"}, 3000).left(3000);
+            c.diagnostics << QStringLiteral("tun-interface:\n") +
+                                 (c.adapter.isEmpty() ? QStringLiteral("absent") : ask("ifconfig", {c.adapter}, 3000).left(4000));
+#endif
+        }
+        c.diagnostics.prepend(QStringLiteral("snapshot=%1 helper=%2 adapter=%3 route-to-1.1.1.1=%4")
+                                  .arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs))
+                                  .arg(c.helperAlive).arg(c.adapter, c.routeVia));
         return c;
 #endif
     }

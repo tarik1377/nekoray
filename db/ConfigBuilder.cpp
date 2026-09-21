@@ -2,6 +2,7 @@
 #include "db/Database.hpp"
 #include "fmt/includes.h"
 #include "fmt/Preset.hpp"
+#include "main/TunHelper.hpp"
 
 #include <QApplication>
 #include <QFile>
@@ -467,7 +468,8 @@ namespace NekoGui {
 
     void BuildConfigSingBox(const std::shared_ptr<BuildConfigStatus> &status) {
         // Log
-        status->result->coreConfig["log"] = QJsonObject{{"level", dataStore->log_level}};
+        status->result->coreConfig["log"] = QJsonObject{{"level", qEnvironmentVariableIsSet("GREENRHYTHM_TUN_DIAGNOSTICS")
+                                                                    ? QStringLiteral("debug") : dataStore->log_level}};
 
         // Inbounds
 
@@ -513,8 +515,9 @@ namespace NekoGui {
             if (dataStore->vpn_ipv6) inboundObj["inet6_address"] = "fdfe:dcba:9876::1/126";
             // Keep LAN/private traffic out of the tunnel entirely (route-table level), so
             // cross-subnet probes (e.g. Windows Delivery Optimization :7680) don't get
-            // captured and time out. TUN's own 172.19.0.1/28 is set via inet4_address above,
-            // so excluding 172.16/12 is safe.
+            // captured and time out. The external macOS TUN additionally carves
+            // its own subnets out of exclusions below: its system TCP forwarder
+            // needs a route back to the next address in the TUN subnet.
             //
             // К ним же добавлены 100.64.0.0/10 и адреса IPv6 того же смысла.
             // 100.64/10 — это CGNAT, и по нему живёт Tailscale: без исключения
@@ -1102,6 +1105,49 @@ namespace NekoGui {
                           .replace("%DNS_ADDRESS%", BOX_UNDERLYING_DNS)
                           .replace("%FAKE_DNS_INBOUND%", dataStore->fake_dns ? "tun-in" : "empty")
                           .replace("%PORT%", Int2String(dataStore->inbound_socks_port));
+        const bool diagnosticLog = qEnvironmentVariableIsSet("GREENRHYTHM_TUN_DIAGNOSTICS");
+#ifdef Q_OS_MACOS
+        const bool preserveTunRoutes = true;
+#else
+        const bool preserveTunRoutes = false;
+#endif
+        if (diagnosticLog || preserveTunRoutes) {
+            // The helper is elevated and does not inherit our environment.
+            // Set verbosity in its generated config, without persisting a preference.
+            QJsonParseError error;
+            auto document = QJsonDocument::fromJson(config.toUtf8(), &error);
+            if (error.error == QJsonParseError::NoError && document.isObject()) {
+                auto object = document.object();
+                if (diagnosticLog) {
+                    auto log = object.value("log").toObject();
+                    log["level"] = QStringLiteral("debug");
+                    log["timestamp"] = true;
+                    object["log"] = log;
+                }
+                if (preserveTunRoutes) {
+                    auto inbounds = object.value("inbounds").toArray();
+                    for (int i = 0; i < inbounds.size(); ++i) {
+                        auto inbound = inbounds.at(i).toObject();
+                        if (inbound.value("type").toString() != "tun") continue;
+                        QStringList subnets;
+                        for (const auto &key : {"address", "inet4_address", "inet6_address"}) {
+                            const auto addresses = inbound.value(key);
+                            if (addresses.isString()) subnets << addresses.toString();
+                            for (const auto &address : addresses.toArray()) subnets << address.toString();
+                        }
+                        QStringList excludes;
+                        for (const auto &prefix : inbound.value("route_exclude_address").toArray()) excludes << prefix.toString();
+                        if (excludes.isEmpty()) continue;
+                        QJsonArray normalized;
+                        for (const auto &prefix : GreenRhythm::TunHelper::excludeWithoutTunSubnets(excludes, subnets)) normalized.append(prefix);
+                        inbound["route_exclude_address"] = normalized;
+                        inbounds[i] = inbound;
+                    }
+                    object["inbounds"] = inbounds;
+                }
+                config = QString::fromUtf8(QJsonDocument(object).toJson());
+            }
+        }
         // write config
         QFile file;
         file.setFileName(QFileInfo(configFn).fileName());

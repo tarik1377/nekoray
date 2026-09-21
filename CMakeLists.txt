@@ -524,7 +524,7 @@ add_executable(tun_helper_test EXCLUDE_FROM_ALL
         test/TunHelperTest.cpp
         main/TunHelper.cpp
 )
-target_link_libraries(tun_helper_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+target_link_libraries(tun_helper_test PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network)
 target_include_directories(tun_helper_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(relay_component_test EXCLUDE_FROM_ALL

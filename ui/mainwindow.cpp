@@ -3004,11 +3004,18 @@ void MainWindow::vpn_watch_tick() {
     const auto helperPid = GreenRhythm::TunHelper::readPid(dir);
     const auto socksAddr = NekoGui::dataStore->inbound_address;
     const int socksPort = NekoGui::dataStore->inbound_socks_port;
+    const auto socksUser = NekoGui::dataStore->inbound_auth->NeedAuth() ? NekoGui::dataStore->inbound_auth->username : QString();
+    const auto socksPassword = NekoGui::dataStore->inbound_auth->NeedAuth() ? NekoGui::dataStore->inbound_auth->password : QString();
     const int gen = vpn_watch_gen;
     runOnNewThread([=] {
         // Спрашивает систему и открывает соединения — только из рабочего потока.
-        const auto chain = NekoGui_sys::ProbeTunChain(helperPid, socksAddr, socksPort);
+        const auto chain = NekoGui_sys::ProbeTunChain(helperPid, socksAddr, socksPort, socksUser, socksPassword);
         runOnUiThread([=] {
+            // Preserve observations even if the user already disabled TUN to
+            // restore connectivity; only the health verdict must be discarded.
+            for (const auto &detail : chain.diagnostics) {
+                show_log_impl(QStringLiteral("[tun-diagnostic session=%1 current=%2] ").arg(gen).arg(vpn_watch_gen) + detail);
+            }
             // Ответ про ТОТ туннель, который спрашивали. Проверка длится до семи
             // секунд, и за это время помощника успевают снять и поднять заново.
             if (gen != vpn_watch_gen) return;
