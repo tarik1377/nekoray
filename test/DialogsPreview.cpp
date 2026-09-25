@@ -41,6 +41,7 @@
 #include <QDir>
 #include <QFile>
 #include <QPixmap>
+#include <QScrollArea>
 #include <QTabWidget>
 #include <QTranslator>
 
@@ -130,6 +131,37 @@ int main(int argc, char *argv[]) {
         ui.setupUi(&probe);
         const int tabs = probe.findChild<QTabWidget *>() != nullptr ? probe.findChild<QTabWidget *>()->count() : 1;
         for (int i = 0; i < tabs; ++i) dialog<Ui::DialogBasicSettings>(dir, QStringLiteral("settings"), i);
+    }
+    // И целиком: форма длиннее окна, и нижние группы — подписка, ядро — иначе
+    // в кадр не попадают, а меняются как раз они. Снимается содержимое
+    // прокрутки, а не окно: окно выше экрана Windows не пускает.
+    {
+        QDialog d;
+        Ui::DialogBasicSettings ui;
+        ui.setupUi(&d);
+        GreenRhythm::polishDialog(&d);
+        d.show();
+        QApplication::processEvents();
+        auto *scroll = d.findChild<QScrollArea *>();
+        QWidget *content = scroll != nullptr ? scroll->widget() : nullptr;
+        const QString path = QDir(dir).filePath(QStringLiteral("dlg-settings-full.png"));
+        QPixmap shot;
+        if (content != nullptr) {
+            content->resize(content->width(), content->sizeHint().height());
+            // Фон — у окна, а не у содержимого: без заливки подписи групп легли
+            // бы на чёрное. Цвет — с самого окна, как его нарисовала тема.
+            shot = QPixmap(content->size());
+            shot.fill(d.grab().toImage().pixelColor(2, 2));
+            content->render(&shot);
+        }
+        if (!shot.isNull() && shot.save(path)) {
+            std::printf("сохранено: %s (%dx%d)\n", qPrintable(path), content->width(), content->height());
+            shots++;
+        } else {
+            std::printf("НЕ сохранено: %s\n", qPrintable(path));
+            failed++;
+        }
+        d.hide();
     }
     dialog<Ui::DialogManageRoutes>(dir, QStringLiteral("routes"));
     dialog<Ui::DialogVPNSettings>(dir, QStringLiteral("vpn"));
