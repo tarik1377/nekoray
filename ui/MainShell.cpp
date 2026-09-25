@@ -17,6 +17,7 @@
 #include <QIcon>
 #include <QPushButton>
 #include <QStackedWidget>
+#include <QTimer>
 #include <QVBoxLayout>
 
 namespace GreenRhythm {
@@ -225,6 +226,24 @@ namespace GreenRhythm {
     };
 
     MainShell::MainShell(QWidget *parent) : QWidget(parent) {
+        // СТОРОЖ ПОПЫТКИ. Каждый известный выход из подключения заканчивает
+        // попытку сам (окно, neko_start), а сторож — для того, что потеряется:
+        // кнопка не имеет права остаться выключенной навсегда. Минута — с
+        // запасом против настоящего старта, который занимает секунды. Создаётся
+        // первым: setState обращается к нему, и вызов при сборке страниц не
+        // должен упасть на пустом указателе.
+        connectWatchdog = new QTimer(this);
+        connectWatchdog->setSingleShot(true);
+        connectWatchdog->setInterval(60 * 1000);
+        connect(connectWatchdog, &QTimer::timeout, this, [this] {
+            if (!attempt) return;
+            attempt = false;
+            failed = true;
+            failureReason = tr("нет ответа");
+            const State next = shown();
+            paint(next, next == State::Failed ? failureReason : QString());
+        });
+
         auto *row = new QHBoxLayout(this);
         row->setContentsMargins(0, 0, 0, 0);
         row->setSpacing(0);
@@ -313,16 +332,24 @@ namespace GreenRhythm {
         auto *body = new QWidget(page); body->setFixedWidth(480);
         auto *box = new QVBoxLayout(body); box->setContentsMargins(0, 0, 0, 0); box->setSpacing(12);
         statusTitle = new QLabel(tr("Готов к подключению"), body);
+        statusTitle->setObjectName(QStringLiteral("grStatusTitle"));
         statusTitle->setAlignment(Qt::AlignCenter);
         QFont titleFont = statusTitle->font(); titleFont.setBold(true); titleFont.setPointSizeF(titleFont.pointSizeF() * 1.35);
         statusTitle->setFont(titleFont); box->addWidget(statusTitle);
         powerHint = muted(body, tr("Выберите сервер и подключитесь"), 0.95);
+        powerHint->setObjectName(QStringLiteral("grPowerHint"));
         powerHint->setAlignment(Qt::AlignCenter); powerHint->setWordWrap(true); box->addWidget(powerHint);
         glow = new PowerGlow(body); glow->setFixedSize(192, 192);
         auto *glowBox = new QGridLayout(glow); glowBox->setContentsMargins(0, 0, 0, 0);
         power = new QPushButton(glow); power->setObjectName("grPower"); power->setFixedSize(144, 144);
         power->setCursor(Qt::PointingHandCursor); power->setIconSize(QSize(52, 52));
-        connect(power, &QPushButton::clicked, this, &MainShell::connectToggled);
+        // Нажатие — действие человека: прежний отказ снимается сразу. Иначе он
+        // остался бы висеть, если нажатие ничего не начнёт (например, серверов
+        // нет и окно ответило сообщением).
+        connect(power, &QPushButton::clicked, this, [this] {
+            dismissFailure();
+            emit connectToggled();
+        });
         glowBox->addWidget(power, 0, 0, Qt::AlignCenter); box->addWidget(glow, 0, Qt::AlignCenter);
 
         auto *card = new QPushButton(body); currentCard = card;
@@ -437,6 +464,8 @@ namespace GreenRhythm {
         connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept); connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
         connect(list, &QListWidget::itemActivated, &dialog, [&dialog](QListWidgetItem *) { dialog.accept(); }); updateChoice(); search->setFocus();
         if (dialog.exec() == QDialog::Accepted && list->currentItem() && !list->currentItem()->isHidden()) {
+            // Выбран сервер — причина прошлого отказа к нему не относится.
+            dismissFailure();
             emit serverChosen(list->currentItem()->data(Qt::UserRole).toInt());
             selectPage(0);
         }
@@ -524,7 +553,21 @@ namespace GreenRhythm {
                 currentMeta->setText(tr("Нажмите, чтобы сменить сервер"));
             }
         }
-        setState(isConnected ? State::Connected : State::Idle);
+        // ОПРОС НЕ ЗАКАНЧИВАЕТ ПОПЫТКУ И НЕ СТИРАЕТ ОТКАЗ. Прежде здесь стоял
+        // setState(подключено ? Connected : Idle), и раз в две секунды он
+        // перебивал оба: причина отказа исчезала раньше, чем её успевали
+        // прочесть, а на медленном старте кнопка включалась снова, и второе
+        // нажатие упиралось в «Another profile is starting...». Сторож:
+        // test/PowerStateTest.cpp.
+        //
+        // Меняет учёт опрос ровно в одном случае — подключение без попытки:
+        // это успех, и старый отказ больше не правда.
+        if (connected && !attempt) {
+            failed = false;
+            failureReason.clear();
+        }
+        const State next = shown();
+        paint(next, next == State::Failed ? failureReason : QString());
     }
 
     void MainShell::setIdleServer(const QString &name) {
@@ -571,6 +614,59 @@ namespace GreenRhythm {
     }
 
     void MainShell::setState(State next, const QString &reason) {
+        // Учёт — здесь, рисование — в paint(): опрос рисует из учёта, поэтому
+        // попытку и отказ ему не сбить.
+        switch (next) {
+            case State::Connecting:
+                attempt = true;
+                failed = false;
+                failureReason.clear();
+                connectWatchdog->start();
+                break;
+            case State::Failed:
+                attempt = false;
+                failed = true;
+                failureReason = reason;
+                connectWatchdog->stop();
+                break;
+            case State::Connected:
+            case State::Idle:
+                attempt = false;
+                failed = false;
+                failureReason.clear();
+                connectWatchdog->stop();
+                break;
+        }
+        paint(next, reason);
+    }
+
+    MainShell::State MainShell::shown() const {
+        if (attempt) return State::Connecting;
+        if (connected) return State::Connected;
+        if (failed) return State::Failed;
+        return State::Idle;
+    }
+
+    void MainShell::finishConnecting() {
+        if (!attempt) return;
+        attempt = false;
+        connectWatchdog->stop();
+        const State next = shown();
+        paint(next, next == State::Failed ? failureReason : QString());
+    }
+
+    bool MainShell::isConnecting() const { return attempt; }
+
+    void MainShell::setConnectingTimeout(int ms) { connectWatchdog->setInterval(ms); }
+
+    void MainShell::dismissFailure() {
+        if (!failed) return;
+        failed = false;
+        failureReason.clear();
+        if (!attempt) paint(shown(), QString());
+    }
+
+    void MainShell::paint(State next, const QString &reason) {
         state = next;
 
         // Цвет, подпись и доступность кнопки идут одним набором: разойдись они —
@@ -700,7 +796,11 @@ namespace GreenRhythm {
 
     void MainShell::setBusy(bool isBusy) {
         // Оставлено ради прежних вызовов: занятость — это состояние «подключаюсь».
-        if (isBusy) setState(State::Connecting);
+        if (isBusy) {
+            setState(State::Connecting);
+        } else {
+            finishConnecting();
+        }
     }
 
 } // namespace GreenRhythm
