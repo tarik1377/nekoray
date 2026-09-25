@@ -846,7 +846,7 @@ security (QUIC)</translation>
     </message>
     <message>
         <source>Custom Route (global)</source>
-        <translation>Кастомные маршруты (global)</translation>
+        <translation>Свои маршруты (для всех наборов)</translation>
     </message>
     <message>
         <source>Note: Other settings are independent for each route set.</source>
@@ -863,15 +863,15 @@ security (QUIC)</translation>
     </message>
     <message>
         <source>Sniff result for routing</source>
-        <translation>Подслушивать для маршрутизации</translation>
+        <translation>Только для правил маршрутизации</translation>
     </message>
     <message>
         <source>Sniff result for destination</source>
-        <translation>Подслушивать для точки назначения</translation>
+        <translation>Для правил и адреса подключения</translation>
     </message>
     <message>
         <source>Sniffing Mode</source>
-        <translation>Режим подслушивания</translation>
+        <translation>Распознавание домена</translation>
     </message>
     <message>
         <source>Server Address Strategy</source>
@@ -947,7 +947,7 @@ security (QUIC)</translation>
     </message>
     <message>
         <source>Custom Route</source>
-        <translation>Кастомные маршруты</translation>
+        <translation>Свои маршруты</translation>
     </message>
     <message>
         <source>Default Outbound</source>
