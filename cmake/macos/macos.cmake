@@ -46,7 +46,10 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "минимальная macO
 # CoreServices. Пока линковка проходит только транзитивно через Qt, то есть
 # держится на том, что Qt случайно притащил нужное; смена версии Qt сломала бы
 # сборку без единой правки у нас.
-set(PLATFORM_LIBRARIES "-framework CoreFoundation" "-framework CoreServices")
+#
+# ServiceManagement — пункт входа через SMAppService (macOS 13+, sys/AutoRun.cpp).
+# Класс ищется в рантайме, но загружается фреймворк только линковкой.
+set(PLATFORM_LIBRARIES "-framework CoreFoundation" "-framework CoreServices" "-framework ServiceManagement")
 
 # Приложение собирается бандлом: иначе система не покажет его в Программах, не
 # даст иконку и не примет ссылки greenrhythm://.
