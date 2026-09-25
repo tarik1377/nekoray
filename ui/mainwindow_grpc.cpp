@@ -350,6 +350,11 @@ void MainWindow::neko_start(int _id) {
 
     auto result = BuildConfig(ent, false, false);
     if (!result->error.isEmpty()) {
+        // Попытка кончилась, не начавшись. Кнопка говорит это сама, подробность —
+        // в окне; без этого «Подключаюсь…» ждало бы сторожа оболочки.
+        if (shell != nullptr) {
+            shell->setState(GreenRhythm::MainShell::State::Failed, tr("ошибка в настройках профиля"));
+        }
         MessageBoxWarning("BuildConfig return error", result->error);
         return;
     }
@@ -397,7 +402,17 @@ void MainWindow::neko_start(int _id) {
             }
 
             error = defaultClient->Start(&rpcOK, req);
-            if (!rpcOK) return false;
+            if (!rpcOK) {
+                // Ядро не ответило на вызов. Попытка окончена, и кнопка обязана
+                // это сказать: молча она вернулась бы к «Нажмите для
+                // подключения», будто ничего и не пробовали.
+                runOnUiThread([=] {
+                    if (shell != nullptr) {
+                        shell->setState(GreenRhythm::MainShell::State::Failed, tr("ядро не ответило"));
+                    }
+                });
+                return false;
+            }
             if (error.isEmpty()) break;
             if (!looksLikeBindFailure(error)) break;
         }
@@ -471,7 +486,13 @@ void MainWindow::neko_start(int _id) {
         MessageBoxWarning(software_name, "Another profile is starting...");
         return;
     }
+    // «Another profile is starting» выше попытку НЕ заканчивает: идёт чужая, и
+    // её конец придёт из её потока. Закончить её отсюда — снова включить
+    // кнопку посреди старта, ровно то, от чего защищает оболочка.
     if (!mu_stopping.tryLock()) {
+        // Эта попытка не состоялась, и потока, который закончил бы её сам, не
+        // будет. Кнопка покажет то, что есть на деле, — остановка идёт.
+        if (shell != nullptr) shell->finishConnecting();
         MessageBoxWarning(software_name, "Another profile is stopping...");
         mu_starting.unlock();
         return;
@@ -514,6 +535,11 @@ void MainWindow::neko_start(int _id) {
             restartMsgboxTimer->cancel();
             restartMsgboxTimer->deleteLater();
             restartMsgbox->deleteLater();
+            // Попытка закончена, чем бы ни кончилась. Удача к этому времени уже
+            // отметилась подключением, отказ — причиной; если ни того ни
+            // другого (новый ранний выход в neko_start_stage2), кнопка
+            // вернётся в покой, а не будет ждать сторожа.
+            if (shell != nullptr) shell->finishConnecting();
 #ifdef Q_OS_LINUX
             // Check systemd-resolved
             if (NekoGui::dataStore->spmode_vpn && NekoGui::dataStore->routing->direct_dns.startsWith("local") && ReadFileText("/etc/resolv.conf").contains("systemd-resolved")) {
