@@ -21,6 +21,11 @@
  * открыт немодально: живи галка в двух местах, «Готово» в диалоге молча
  * вернуло бы то, что человек только что поменял на странице.
  *
+ * Заход 2б — «Туннель». Переносить из него нечего: всё техническое. Но окно
+ * открывалось только из «Ещё → Все команды», а три подписи («Stack», «Strict
+ * Route», «FakeDNS») были помечены «не переводить» ещё в NekoRay — и стояли
+ * по-английски посреди русского окна, хотя перевод в ru_RU.ts давно есть.
+ *
  * Запуск: ninja settings_page_test && ./settings_page_test
  */
 
@@ -85,12 +90,14 @@ struct Shell {
     QPushButton *startHidden = nullptr;
     QPushButton *subscription = nullptr;
     QPushButton *checkUpdates = nullptr;
+    QPushButton *tunnelSettings = nullptr;
     QLabel *subscriptionDetail = nullptr;
     QLabel *updatesDetail = nullptr;
     QList<bool> autostartSignals;
     QList<bool> startHiddenSignals;
     QList<bool> subscriptionSignals;
     int updateChecks = 0;
+    int tunnelSettingsOpened = 0;
 
     Shell() {
         w.resize(1100, 720);
@@ -100,6 +107,7 @@ struct Shell {
         startHidden = w.findChild<QPushButton *>(QStringLiteral("grStartHidden"));
         subscription = w.findChild<QPushButton *>(QStringLiteral("grSubscriptionAutoUpdate"));
         checkUpdates = w.findChild<QPushButton *>(QStringLiteral("grCheckUpdates"));
+        tunnelSettings = w.findChild<QPushButton *>(QStringLiteral("grTunnelSettings"));
         subscriptionDetail = w.findChild<QLabel *>(QStringLiteral("grSubscriptionAutoUpdateDetail"));
         updatesDetail = w.findChild<QLabel *>(QStringLiteral("grCheckUpdatesDetail"));
         QObject::connect(&w, &GreenRhythm::MainShell::autostartToggled, [this](bool on) { autostartSignals << on; });
@@ -107,6 +115,7 @@ struct Shell {
         QObject::connect(&w, &GreenRhythm::MainShell::subscriptionAutoUpdateToggled,
                          [this](bool on) { subscriptionSignals << on; });
         QObject::connect(&w, &GreenRhythm::MainShell::checkUpdateRequested, [this] { updateChecks++; });
+        QObject::connect(&w, &GreenRhythm::MainShell::tunnelSettingsRequested, [this] { tunnelSettingsOpened++; });
     }
 
     bool ready() const {
@@ -206,6 +215,11 @@ static void shellShowsTheTruth() {
     s.w.setAppVersion(QStringLiteral("1.8.3"));
     is(QStringLiteral("строка обновлений называет установленную версию"),
        s.updatesDetail->text().contains(QStringLiteral("1.8.3")));
+
+    is(QStringLiteral("строка «Параметры туннеля» на месте"), s.tunnelSettings != nullptr);
+    if (s.tunnelSettings == nullptr) return;
+    s.click(s.tunnelSettings);
+    is(QStringLiteral("«Настроить» у туннеля просит окно параметров ровно раз"), s.tunnelSettingsOpened == 1);
 }
 
 static void scheduleRule() {
@@ -257,6 +271,9 @@ static void sourcesWiredAndMoved() {
            hidden.contains(QStringLiteral("refresh_app_options()")) &&
            subscription.contains(QStringLiteral("refresh_app_options()")));
 
+    is(QStringLiteral("«Параметры туннеля» открывают прежнее окно «Туннеля»"),
+       handler(window, QStringLiteral("MainShell::tunnelSettingsRequested"))
+           .contains(QStringLiteral("on_menu_vpn_settings_triggered()")));
     is(QStringLiteral("правду на страницу кладёт окно: shell->setAppOptions"),
        window.contains(QStringLiteral("shell->setAppOptions(")) &&
            header.contains(QStringLiteral("void refresh_app_options();")));
@@ -293,11 +310,41 @@ static void sourcesWiredAndMoved() {
        slurp(QStringLiteral("main/main.cpp")).contains(QStringLiteral("dataStore->start_minimal")));
 }
 
+/** Перевод строки из контекста ru_RU.ts: пусто — нет, не закончен или пустой. */
+static QString russian(const QString &ts, const QString &context, const QString &source) {
+    const int at = ts.indexOf(QStringLiteral("<name>%1</name>").arg(context));
+    if (at < 0) return {};
+    const int end = ts.indexOf(QStringLiteral("</context>"), at);
+    const int src = ts.indexOf(QStringLiteral("<source>%1</source>").arg(source), at);
+    if (src < 0 || src > end) return {};
+    const int open = ts.indexOf(QStringLiteral("<translation"), src);
+    const int close = ts.indexOf(QStringLiteral("</translation>"), open);
+    if (open < 0 || close < 0 || close > end) return {};
+    const int body = ts.indexOf(QLatin1Char('>'), open) + 1;
+    if (ts.mid(open, body - open).contains(QStringLiteral("unfinished"))) return {};
+    return ts.mid(body, close - body).trimmed();
+}
+
+static void tunnelDialogSpeaksRussian() {
+    std::puts("«Туннель»: подписи переводятся, перевод есть");
+    const QString form = slurp(QStringLiteral("ui/dialog_vpn_settings.ui"));
+    const QString ts = slurp(QStringLiteral("translations/ru_RU.ts"));
+    is(QStringLiteral("форма «Туннеля» и ru_RU.ts прочитаны"), !form.isEmpty() && !ts.isEmpty());
+    for (const QString &label: {QStringLiteral("Stack"), QStringLiteral("Strict Route"), QStringLiteral("FakeDNS")}) {
+        is(QStringLiteral("«%1» — без пометки «не переводить»").arg(label),
+           form.contains(QStringLiteral("<string>%1</string>").arg(label)) &&
+               !form.contains(QStringLiteral("notr=\"true\">%1<").arg(label)));
+        is(QStringLiteral("«%1» — русский перевод в DialogVPNSettings есть").arg(label),
+           !russian(ts, QStringLiteral("DialogVPNSettings"), label).isEmpty());
+    }
+}
+
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     shellShowsTheTruth();
     scheduleRule();
     sourcesWiredAndMoved();
+    tunnelDialogSpeaksRussian();
     std::printf("\n%d проверок, провалено %d\n", checks, fails);
     return fails == 0 ? 0 : 1;
 }
