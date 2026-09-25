@@ -50,6 +50,17 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     NekoGui::profileManager->LoadManager();
 
     // Setup misc UI
+    // ЛЕСНАЯ ТЕМА — У КАЖДОГО. До 16.07.2026 по умолчанию стояла системная, и
+    // JsonStore сохранил её в настройки всех, кто ставил программу тогда.
+    // Колонка и страницы нарисованы только под лесную: у давних пользователей
+    // окно выходило наполовину — колонка лесная, диалоги, списки и меню
+    // системные. Разово, по флагу, как перевод интервала подписки; выбора темы
+    // больше нет. Тема 4 — modern.css (ThemeManager). Сторож — palette_test.
+    if (!NekoGui::dataStore->theme_forest_migrated) {
+        NekoGui::dataStore->theme = QStringLiteral("4");
+        NekoGui::dataStore->theme_forest_migrated = true;
+        NekoGui::dataStore->Save();
+    }
     themeManager->ApplyTheme(NekoGui::dataStore->theme);
     ui->setupUi(this);
     //

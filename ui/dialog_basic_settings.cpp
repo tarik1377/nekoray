@@ -4,13 +4,11 @@
 
 #include "3rdparty/qv2ray/v2/ui/widgets/editors/w_JsonEditor.hpp"
 #include "fmt/Preset.hpp"
-#include "ui/ThemeManager.hpp"
 #include "ui/Icon.hpp"
 #include "main/GuiUtils.hpp"
 #include "main/NekoGui.hpp"
 #include "ui/SubscriptionSchedule.hpp"
 
-#include <QStyleFactory>
 #include <QFileDialog>
 #include <QInputDialog>
 #include <QMessageBox>
@@ -122,30 +120,9 @@ DialogBasicSettings::DialogBasicSettings(QWidget *parent)
     connect(ui->language, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this, [=](int index) {
         CACHE.needRestart = true;
     });
-    //
-    int built_in_len = ui->theme->count();
-    ui->theme->addItems(QStyleFactory::keys());
-    //
-    bool ok;
-    auto themeId = NekoGui::dataStore->theme.toInt(&ok);
-    if (ok) {
-        ui->theme->setCurrentIndex(themeId);
-    } else {
-        ui->theme->setCurrentText(NekoGui::dataStore->theme);
-    }
-    //
-    connect(ui->theme, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this, [=](int index) {
-        if (index + 1 <= built_in_len) {
-            themeManager->ApplyTheme(Int2String(index));
-            NekoGui::dataStore->theme = Int2String(index);
-        } else {
-            themeManager->ApplyTheme(ui->theme->currentText());
-            NekoGui::dataStore->theme = ui->theme->currentText();
-        }
-        repaint();
-        mainwindow->repaint();
-        NekoGui::dataStore->Save();
-    });
+    // Выбора темы больше нет: новый вид нарисован только под лесную, а
+    // прежний список лесную и не предлагал — только системную и стили Qt, и
+    // одно нажатие навсегда ломало вид. См. перевод тем в ui/mainwindow.cpp.
 
     // Subscription
 

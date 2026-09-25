@@ -13,7 +13,12 @@
  *  — ни в коде окон, ни в таблице стилей, ни в знаке панели нет цветов прежней
  *    палитры — ни строкой, ни тройкой чисел;
  *  — каждая картинка, на которую ссылается modern.css, есть файлом и вписана в
- *    qss.qrc: без записи в ресурсах переключатель молча рисовался бы пустотой.
+ *    qss.qrc: без записи в ресурсах переключатель молча рисовался бы пустотой;
+ *  — лесная тема у каждого: до 16.07.2026 по умолчанию стояла системная, и
+ *    JsonStore сохранил её в настройки всех, кто ставил программу тогда. У них
+ *    окно выходило наполовину — колонка лесная, диалоги, списки и меню
+ *    системные. Теперь разовый перевод на лесную и никакого выбора темы: в
+ *    старом диалоге лесную было не выбрать вовсе, а системную — одним щелчком.
  *
  * Только чтение файлов: ни окон, ни сети.
  *
@@ -132,6 +137,34 @@ int main(int argc, char **argv) {
         is(QStringLiteral("%1 — в qss.qrc").arg(rel), qrc.contains(QStringLiteral("<file>%1</file>").arg(rel)));
     }
     is(QStringLiteral("переключатели флажков подключены (картинок: %1)").arg(urls), urls >= 7);
+
+    // ---- 4. ЛЕСНАЯ ТЕМА — У КАЖДОГО ----
+    const auto text = [&](const QString &rel) {
+        return slurp(r + rel).replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    };
+    const QString store = text(QStringLiteral("main/NekoGui_DataStore.hpp"));
+    const QString config = text(QStringLiteral("main/NekoGui.cpp"));
+    const QString window = text(QStringLiteral("ui/mainwindow.cpp"));
+    const QString themes = text(QStringLiteral("ui/ThemeManager.cpp"));
+    const QString form = text(QStringLiteral("ui/dialog_basic_settings.ui"));
+    const QString dialog = text(QStringLiteral("ui/dialog_basic_settings.cpp"));
+    const int forest = themes.indexOf(QStringLiteral("case 4:"));
+    is(QStringLiteral("тема 4 — modern.css, лесная"),
+       forest > 0 && themes.mid(forest, themes.indexOf(QStringLiteral("break;"), forest) - forest)
+                         .contains(QStringLiteral("qss/modern.css")));
+    is(QStringLiteral("новым установкам — лесная по умолчанию"), store.contains(QStringLiteral("QString theme = \"4\";")));
+    is(QStringLiteral("флаг разового перевода хранится в настройках"),
+       store.contains(QStringLiteral("bool theme_forest_migrated = false;")) &&
+           config.contains(QStringLiteral("configItem(\"theme_forest_migrated\", &theme_forest_migrated")));
+    const int migrate = window.indexOf(QStringLiteral("if (!NekoGui::dataStore->theme_forest_migrated) {"));
+    const int apply = window.indexOf(QStringLiteral("themeManager->ApplyTheme(NekoGui::dataStore->theme);"));
+    is(QStringLiteral("давних переводят на лесную раньше, чем тема применится"),
+       migrate > 0 && apply > migrate &&
+           window.mid(migrate, apply - migrate).contains(QStringLiteral("NekoGui::dataStore->theme = QStringLiteral(\"4\");")));
+    is(QStringLiteral("в «Дополнительных настройках» нет выбора темы"),
+       !form.isEmpty() && !form.contains(QStringLiteral("name=\"theme\"")) &&
+           !dialog.contains(QStringLiteral("ui->theme")) && !dialog.contains(QStringLiteral("ApplyTheme")));
+    is(QStringLiteral("«Задать иконку» осталась"), form.contains(QStringLiteral("name=\"set_custom_icon\"")));
 
     std::fputs(QStringLiteral("\nпроверок %1, провалов %2\n").arg(checks).arg(fails).toUtf8().constData(), stdout);
     return fails == 0 ? 0 : 1;
