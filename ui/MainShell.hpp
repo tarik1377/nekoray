@@ -199,6 +199,20 @@ namespace GreenRhythm {
         /** Версия в строке «Обновления программы»: что стоит сейчас. */
         void setAppVersion(const QString &version);
 
+        /**
+         * Строки, которые жили только в «Ещё → Все команды»: подключаться при
+         * запуске, автопилот соединения, раздача VPN другим устройствам.
+         *
+         * Значения ставятся молча, как у setModes. Пункты меню остаются второй
+         * дверью к тем же настройкам — правда у них одна.
+         *
+         * @param lanAddress адрес этого компьютера в сети — его вводят на другом
+         *                   устройстве (ui/LanAddress.hpp); пусто — не нашёлся
+         * @param port       порт локального прокси: HTTP и SOCKS5 на одном
+         */
+        void setConnectionOptions(bool connectOnStart, bool autopilot, bool shareToLan,
+                                  const QString &lanAddress, int port);
+
     signals:
         void connectToggled();
 
@@ -213,6 +227,15 @@ namespace GreenRhythm {
         void autostartToggled(bool on);
         void startHiddenToggled(bool on);
         void subscriptionAutoUpdateToggled(bool on);
+
+        /** Вынесенное из «Все команды» — человек нажал сам. */
+        void connectOnStartToggled(bool on);
+        void autopilotToggled(bool on);
+        void shareToLanToggled(bool on);
+        void relayRequested();
+        void supportRequested();
+        void diagnosticsRequested();
+        void aboutRequested();
 
         /** Инструменты, переехавшие из верхнего ряда. */
         void routesRequested();
@@ -297,6 +320,10 @@ namespace GreenRhythm {
         QPushButton *subscriptionToggle = nullptr;
         QLabel *subscriptionDetail = nullptr;
         QLabel *updatesDetail = nullptr;
+        QPushButton *connectOnStartToggle = nullptr;
+        QPushButton *autopilotToggle = nullptr;
+        QPushButton *shareToLanToggle = nullptr;
+        QLabel *shareToLanDetail = nullptr;
         QLineEdit *serverSearch = nullptr;
         QLabel *searchResult = nullptr;
         QLabel *modeSummary = nullptr;

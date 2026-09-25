@@ -17,6 +17,9 @@
 #include "dpi/DpiModule.hpp"
 #include "ui/Palette.hpp"
 #include "ui/SubscriptionSchedule.hpp"
+#include "ui/LanAddress.hpp"
+
+#include <QNetworkInterface>
 
 #ifdef Q_OS_WIN
 static void RegisterGreenRhythmScheme();
@@ -166,6 +169,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->menu_gr_autopilot, &QAction::toggled, this, [=](bool checked) {
         NekoGui::dataStore->connection_autopilot = checked;
         NekoGui::dataStore->Save();
+        refresh_app_options();
     });
     // Autopilot watchdog: first probe soon after startup, then self-scheduled.
     autopilot_timer = new QTimer(this);
@@ -468,6 +472,31 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
                 [this] { on_menu_routing_settings_triggered(); });
         connect(shell, &GreenRhythm::MainShell::tunnelSettingsRequested, this,
                 [this] { on_menu_vpn_settings_triggered(); });
+        // ВЫНЕСЕНО ИЗ «ВСЕ КОМАНДЫ» — через те же пункты меню, как у панели
+        // «Зелёный Ритм»: у пунктов своя проводка, и копия её была бы второй правдой.
+        connect(shell, &GreenRhythm::MainShell::relayRequested, ui->menu_gr_relay, &QAction::trigger);
+        connect(shell, &GreenRhythm::MainShell::supportRequested, ui->menu_gr_telegram, &QAction::trigger);
+        connect(shell, &GreenRhythm::MainShell::diagnosticsRequested, ui->menu_gr_diag, &QAction::trigger);
+        connect(shell, &GreenRhythm::MainShell::aboutRequested, ui->menu_gr_about, &QAction::trigger);
+        connect(shell, &GreenRhythm::MainShell::autopilotToggled, this, [this](bool on) {
+            // Через галку пункта, а не полем: разошедшись, они показывали бы разное.
+            ui->menu_gr_autopilot->setChecked(on);
+            refresh_app_options();
+        });
+        connect(shell, &GreenRhythm::MainShell::connectOnStartToggled, this, [this](bool on) {
+            // То же, что пункт «Запомнить последний профиль»: меню перечитывает
+            // галку из настроек при каждом открытии.
+            NekoGui::dataStore->remember_enable = on;
+            NekoGui::dataStore->Save();
+            refresh_app_options();
+        });
+        connect(shell, &GreenRhythm::MainShell::shareToLanToggled, this, [this](bool on) {
+            // То же, что пункт «Разрешить подключаться другим устройствам». Адрес
+            // входа ядро увидит только после перезапуска — о нём спросит UpdateDataStore.
+            NekoGui::dataStore->inbound_address = on ? "::" : "127.0.0.1";
+            MW_dialog_message("", "UpdateDataStore");
+            refresh_app_options();
+        });
         connect(shell, &GreenRhythm::MainShell::interferenceRequested, this,
                 [this] { on_menu_interference_triggered(); });
         connect(shell, &GreenRhythm::MainShell::settingsRequested, this,
@@ -771,6 +800,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->actionRemember_last_proxy, &QAction::triggered, this, [=](bool checked) {
         NekoGui::dataStore->remember_enable = checked;
         NekoGui::dataStore->Save();
+        refresh_app_options();
     });
     connect(ui->actionStart_with_system, &QAction::triggered, this, [=](bool checked) {
         AutoRun_SetEnabled(checked);
@@ -1229,10 +1259,30 @@ void MainWindow::on_commitDataRequest() {
     qDebug() << "End of data save";
 }
 
+/** Адаптеры машины для строки «Раздавать VPN» — выбор адреса в ui/LanAddress.hpp. */
+static QList<GreenRhythm::Lan::Candidate> lan_candidates() {
+    QList<GreenRhythm::Lan::Candidate> out;
+    for (const auto &iface: QNetworkInterface::allInterfaces()) {
+        const auto flags = iface.flags();
+        const bool up = flags.testFlag(QNetworkInterface::IsUp) && flags.testFlag(QNetworkInterface::IsRunning);
+        for (const auto &entry: iface.addressEntries()) {
+            if (entry.ip().protocol() != QAbstractSocket::IPv4Protocol) continue;
+            out.append({iface.humanReadableName() + QLatin1Char(' ') + iface.name(), entry.ip().toString(), up,
+                        flags.testFlag(QNetworkInterface::IsLoopBack)});
+        }
+    }
+    return out;
+}
+
 void MainWindow::refresh_app_options() {
     if (shell == nullptr) return;
     shell->setAppOptions(AutoRun_IsEnabled(), NekoGui::dataStore->start_minimal,
                          NekoGui::dataStore->sub_auto_update);
+    // Раздача включена — адрес входа слушает всю сеть, как у пункта меню.
+    const bool lan = QStringList{"::", "0.0.0.0"}.contains(NekoGui::dataStore->inbound_address);
+    shell->setConnectionOptions(NekoGui::dataStore->remember_enable, NekoGui::dataStore->connection_autopilot, lan,
+                                lan ? GreenRhythm::Lan::pick(lan_candidates()) : QString(),
+                                NekoGui::dataStore->inbound_socks_port);
 }
 
 /**

@@ -12,12 +12,12 @@
  * настройки и сеть.
  *
  * В выпуск не входит: EXCLUDE_FROM_ALL.
- *   ninja mainwindow_preview && ./mainwindow_preview main.png [страница] [высота|end]
+ *   ninja mainwindow_preview && ./mainwindow_preview main.png [страница] [высота|end|page]
  *
  * Для длинных страниц: «Настройки» не влезают в 720 точек, и снимок обычной
  * высоты не показывал бы нижние разделы вовсе. Высота помогает до размера
  * экрана — выше Windows окно не пускает; «end» докручивает страницу до конца,
- * как это сделает человек.
+ * как это сделает человек; «page» снимает страницу целиком, без колонки.
  */
 
 #include "ui_mainwindow.h"
@@ -220,6 +220,7 @@ int main(int argc, char *argv[]) {
     shell->setModes(true, false, false, true);
     shell->setAppOptions(true, false, 120);
     shell->setAppVersion(QStringLiteral("1.8.3"));
+    shell->setConnectionOptions(true, true, true, QStringLiteral("192.168.1.5"), 2080);
     shell->setServers({{4, QStringLiteral("tarik"), QStringLiteral("32 мс")},
                        {1, QStringLiteral("Germany-admin"), QString()},
                        {5, QStringLiteral("orsana-admin"), QStringLiteral("106 мс")}},
@@ -231,7 +232,8 @@ int main(int argc, char *argv[]) {
 
     const QString tail = argc > 3 ? QString::fromLocal8Bit(argv[3]) : QString();
     const bool toEnd = tail == QStringLiteral("end");
-    const int height = toEnd ? 0 : tail.toInt();
+    const bool wholePage = tail == QStringLiteral("page");
+    const int height = toEnd || wholePage ? 0 : tail.toInt();
     w.resize(1180, height > 0 ? height : 720);
     w.show();
     app.processEvents();
@@ -243,6 +245,20 @@ int main(int argc, char *argv[]) {
     }
 
     QPixmap shot = w.grab();
+    if (wholePage) {
+        // Содержимое прокрутки на фоне страницы — цвет берётся с окна, как его
+        // нарисовала тема: у содержимого своего фона нет.
+        const QColor background = shot.toImage().pixelColor(shot.width() - 40, 12);
+        for (auto *scroll: shell->findChildren<QScrollArea *>()) {
+            if (!scroll->isVisible() || scroll->widget() == nullptr) continue;
+            QWidget *content = scroll->widget();
+            content->resize(content->width(), content->sizeHint().height());
+            shot = QPixmap(content->size());
+            shot.fill(background);
+            content->render(&shot);
+            break;
+        }
+    }
     if (!shot.save(out)) {
         qWarning("не удалось сохранить %s", qPrintable(out));
         return 1;

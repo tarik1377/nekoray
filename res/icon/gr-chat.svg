@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Поддержка: облачко переписки с многоточием — «вам ответят». -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-width="1.8"
+     stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4.5 5.5 a2 2 0 0 1 2 -2 h11 a2 2 0 0 1 2 2 v8 a2 2 0 0 1 -2 2 h-6.5 l-4 3.5 v-3.5 h-0.5 a2 2 0 0 1 -2 -2 z"/>
+  <path d="M8.5 9.5 H8.6"/>
+  <path d="M12 9.5 H12.1"/>
+  <path d="M15.5 9.5 H15.6"/>
+</svg>

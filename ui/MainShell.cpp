@@ -425,6 +425,17 @@ namespace GreenRhythm {
         modeProxy = toggle(page, tr("Включить")); modeProxy->setAccessibleName(tr("Системный прокси"));
         connect(modeProxy, &QPushButton::clicked, this, &MainShell::systemProxyToggled);
         addRow(tr("Системный прокси"), tr("Для браузеров и приложений, использующих настройки прокси системы."), "gr-nav-connect", modeProxy);
+        // Автопилот, резерв и раздача жили только в «Ещё → Все команды»: автопилот
+        // включён у всех, резерв — отдельная услуга, и о них никто не знал.
+        autopilotToggle = toggle(page, tr("Автопилот соединения")); autopilotToggle->setObjectName("grAutopilot");
+        connect(autopilotToggle, &QPushButton::clicked, this, &MainShell::autopilotToggled);
+        addRow(tr("Автопилот соединения"), tr("Проверяет, что интернет через VPN правда работает. При обрыве сам обновит подписку или переключит сервер."), "gr-activity", autopilotToggle);
+        auto *relay = new QPushButton(tr("Подключить"), page); relay->setObjectName("grRelay"); relay->setAccessibleName(tr("Резервное подключение"));
+        connect(relay, &QPushButton::clicked, this, &MainShell::relayRequested);
+        addRow(tr("Резервное подключение"), tr("Работает там, где обычные серверы перестают проходить. Отдельная услуга, включается кодом из личного кабинета."), "gr-arrows-updown", relay);
+        shareToLanToggle = toggle(page, tr("Раздавать VPN другим устройствам")); shareToLanToggle->setObjectName("grShareToLan");
+        connect(shareToLanToggle, &QPushButton::clicked, this, &MainShell::shareToLanToggled);
+        shareToLanDetail = addRow(tr("Раздавать VPN другим устройствам"), QString(), "gr-devices", shareToLanToggle); shareToLanDetail->setObjectName("grShareToLanDetail");
         box->addWidget(caption(page, tr("МАРШРУТИЗАЦИЯ")));
         gamesToggle = toggle(page, tr("Включить")); gamesToggle->setAccessibleName(tr("Игры через VPN"));
         connect(gamesToggle, &QPushButton::clicked, this, &MainShell::gamesViaTunnelToggled);
@@ -459,6 +470,11 @@ namespace GreenRhythm {
         // Автозапуск Windows и Linux передаёт -tray (sys/AutoRun.cpp): окно не откроется.
         addRow(tr("Запуск вместе с системой"), tr("При входе в систему программа запустится сама и будет ждать в трее."), "gr-power", autostartToggle);
 #endif
+        // Пункт назывался «Запомнить последний профиль», и из названия не понять,
+        // что программа при старте подключится сама. Пара к автозапуску.
+        connectOnStartToggle = toggle(page, tr("Подключаться при запуске")); connectOnStartToggle->setObjectName("grConnectOnStart");
+        connect(connectOnStartToggle, &QPushButton::clicked, this, &MainShell::connectOnStartToggled);
+        addRow(tr("Подключаться при запуске"), tr("Программа сама подключится к последнему серверу в том же режиме, что был перед выходом."), "gr-history", connectOnStartToggle);
         startHiddenToggle = toggle(page, tr("Запускать свёрнутым")); startHiddenToggle->setObjectName("grStartHidden");
         connect(startHiddenToggle, &QPushButton::clicked, this, &MainShell::startHiddenToggled);
         addRow(tr("Запускать свёрнутым"), tr("При запуске окно не открывается, программа ждёт в трее."), "gr-tray", startHiddenToggle);
@@ -471,6 +487,17 @@ namespace GreenRhythm {
         setAppOptions(false, false, 0); setAppVersion(QString());
         auto *advanced = new QPushButton(tr("Открыть"), page); connect(advanced, &QPushButton::clicked, this, &MainShell::settingsRequested);
         addRow(tr("Дополнительные настройки"), tr("Язык и оформление, локальный прокси, проверка серверов, тонкая настройка подписки и ядра."), "gr-sliders", advanced);
+        box->addWidget(caption(page, tr("ПОМОЩЬ")));
+        auto *support = new QPushButton(tr("Написать"), page); support->setObjectName("grSupport"); support->setAccessibleName(tr("Поддержка в Telegram"));
+        connect(support, &QPushButton::clicked, this, &MainShell::supportRequested);
+        addRow(tr("Поддержка в Telegram"), tr("Напишите нам, если что-то не работает или непонятно."), "gr-chat", support);
+        auto *diagnostics = new QPushButton(tr("Проверить"), page); diagnostics->setObjectName("grDiagnostics"); diagnostics->setAccessibleName(tr("Диагностика соединения"));
+        connect(diagnostics, &QPushButton::clicked, this, &MainShell::diagnosticsRequested);
+        addRow(tr("Диагностика соединения"), tr("Проверит интернет, DNS и доступность сервера и скажет, что не так."), "gr-help", diagnostics);
+        auto *about = new QPushButton(tr("Открыть"), page); about->setObjectName("grAbout"); about->setAccessibleName(tr("О программе"));
+        connect(about, &QPushButton::clicked, this, &MainShell::aboutRequested);
+        addRow(tr("О программе"), tr("Версия, сайт, лицензия и исходный код."), "gr-info", about);
+        setConnectionOptions(false, false, false, QString(), 0);
         box->addStretch(); scroll->setWidget(page); return scroll;
     }
 
@@ -623,6 +650,24 @@ namespace GreenRhythm {
         if (updatesDetail == nullptr) return;
         updatesDetail->setText(version.isEmpty() ? tr("Проверить, не вышла ли новая версия.")
                                                  : tr("Установлена версия %1.").arg(version));
+    }
+
+    void MainShell::setConnectionOptions(bool connectOnStart, bool autopilot, bool shareToLan,
+                                         const QString &lanAddress, int port) {
+        // setChecked не шлёт clicked, поэтому обратной волны сигналов нет.
+        if (connectOnStartToggle != nullptr) connectOnStartToggle->setChecked(connectOnStart);
+        if (autopilotToggle != nullptr) autopilotToggle->setChecked(autopilot);
+        if (shareToLanToggle != nullptr) shareToLanToggle->setChecked(shareToLan);
+        if (shareToLanDetail == nullptr) return;
+        // Прокси без пароля открыт всей сети — в кафе или гостинице это чужие люди.
+        const QString publicWifi = tr("Не включайте в общественном Wi-Fi.");
+        if (!shareToLan) {
+            shareToLanDetail->setText(tr("Телефон, телевизор или приставка в этой сети смогут выходить через этот компьютер. %1").arg(publicWifi));
+        } else if (!lanAddress.isEmpty()) {
+            shareToLanDetail->setText(tr("На другом устройстве укажите прокси %1, порт %2 — HTTP или SOCKS5. %3").arg(lanAddress).arg(port).arg(publicWifi));
+        } else {
+            shareToLanDetail->setText(tr("На другом устройстве укажите прокси: адрес этого компьютера в сети, порт %1 — HTTP или SOCKS5. %2").arg(port).arg(publicWifi));
+        }
     }
 
     void MainShell::setIdleServer(const QString &name) {
