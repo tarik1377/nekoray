@@ -12,7 +12,12 @@
  * настройки и сеть.
  *
  * В выпуск не входит: EXCLUDE_FROM_ALL.
- *   ninja mainwindow_preview && ./mainwindow_preview main.png
+ *   ninja mainwindow_preview && ./mainwindow_preview main.png [страница] [высота|end]
+ *
+ * Для длинных страниц: «Настройки» не влезают в 720 точек, и снимок обычной
+ * высоты не показывал бы нижние разделы вовсе. Высота помогает до размера
+ * экрана — выше Windows окно не пускает; «end» докручивает страницу до конца,
+ * как это сделает человек.
  */
 
 #include "ui_mainwindow.h"
@@ -30,6 +35,8 @@
 #include <QMainWindow>
 #include <QMenuBar>
 #include <QPixmap>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QTranslator>
 #include <QTableWidgetItem>
 
@@ -211,6 +218,8 @@ int main(int argc, char *argv[]) {
     // Режимы и список под кнопкой — тоже настоящие: снимок обязан показывать
     // то окно, которое увидит человек, а не то, что было до этих кнопок.
     shell->setModes(true, false, false, true);
+    shell->setAppOptions(true, false, 120);
+    shell->setAppVersion(QStringLiteral("1.8.3"));
     shell->setServers({{4, QStringLiteral("tarik"), QStringLiteral("32 мс")},
                        {1, QStringLiteral("Germany-admin"), QString()},
                        {5, QStringLiteral("orsana-admin"), QStringLiteral("106 мс")}},
@@ -220,9 +229,18 @@ int main(int argc, char *argv[]) {
     // Страница выбирается доводом: посмотреть надо каждую, а не только первую.
     if (argc > 2) shell->showPage(QString::fromLocal8Bit(argv[2]).toInt());
 
-    w.resize(1180, 720);
+    const QString tail = argc > 3 ? QString::fromLocal8Bit(argv[3]) : QString();
+    const bool toEnd = tail == QStringLiteral("end");
+    const int height = toEnd ? 0 : tail.toInt();
+    w.resize(1180, height > 0 ? height : 720);
     w.show();
     app.processEvents();
+    if (toEnd) {
+        for (auto *scroll: shell->findChildren<QScrollArea *>()) {
+            if (scroll->isVisible()) scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());
+        }
+        app.processEvents();
+    }
 
     QPixmap shot = w.grab();
     if (!shot.save(out)) {

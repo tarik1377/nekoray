@@ -16,6 +16,7 @@
 #include "dpi/DpiBundle.hpp"
 #include "dpi/DpiModule.hpp"
 #include "ui/Palette.hpp"
+#include "ui/SubscriptionSchedule.hpp"
 
 #ifdef Q_OS_WIN
 static void RegisterGreenRhythmScheme();
@@ -429,6 +430,29 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
             sync_dpi_module();
             refresh_status();
         });
+        // ПРИЛОЖЕНИЕ — то же, что делали пункт меню и старый диалог. Перезапуск
+        // ядра не нужен: ни одна из трёх настроек в его конфиг не попадает,
+        // поэтому Save() напрямую, а не UpdateDataStore с вопросом «перезапустить?».
+        connect(shell, &GreenRhythm::MainShell::autostartToggled, this, [this](bool on) {
+            AutoRun_SetEnabled(on);
+            refresh_app_options();
+        });
+        connect(shell, &GreenRhythm::MainShell::startHiddenToggled, this, [this](bool on) {
+            NekoGui::dataStore->start_minimal = on;
+            NekoGui::dataStore->Save();
+            refresh_app_options();
+        });
+        connect(shell, &GreenRhythm::MainShell::subscriptionAutoUpdateToggled, this, [this](bool on) {
+            NekoGui::dataStore->sub_auto_update =
+                GreenRhythm::SubscriptionSchedule::toggled(NekoGui::dataStore->sub_auto_update, on);
+            TM_auto_update_subsctiption_Reset_Minute(NekoGui::dataStore->sub_auto_update);
+            NekoGui::dataStore->Save();
+            refresh_app_options();
+        });
+        // Версия — та, что вшита сборкой; выпуск пишет туда тег вида «v1.8.3».
+        QString appVersion = QString(NKR_VERSION);
+        if (appVersion.startsWith('v')) appVersion.remove(0, 1);
+        shell->setAppVersion(appVersion);
         connect(shell, &GreenRhythm::MainShell::routesRequested, this,
                 [this] { on_menu_routing_settings_triggered(); });
         connect(shell, &GreenRhythm::MainShell::interferenceRequested, this,
@@ -737,6 +761,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     });
     connect(ui->actionStart_with_system, &QAction::triggered, this, [=](bool checked) {
         AutoRun_SetEnabled(checked);
+        refresh_app_options();
     });
     connect(ui->actionAllow_LAN, &QAction::triggered, this, [=](bool checked) {
         NekoGui::dataStore->inbound_address = checked ? "::" : "127.0.0.1";
@@ -960,6 +985,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     };
     connect(TM_auto_update_subsctiption, &QTimer::timeout, this, [&] { UI_update_all_groups(true); });
     TM_auto_update_subsctiption_Reset_Minute(NekoGui::dataStore->sub_auto_update);
+    // Страница «Настройки» — после миграции интервала выше: иначе первый запуск
+    // после обновления показал бы прежнее число.
+    refresh_app_options();
 
     if (!NekoGui::dataStore->flag_tray) show();
 }
@@ -1060,6 +1088,8 @@ void MainWindow::dialog_message_impl(const QString &sender, const QString &info)
             suggestRestartProxy = false;
         }
         refresh_proxy_list();
+        // Интервал подписки меняют в старом диалоге — пояснение на странице следом.
+        refresh_app_options();
         if (info.contains("VPNChanged") && NekoGui::dataStore->spmode_vpn) {
             MessageBoxWarning(tr("Tun Settings changed"), tr("Restart Tun to take effect."));
         }
@@ -1184,6 +1214,12 @@ void MainWindow::on_commitDataRequest() {
     NekoGui::dataStore->Save();
     NekoGui::profileManager->SaveManager();
     qDebug() << "End of data save";
+}
+
+void MainWindow::refresh_app_options() {
+    if (shell == nullptr) return;
+    shell->setAppOptions(AutoRun_IsEnabled(), NekoGui::dataStore->start_minimal,
+                         NekoGui::dataStore->sub_auto_update);
 }
 
 /**

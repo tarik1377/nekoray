@@ -298,6 +298,11 @@ private:
     // refresh_status.
     void sync_dpi_module();
 
+    // Раздел «Приложение» страницы «Настройки»: автозапуск, «свёрнутым»,
+    // автообновление подписки. Не из refresh_status: тот зовётся раз в две
+    // секунды, а AutoRun_IsEnabled читает реестр или файл автозапуска.
+    void refresh_app_options();
+
     QLabel *conn_route_summary = nullptr; // live route "map": proxy/direct/block split + bar
 
     // Connection health for the status pill, so it can say more than up/down: the tunnel

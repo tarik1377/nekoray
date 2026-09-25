@@ -1,6 +1,7 @@
 #include "ui/MainShell.hpp"
 #include "ui/Icons.hpp"
 #include "ui/Palette.hpp"
+#include "ui/SubscriptionSchedule.hpp"
 
 #include <QGridLayout>
 #include <QPainter>
@@ -410,6 +411,7 @@ namespace GreenRhythm {
             auto *detail = muted(card, description, 0.9); detail->setWordWrap(true); labels->addWidget(detail); row->addLayout(labels, 1);
             if (!button->isCheckable()) button->setStyleSheet(QStringLiteral("QPushButton { min-height: 36px; padding: 0 14px; background: %1; border-radius: 9px; color: %2; border: 1px solid transparent; } QPushButton:hover, QPushButton:focus { border-color: %3; }").arg(kSurface, kText, kAccent));
             button->setCursor(Qt::PointingHandCursor); row->addWidget(button); box->addWidget(card);
+            return detail;
         };
         box->addWidget(caption(page, tr("ПОДКЛЮЧЕНИЕ")));
         modeTun = toggle(page, tr("Включить")); modeTun->setObjectName("grModeTun"); modeTun->setAccessibleName(tr("Туннель для всего устройства"));
@@ -440,8 +442,30 @@ namespace GreenRhythm {
 #endif
         dpiModuleState = muted(page, QString()); dpiModuleState->setWordWrap(true); dpiModuleState->hide(); box->addWidget(dpiModuleState);
         box->addWidget(caption(page, tr("ПРИЛОЖЕНИЕ")));
+        // Автозапуск жил в меню «Все команды», «свёрнутым» и автообновление — в
+        // «Дополнительных настройках» между адресом прокси и User-Agent, и там их
+        // не находили. Правду о них знает окно, оно же кладёт её сюда: setAppOptions.
+        autostartToggle = toggle(page, tr("Запуск вместе с системой")); autostartToggle->setObjectName("grAutostart");
+        connect(autostartToggle, &QPushButton::clicked, this, &MainShell::autostartToggled);
+#ifdef Q_OS_MACOS
+        // Пункт входа macOS запускает программу без доводов, окно откроется.
+        addRow(tr("Запуск вместе с системой"), tr("Программа запустится сама, когда вы войдёте в систему."), "gr-power", autostartToggle);
+#else
+        // Автозапуск Windows и Linux передаёт -tray (sys/AutoRun.cpp): окно не откроется.
+        addRow(tr("Запуск вместе с системой"), tr("При входе в систему программа запустится сама и будет ждать в трее."), "gr-power", autostartToggle);
+#endif
+        startHiddenToggle = toggle(page, tr("Запускать свёрнутым")); startHiddenToggle->setObjectName("grStartHidden");
+        connect(startHiddenToggle, &QPushButton::clicked, this, &MainShell::startHiddenToggled);
+        addRow(tr("Запускать свёрнутым"), tr("При запуске окно не открывается, программа ждёт в трее."), "gr-tray", startHiddenToggle);
+        subscriptionToggle = toggle(page, tr("Обновлять подписку автоматически")); subscriptionToggle->setObjectName("grSubscriptionAutoUpdate");
+        connect(subscriptionToggle, &QPushButton::clicked, this, &MainShell::subscriptionAutoUpdateToggled);
+        subscriptionDetail = addRow(tr("Обновлять подписку автоматически"), QString(), "gr-refresh", subscriptionToggle); subscriptionDetail->setObjectName("grSubscriptionAutoUpdateDetail");
+        auto *updates = new QPushButton(tr("Проверить"), page); updates->setObjectName("grCheckUpdates"); updates->setAccessibleName(tr("Проверить обновления"));
+        connect(updates, &QPushButton::clicked, this, &MainShell::checkUpdateRequested);
+        updatesDetail = addRow(tr("Обновления программы"), QString(), "gr-download", updates); updatesDetail->setObjectName("grCheckUpdatesDetail");
+        setAppOptions(false, false, 0); setAppVersion(QString());
         auto *advanced = new QPushButton(tr("Открыть"), page); connect(advanced, &QPushButton::clicked, this, &MainShell::settingsRequested);
-        addRow(tr("Дополнительные настройки"), tr("Оформление, подписки, локальный прокси и параметры ядра."), "gr-sliders", advanced);
+        addRow(tr("Дополнительные настройки"), tr("Язык и оформление, локальный прокси, проверка серверов, тонкая настройка подписки и ядра."), "gr-sliders", advanced);
         box->addStretch(); scroll->setWidget(page); return scroll;
     }
 
@@ -565,6 +589,35 @@ namespace GreenRhythm {
         }
         const State next = shown();
         paint(next, next == State::Failed ? failureReason : QString());
+    }
+
+    void MainShell::setAppOptions(bool autostart, bool startHidden, int subscriptionMinutes) {
+        // setChecked не шлёт clicked, поэтому обратной волны сигналов нет.
+        if (autostartToggle != nullptr) autostartToggle->setChecked(autostart);
+        if (startHiddenToggle != nullptr) startHiddenToggle->setChecked(startHidden);
+        // «Вкл» — только когда таймер окна правда заведётся: при 10 минутах
+        // переключатель стоял бы включённым, а подписка не обновлялась бы.
+        const bool on = SubscriptionSchedule::isOn(subscriptionMinutes);
+        if (subscriptionToggle != nullptr) subscriptionToggle->setChecked(on);
+        if (subscriptionDetail == nullptr) return;
+        if (!on) {
+            subscriptionDetail->setText(tr("Выключено: обновить можно вручную на странице «Серверы»."));
+            return;
+        }
+        const int minutes = subscriptionMinutes;
+        const int hours = minutes / 60;
+        const QString every = minutes == 60     ? tr("раз в час")
+                              : minutes == 1440 ? tr("раз в сутки")
+                              : minutes % 60 == 0
+                                  ? tr("раз в %1 %2").arg(hours).arg(plural(hours, tr("час"), tr("часа"), tr("часов")))
+                                  : tr("раз в %1 %2").arg(minutes).arg(plural(minutes, tr("минуту"), tr("минуты"), tr("минут")));
+        subscriptionDetail->setText(tr("Серверы и остаток трафика обновляются %1.").arg(every));
+    }
+
+    void MainShell::setAppVersion(const QString &version) {
+        if (updatesDetail == nullptr) return;
+        updatesDetail->setText(version.isEmpty() ? tr("Проверить, не вышла ли новая версия.")
+                                                 : tr("Установлена версия %1.").arg(version));
     }
 
     void MainShell::setIdleServer(const QString &name) {

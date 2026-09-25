@@ -183,6 +183,22 @@ namespace GreenRhythm {
         /** Кого подключит кнопка, пока не подключено. Пусто — «Сервер не выбран». */
         void setIdleServer(const QString &name);
 
+        /**
+         * Раздел «Приложение»: автозапуск, запуск свёрнутым, автообновление подписки.
+         *
+         * Жили не там, где их ищут: автозапуск — в меню «Ещё → Все команды», два
+         * других — в «Дополнительных настройках», между адресом прокси и
+         * User-Agent. Значения ставятся молча, как у setModes: опрос не должен
+         * включать автозапуск сам.
+         *
+         * @param subscriptionMinutes как dataStore->sub_auto_update: знак —
+         *        включено ли, модуль — интервал (ui/SubscriptionSchedule.hpp)
+         */
+        void setAppOptions(bool autostart, bool startHidden, int subscriptionMinutes);
+
+        /** Версия в строке «Обновления программы»: что стоит сейчас. */
+        void setAppVersion(const QString &version);
+
     signals:
         void connectToggled();
 
@@ -192,6 +208,11 @@ namespace GreenRhythm {
         void gamesViaTunnelToggled(bool on);
         void dpiFragmentToggled(bool on);
         void dpiModuleToggled(bool on);
+
+        /** Раздел «Приложение» — человек нажал сам. */
+        void autostartToggled(bool on);
+        void startHiddenToggled(bool on);
+        void subscriptionAutoUpdateToggled(bool on);
 
         /** Инструменты, переехавшие из верхнего ряда. */
         void routesRequested();
@@ -269,6 +290,11 @@ namespace GreenRhythm {
         QPushButton *dpiToggle = nullptr;
         QPushButton *dpiModuleToggle = nullptr;
         QLabel *dpiModuleState = nullptr;
+        QPushButton *autostartToggle = nullptr;
+        QPushButton *startHiddenToggle = nullptr;
+        QPushButton *subscriptionToggle = nullptr;
+        QLabel *subscriptionDetail = nullptr;
+        QLabel *updatesDetail = nullptr;
         QLineEdit *serverSearch = nullptr;
         QLabel *searchResult = nullptr;
         QLabel *modeSummary = nullptr;

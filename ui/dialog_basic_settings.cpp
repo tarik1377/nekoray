@@ -8,6 +8,7 @@
 #include "ui/Icon.hpp"
 #include "main/GuiUtils.hpp"
 #include "main/NekoGui.hpp"
+#include "ui/SubscriptionSchedule.hpp"
 
 #include <QStyleFactory>
 #include <QFileDialog>
@@ -101,7 +102,6 @@ DialogBasicSettings::DialogBasicSettings(QWidget *parent)
     //
     D_LOAD_BOOL(check_include_pre)
     D_LOAD_BOOL(connection_statistics)
-    D_LOAD_BOOL(start_minimal)
     D_LOAD_INT(max_log_line)
     //
     if (NekoGui::dataStore->traffic_loop_interval == 500) {
@@ -161,7 +161,10 @@ DialogBasicSettings::DialogBasicSettings(QWidget *parent)
                               tr("Disabling TLS verification exposes subscription downloads to interception on hostile networks. Only enable this if you trust your connection."));
         }
     });
-    D_LOAD_INT_ENABLE(sub_auto_update, sub_auto_update_enable)
+    // Включают автообновление переключателем на странице «Настройки»; здесь —
+    // только интервал. Знак числа — «включено», поэтому показываем модуль.
+    ui->sub_auto_update->setText(Int2String(qAbs(NekoGui::dataStore->sub_auto_update)));
+    ui->sub_auto_update->setValidator(QRegExpValidator_Number);
 
     // Core
 
@@ -245,7 +248,6 @@ void DialogBasicSettings::accept() {
     NekoGui::dataStore->language = ui->language->currentIndex();
     D_SAVE_BOOL(connection_statistics)
     D_SAVE_BOOL(check_include_pre)
-    D_SAVE_BOOL(start_minimal)
     D_SAVE_INT(max_log_line)
 
     if (NekoGui::dataStore->max_log_line <= 0) {
@@ -268,17 +270,17 @@ void DialogBasicSettings::accept() {
 
     // Subscription
 
-    if (ui->sub_auto_update_enable->isChecked()) {
-        TM_auto_update_subsctiption_Reset_Minute(ui->sub_auto_update->text().toInt());
-    } else {
-        TM_auto_update_subsctiption_Reset_Minute(0);
-    }
+    // Включено ли — решает переключатель на странице, и знак берётся из
+    // настроек сейчас, а не при открытии: диалог немодальный, и переключатель
+    // могли тронуть, пока он открыт.
+    NekoGui::dataStore->sub_auto_update = GreenRhythm::SubscriptionSchedule::withInterval(NekoGui::dataStore->sub_auto_update,
+                                                                                        ui->sub_auto_update->text().toInt());
+    TM_auto_update_subsctiption_Reset_Minute(NekoGui::dataStore->sub_auto_update);
 
     NekoGui::dataStore->user_agent = ui->user_agent->text();
     D_SAVE_BOOL(sub_use_proxy)
     D_SAVE_BOOL(sub_clear)
     D_SAVE_BOOL(sub_insecure)
-    D_SAVE_INT_ENABLE(sub_auto_update, sub_auto_update_enable)
 
     // Core
 
