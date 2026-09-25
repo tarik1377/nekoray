@@ -26,6 +26,11 @@
 #include <QApplication>
 #include <QMouseEvent>
 #include <QPushButton>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QLineEdit>
+#include <QListWidget>
+#include <QTimer>
 #include <QWindow>
 
 #include <cstdio>
@@ -107,6 +112,45 @@ int main(int argc, char **argv) {
        shell.childAt(at) == power);
     clickWindowAt(&shell, at);
     is(QStringLiteral("подключено: нажатие мышью доходит до connectToggled"), toggled == 2);
+
+    // Navigation and mode controls are UI-only here: no core or network exists.
+    shell.adopt(new QWidget, new QWidget);
+    auto *tun = shell.findChild<QPushButton *>(QStringLiteral("grModeTun"));
+    auto *options = shell.findChild<QPushButton *>(QStringLiteral("grConnectionOptions"));
+    is(QStringLiteral("режимы отсутствуют на главном экране"), tun && !tun->isVisible());
+    options->click(); QCoreApplication::processEvents();
+    is(QStringLiteral("параметры открывают страницу режимов"), tun && tun->isVisible());
+    int modeSignals = 0;
+    QObject::connect(&shell, &GreenRhythm::MainShell::tunToggled, [&modeSignals](bool) { ++modeSignals; });
+    shell.setModes(true, false, false, false);
+    is(QStringLiteral("обновление состояния не переключает VPN"), modeSignals == 0 && tun->isChecked());
+    tun->click();
+    is(QStringLiteral("переключение пользователем сохраняет сигнал"), modeSignals == 1);
+    shell.focusServerSearch();
+    auto *search = shell.findChild<QLineEdit *>(QStringLiteral("grServerSearch"));
+    QString query;
+    QObject::connect(&shell, &GreenRhythm::MainShell::serverSearchChanged, [&query](const QString &text) { query = text; });
+    search->setText(QStringLiteral("Berlin"));
+    is(QStringLiteral("видимый поиск передаёт запрос"), search->isVisible() && query == QStringLiteral("Berlin"));
+    shell.showPage(0);
+    shell.setServers({{42, QStringLiteral("Berlin"), QStringLiteral("32 ms")},
+                      {43, QStringLiteral("Paris"), QString()}}, 42);
+    int chosen = -99;
+    QObject::connect(&shell, &GreenRhythm::MainShell::serverChosen, [&chosen](int id) { chosen = id; });
+    QTimer::singleShot(0, [&] {
+        auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+        if (!dialog) return;
+        auto *filter = dialog->findChild<QLineEdit *>();
+        auto *list = dialog->findChild<QListWidget *>();
+        auto *buttons = dialog->findChild<QDialogButtonBox *>();
+        filter->setText(QStringLiteral("Paris"));
+        is(QStringLiteral("нельзя выбрать скрытый результат поиска"), !buttons->button(QDialogButtonBox::Ok)->isEnabled());
+        list->setCurrentRow(2);
+        buttons->button(QDialogButtonBox::Ok)->click();
+    });
+    shell.findChild<QPushButton *>(QStringLiteral("grServerChoice"))->click();
+    is(QStringLiteral("поиск и выбор сохраняют ID сервера"), chosen == 43);
+    is(QStringLiteral("выбор сам не нажимает подключение"), toggled == 2);
 
     return finish();
 }

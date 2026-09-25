@@ -460,6 +460,24 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         // проводка не делала ничего, и кнопка выглядела сломанной.
         connect(shell, &GreenRhythm::MainShell::addServerRequested, this,
                 [this] { add_server_dialog(); });
+        connect(shell, &GreenRhythm::MainShell::chooseSelectedRequested, this, [this] {
+            QList<std::shared_ptr<NekoGui::ProxyEntity>> selected;
+            for (auto *item : ui->proxyListTable->selectedItems()) {
+                if (ui->proxyListTable->isRowHidden(item->row())) continue;
+                auto profile = NekoGui::profileManager->GetProfile(item->data(114514).toInt());
+                if (profile && !selected.contains(profile)) selected << profile;
+            }
+            if (selected.size() != 1) {
+                QMessageBox::information(this, tr("Выбрать сервер"), tr("Выделите один сервер в списке."));
+                return;
+            }
+            emit shell->serverChosen(selected.first()->id);
+            shell->showPage(0);
+        });
+        connect(shell, &GreenRhythm::MainShell::pasteRequested, this, &MainWindow::on_menu_add_from_clipboard_triggered);
+        connect(shell, &GreenRhythm::MainShell::scanRequested, this, &MainWindow::on_menu_scan_qr_triggered);
+        connect(shell, &GreenRhythm::MainShell::testServersRequested, ui->menu_url_test, &QAction::trigger);
+        connect(shell, &GreenRhythm::MainShell::serverSearchChanged, ui->search, &QLineEdit::setText);
         sync_shell_servers();
     }
 
@@ -574,7 +592,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Высота под карточку. Задаётся здесь, а не подсказкой делегата: таблица
     // берёт высоту из вертикального заголовка, и он перебивал sizeHint —
     // карточки выходили сплюснутыми, а подпись под именем не помещалась.
-    ui->proxyListTable->verticalHeader()->setDefaultSectionSize(62);
+    ui->proxyListTable->verticalHeader()->setDefaultSectionSize(76);
     ui->proxyListTable->setShowGrid(false);
 
     build_onboarding_panel();
@@ -585,6 +603,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // search box
     ui->search->setVisible(false);
     connect(shortcut_ctrl_f, &QShortcut::activated, this, [=] {
+        if (shell) { shell->focusServerSearch(); return; }
         ui->search->setVisible(true);
         ui->search->setFocus();
     });
@@ -614,6 +633,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
                 if (item != nullptr) ui->proxyListTable->setRowHidden(item->row(), false);
             }
         }
+        int visible = 0;
+        for (int i = 0; i < ui->proxyListTable->rowCount(); ++i) if (!ui->proxyListTable->isRowHidden(i)) ++visible;
+        if (shell) shell->setSearchResultCount(visible, ui->proxyListTable->rowCount());
     });
 
     // refresh
@@ -2067,6 +2089,7 @@ void MainWindow::refresh_proxy_list_impl_refresh_data(const int &id) {
         f->setText(profile->traffic_data->DisplayTraffic());
         ui->proxyListTable->setItem(row, 4, f);
     }
+    emit ui->search->textChanged(ui->search->text());
 }
 
 // table菜单相关

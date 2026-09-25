@@ -2,7 +2,7 @@
 
 #include <QWidget>
 
-class QComboBox;
+class QLineEdit;
 class QLabel;
 class QPushButton;
 class QStackedWidget;
@@ -52,6 +52,8 @@ namespace GreenRhythm {
 
         /** Показать страницу по номеру: 0 подключение, 1 серверы, 2 журнал. */
         void showPage(int index);
+        void focusServerSearch();
+        void setSearchResultCount(int visible, int total);
 
         /**
          * Живые числа: сколько соединений идёт через VPN и сколько мимо.
@@ -166,6 +168,11 @@ namespace GreenRhythm {
         /** Выбор сервера под кнопкой. -1 — автовыбор. */
         void serverChosen(int id);
         void addServerRequested();
+        void pasteRequested();
+        void chooseSelectedRequested();
+        void scanRequested();
+        void testServersRequested();
+        void serverSearchChanged(const QString &text);
         void panelRequested();
         void settingsRequested();
 
@@ -185,8 +192,10 @@ namespace GreenRhythm {
     private:
         QWidget *buildSidebar();
         QWidget *buildConnectPage();
+        QWidget *buildSettingsPage();
+        void chooseServer();
         /** Страница с полями и заголовком вокруг чужого виджета. */
-        QWidget *framed(QWidget *content, const QString &title);
+        QWidget *framed(QWidget *content, const QString &title, bool serverPage = false);
         void selectPage(int index);
 
         QStackedWidget *pages = nullptr;
@@ -219,8 +228,13 @@ namespace GreenRhythm {
         QPushButton *dpiToggle = nullptr;
         QPushButton *dpiModuleToggle = nullptr;
         QLabel *dpiModuleState = nullptr;
-        QComboBox *serverPick = nullptr;
-        QStringList serverSignature; ///< состав списка, чтобы не перестраивать зря
+        QLineEdit *serverSearch = nullptr;
+        QLabel *searchResult = nullptr;
+        QLabel *modeSummary = nullptr;
+        QLabel *statusTitle = nullptr;
+        QLabel *sidebarStatus = nullptr;
+        QList<ServerItem> availableServers;
+        int selectedServerId = -1;
         QString idleServerName;
         bool connected = false;
     };

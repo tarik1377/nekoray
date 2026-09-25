@@ -187,7 +187,7 @@ int main(int argc, char *argv[]) {
     ui.proxyListTable->verticalHeader()->setVisible(false);
     ui.proxyListTable->horizontalHeader()->setVisible(false);
     ui.proxyListTable->setShowGrid(false);
-    ui.proxyListTable->verticalHeader()->setDefaultSectionSize(62);
+    ui.proxyListTable->verticalHeader()->setDefaultSectionSize(76);
     ui.proxyListTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui.proxyListTable->selectRow(0);
     ui.tabWidget->tabBar()->setVisible(ui.tabWidget->count() > 1);
