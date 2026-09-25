@@ -1,4 +1,5 @@
 #include "ui/mainwindow_common.hpp"
+#include "ui/Palette.hpp"
 
 /**
  * Первый запуск: приветственная страница и приём ссылки одним щелчком.
@@ -59,13 +60,17 @@ void MainWindow::build_onboarding_panel() {
     onboarding_panel = panel;
 
     // Translucent neutral card so the page follows any theme (dark or light);
-    // the only hardcoded color is the brand-green primary button.
+    // Карточка и основная кнопка — цветами «лесного» вида из ui/Palette.hpp:
+    // карточка как на страницах окна, кнопка — акцентом с тёмным текстом.
     panel->setStyleSheet(QStringLiteral(
         "#onboardingPanel{background:transparent;}"
-        "#onboardCard{background-color:rgba(127,134,147,0.10);border:1px solid rgba(127,134,147,0.28);border-radius:12px;}"
-        "QPushButton#onboardPrimary{background-color:#2ea043;color:#ffffff;border:none;border-radius:8px;padding:6px 22px;font-weight:600;}"
-        "QPushButton#onboardPrimary:hover{background-color:#3fb950;}"
-        "QPushButton#onboardPrimary:pressed{background-color:#2c974b;}"));
+        "#onboardCard{background-color:%1;border:1px solid %2;border-radius:12px;}"
+        "QPushButton#onboardPrimary{background-color:%3;color:%4;border:none;border-radius:8px;padding:6px 22px;font-weight:600;}"
+        "QPushButton#onboardPrimary:hover{background-color:%5;}"
+        "QPushButton#onboardPrimary:pressed{background-color:%5;}")
+        .arg(QLatin1String(GreenRhythm::Palette::kSurfaceUp), QLatin1String(GreenRhythm::Palette::kLine),
+             QLatin1String(GreenRhythm::Palette::kAccent), QLatin1String(GreenRhythm::Palette::kOnAccent),
+             QLatin1String(GreenRhythm::Palette::kAccentDim)));
 
     auto *outer = new QVBoxLayout(panel);
     outer->setContentsMargins(24, 6, 24, 12);
@@ -134,10 +139,12 @@ void MainWindow::build_onboarding_panel() {
     auto *links = new QLabel(card);
     links->setTextFormat(Qt::RichText);
     links->setOpenExternalLinks(true);
-    links->setText(QStringLiteral("<a href=\"%1\" style=\"color:#3fb950;text-decoration:none;\">%2</a>"
+    const QString linkStyle = QStringLiteral("color:%1;text-decoration:none;")
+                                  .arg(QLatin1String(GreenRhythm::Palette::kAccent));
+    links->setText(QStringLiteral("<a href=\"%1\" style=\"%4\">%2</a>"
                                   "&nbsp;&nbsp;·&nbsp;&nbsp;"
-                                  "<a href=\"%3\" style=\"color:#3fb950;text-decoration:none;\">Telegram</a>")
-                       .arg(GreenRhythm::kBuyUrl, tr("Нет подписки? Получить"), GreenRhythm::kTelegramUrl));
+                                  "<a href=\"%3\" style=\"%4\">Telegram</a>")
+                       .arg(GreenRhythm::kBuyUrl, tr("Нет подписки? Получить"), GreenRhythm::kTelegramUrl, linkStyle));
     rowB->addWidget(links);
     cardL->addLayout(rowB);
 

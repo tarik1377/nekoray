@@ -1,6 +1,7 @@
 #include "Database.hpp"
 
 #include "fmt/includes.h"
+#include "ui/Palette.hpp"
 
 #include <QFile>
 #include <QDir>
@@ -238,11 +239,11 @@ namespace NekoGui {
 
     QColor ProxyEntity::DisplayLatencyColor() const {
         // 3-tier, bright enough to read on the dark GreenRhythm Modern theme.
-        if (latency < 0) return QColor(0xE5, 0x48, 0x4D);   // timeout/unavailable — red
-        if (latency == 0) return {};                        // untested — default text colour
-        if (latency < 100) return QColor(0x3F, 0xB9, 0x50); // fast — green
-        if (latency < 300) return QColor(0xE3, 0xA0, 0x08); // ok — amber
-        return QColor(0xE5, 0x48, 0x4D);                    // slow — red
+        if (latency < 0) return QColor(GreenRhythm::Palette::kRed);      // timeout/unavailable — red
+        if (latency == 0) return {};                                     // untested — default text colour
+        if (latency < 100) return QColor(GreenRhythm::Palette::kAccent); // fast — accent
+        if (latency < 300) return QColor(GreenRhythm::Palette::kAmber);  // ok — amber
+        return QColor(GreenRhythm::Palette::kRed);                       // slow — red
     }
 
     // Profile

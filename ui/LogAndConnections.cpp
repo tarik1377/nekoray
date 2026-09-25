@@ -1,5 +1,6 @@
 #include "ui/mainwindow_common.hpp"
 #include "ui/Icons.hpp"
+#include "ui/Palette.hpp"
 
 #include "main/ConnectionRow.hpp"
 
@@ -53,11 +54,11 @@ void MainWindow::show_log_impl(const QString &log) {
             cursor.insertBlock();
             QTextCharFormat fmt;
             if (line.contains("ERROR")) {
-                fmt.setForeground(QColor(0xE5, 0x48, 0x4D));
+                fmt.setForeground(QColor(GreenRhythm::Palette::kRed));
             } else if (line.contains("[proxy]")) {
-                fmt.setForeground(QColor(0x4C, 0x9A, 0xFF));
+                fmt.setForeground(QColor(GreenRhythm::Palette::kBlue));
             } else if (line.contains("[bypass]")) {
-                fmt.setForeground(QColor(0x3F, 0xB9, 0x50));
+                fmt.setForeground(QColor(GreenRhythm::Palette::kAccent));
             }
             cursor.insertText(line, fmt);
         }
@@ -278,11 +279,11 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
         // Свои значки одной линией, а не material разной заливки: пульс — живое,
         // часы — закрытое, круг с чертой — запрещено.
         if (outboundTag == "block") {
-            c0->setPixmap(GreenRhythm::Icons::pixmap(QStringLiteral("gr-ban"), QColor(0xE5, 0x48, 0x4D), 16));
+            c0->setPixmap(GreenRhythm::Icons::pixmap(QStringLiteral("gr-ban"), QColor(GreenRhythm::Palette::kRed), 16));
         } else if (end_t > 0) {
-            c0->setPixmap(GreenRhythm::Icons::pixmap(QStringLiteral("gr-history"), QColor(0x6A, 0x70, 0x78), 16));
+            c0->setPixmap(GreenRhythm::Icons::pixmap(QStringLiteral("gr-history"), QColor(GreenRhythm::Palette::kDim), 16));
         } else {
-            c0->setPixmap(GreenRhythm::Icons::pixmap(QStringLiteral("gr-activity"), QColor(0x9A, 0xA0, 0xA8), 16));
+            c0->setPixmap(GreenRhythm::Icons::pixmap(QStringLiteral("gr-activity"), QColor(GreenRhythm::Palette::kMuted), 16));
         }
         c0->setAlignment(Qt::AlignCenter);
         c0->setToolTip(tr("Start: %1\nEnd: %2").arg(DisplayTime(start_t), end_t > 0 ? DisplayTime(end_t) : ""));
@@ -305,15 +306,15 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
         if (outboundTag == "proxy") {
             obLabel = tr("Прокси");
             obIcon = QStringLiteral("gr-shield-check");
-            obColor = QColor(0x3F, 0xB9, 0x50);
+            obColor = QColor(GreenRhythm::Palette::kAccent);
         } else if (outboundTag == "direct" || outboundTag == "bypass") {
             obLabel = tr("Напрямую");
             obIcon = QStringLiteral("gr-arrow-right");
-            obColor = QColor(0x9A, 0xA0, 0xA8);
+            obColor = QColor(GreenRhythm::Palette::kMuted);
         } else if (outboundTag == "block") {
             obLabel = tr("Блокировка");
             obIcon = QStringLiteral("gr-ban");
-            obColor = QColor(0xE5, 0x48, 0x4D);
+            obColor = QColor(GreenRhythm::Palette::kRed);
         }
         f->setText(obLabel);
         if (obColor.isValid()) f->setForeground(QBrush(obColor));
@@ -342,7 +343,7 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
                                ? tr("Соединение самого клиента с сервером профиля. Это не программа мимо VPN — "
                                     "это и есть туннель.")
                                : proc);
-            if (proc == GreenRhythm::tunnelLabel()) fp->setForeground(QBrush(QColor(0x8B, 0x94, 0x9E)));
+            if (proc == GreenRhythm::tunnelLabel()) fp->setForeground(QBrush(QColor(GreenRhythm::Palette::kMuted)));
             ui->tableWidget_conn->setItem(row, 2, fp);
         }
 
@@ -388,11 +389,16 @@ void MainWindow::refresh_connection_list(const QJsonArray &arr) {
             // зелёный — через нас, серый — мимо, красный — запрещено. Точки
             // вместо эмодзи по той же причине, что и в таблице.
             const QString bar = QStringLiteral("<span style='font-family:monospace;font-size:11px;'>%1%2%3</span>")
-                                    .arg(seg(wp, "#3FB950"), seg(wd, "#9AA0A8"), seg(wb, "#E5484D"));
+                                    .arg(seg(wp, QLatin1String(GreenRhythm::Palette::kAccent)),
+                                         seg(wd, QLatin1String(GreenRhythm::Palette::kMuted)),
+                                         seg(wb, QLatin1String(GreenRhythm::Palette::kRed)));
+            const auto dot = [](const char *color) {
+                return QStringLiteral("<span style='color:%1;'>&#9679; ").arg(QLatin1String(color));
+            };
             const QString counts =
-                QStringLiteral("<span style='color:#3FB950;'>&#9679; ") + tr("Прокси: %1").arg(nProxy) + "</span>&nbsp;&nbsp;&nbsp;" +
-                QStringLiteral("<span style='color:#9AA0A8;'>&#9679; ") + tr("Напрямую: %1").arg(nDirect) + "</span>&nbsp;&nbsp;&nbsp;" +
-                QStringLiteral("<span style='color:#E5484D;'>&#9679; ") + tr("Блок: %1").arg(nBlock) + "</span>";
+                dot(GreenRhythm::Palette::kAccent) + tr("Прокси: %1").arg(nProxy) + "</span>&nbsp;&nbsp;&nbsp;" +
+                dot(GreenRhythm::Palette::kMuted) + tr("Напрямую: %1").arg(nDirect) + "</span>&nbsp;&nbsp;&nbsp;" +
+                dot(GreenRhythm::Palette::kRed) + tr("Блок: %1").arg(nBlock) + "</span>";
             conn_route_summary->setText(bar + "<br>" + counts);
         }
     }

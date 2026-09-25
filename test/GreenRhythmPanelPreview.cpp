@@ -15,6 +15,7 @@
 
 #include "ui/dialog_greenrhythm.h"
 #include "ui/dialog_whatbroke.h"
+#include "ui/Palette.hpp"
 
 #include <QApplication>
 #include <QFile>
@@ -37,12 +38,12 @@ int main(int argc, char *argv[]) {
         int width = 24;
         for (int px: sizes) width += px + 24;
         QPixmap sheet(width, 96);
-        sheet.fill(QColor(QStringLiteral("#2f343b")));
+        sheet.fill(QColor(GreenRhythm::Palette::kSurfaceUp));
         QPainter p(&sheet);
         int x = 24;
         for (int px: sizes) {
             p.drawPixmap(x, 24, mark.pixmap(px, px));
-            p.setPen(QColor(QStringLiteral("#9aa0a8")));
+            p.setPen(QColor(GreenRhythm::Palette::kMuted));
             p.drawText(QRect(x - 12, 74, px + 24, 16), Qt::AlignCenter, QString::number(px));
             x += px + 24;
         }

@@ -33,7 +33,7 @@ QWidget {
     background-color: #0c1710;
     color: #e8eee4;
     selection-background-color: #bad65b;
-    selection-color: #0d1117;
+    selection-color: #08170c;
 }
 
 QMainWindow, QDialog {
@@ -89,7 +89,7 @@ QPushButton:disabled {
 
 QToolButton {
     background-color: transparent;
-    color: #c3c8d0;
+    color: #e8eee4;
     border: none;
     border-radius: 8px;
     padding: 4px;
@@ -101,7 +101,7 @@ QToolButton:hover {
 }
 
 QToolButton:pressed, QToolButton:checked {
-    background-color: rgba(63, 185, 80, 0.18);
+    background-color: rgba(186, 214, 91, 0.18);
     color: #bad65b;
 }
 
@@ -128,7 +128,7 @@ QLineEdit, QPlainTextEdit, QTextEdit, QAbstractSpinBox {
     border-radius: 9px;
     padding: 6px 10px;
     selection-background-color: #bad65b;
-    selection-color: #0d1117;
+    selection-color: #08170c;
 }
 
 QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QAbstractSpinBox:focus {
@@ -143,7 +143,7 @@ QTextBrowser {
     border-radius: 12px;
     padding: 10px 12px;
     selection-background-color: #bad65b;
-    selection-color: #0d1117;
+    selection-color: #08170c;
 }
 
 QComboBox {
@@ -156,7 +156,7 @@ QComboBox {
 }
 
 QComboBox:hover {
-    border-color: #454c55;
+    border-color: #4f6545;
 }
 
 QComboBox:focus {
@@ -175,7 +175,7 @@ QComboBox QAbstractItemView {
     color: #e8eee4;
     border: 1px solid #35472e;
     border-radius: 10px;
-    selection-background-color: rgba(63, 185, 80, 0.20);
+    selection-background-color: rgba(186, 214, 91, 0.20);
     selection-color: #e8eee4;
     padding: 6px;
     outline: none;
@@ -289,7 +289,7 @@ QMenu::item {
 }
 
 QMenu::item:selected {
-    background-color: rgba(63, 185, 80, 0.18);
+    background-color: rgba(186, 214, 91, 0.18);
     color: #e8eee4;
 }
 
@@ -307,26 +307,55 @@ QCheckBox, QRadioButton {
     background: transparent;
 }
 
-QCheckBox::indicator, QRadioButton::indicator {
-    width: 18px;
-    height: 18px;
-    border: 1px solid #454c55;
-    background-color: #0a140d;
+/* Флажок — переключателем, как на странице «Настройки» (ModeSwitch в
+   ui/MainShell.cpp): одно и то же «вкл/выкл» не должно выглядеть в окне
+   переключателем, а в диалоге — квадратиком. Картинки лежат рядом, в
+   qss/modern/, цвета в них — из ui/Palette.hpp. */
+QCheckBox::indicator {
+    width: 40px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    image: url(:/themes/feiyangqingyun/qss/modern/switch-off.svg);
 }
 
-QCheckBox::indicator {
-    border-radius: 5px;
+QCheckBox::indicator:hover {
+    image: url(:/themes/feiyangqingyun/qss/modern/switch-off-hover.svg);
+}
+
+QCheckBox::indicator:checked {
+    image: url(:/themes/feiyangqingyun/qss/modern/switch-on.svg);
+}
+
+QCheckBox::indicator:checked:hover {
+    image: url(:/themes/feiyangqingyun/qss/modern/switch-on-hover.svg);
+}
+
+QCheckBox::indicator:indeterminate {
+    image: url(:/themes/feiyangqingyun/qss/modern/switch-mid.svg);
+}
+
+QCheckBox::indicator:disabled {
+    image: url(:/themes/feiyangqingyun/qss/modern/switch-off-disabled.svg);
+}
+
+QCheckBox::indicator:checked:disabled {
+    image: url(:/themes/feiyangqingyun/qss/modern/switch-on-disabled.svg);
 }
 
 QRadioButton::indicator {
+    width: 18px;
+    height: 18px;
+    border: 1px solid #4f6545;
     border-radius: 10px;
+    background-color: #0a140d;
 }
 
-QCheckBox::indicator:hover, QRadioButton::indicator:hover {
+QRadioButton::indicator:hover {
     border-color: #bad65b;
 }
 
-QCheckBox::indicator:checked, QRadioButton::indicator:checked {
+QRadioButton::indicator:checked {
     background-color: #bad65b;
     border-color: #bad65b;
 }

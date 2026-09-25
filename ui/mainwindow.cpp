@@ -15,6 +15,7 @@
 
 #include "dpi/DpiBundle.hpp"
 #include "dpi/DpiModule.hpp"
+#include "ui/Palette.hpp"
 
 #ifdef Q_OS_WIN
 static void RegisterGreenRhythmScheme();
@@ -1525,13 +1526,13 @@ void MainWindow::refresh_status(const QString &traffic_update) {
         QString pillText, pillColor;
         if (!up) {
             pillText = tr("Не запущено");
-            pillColor = QStringLiteral("#5A5F66");
+            pillColor = QString::fromLatin1(GreenRhythm::Palette::kDim);
         } else if (noTraffic) {
             pillText = tr("Подключено, нет трафика");
-            pillColor = QStringLiteral("#E3A008");
+            pillColor = QString::fromLatin1(GreenRhythm::Palette::kAmber);
         } else {
             pillText = tr("Подключено") + QStringLiteral(" · ") + nm;
-            pillColor = QStringLiteral("#3FB950");
+            pillColor = QString::fromLatin1(GreenRhythm::Palette::kAccent);
         }
         // ЧЕТВЁРТОЕ СОСТОЯНИЕ: работаем на резерве.
         //
@@ -1541,7 +1542,7 @@ void MainWindow::refresh_status(const QString &traffic_update) {
         // понимают, почему стало медленнее, не задавая вопросов.
         if (up && !noTraffic && running != nullptr && running->type == "relay") {
             pillText = tr("Подключено") + QStringLiteral(" · ") + tr("резервное подключение");
-            pillColor = QStringLiteral("#3B82F6");
+            pillColor = QString::fromLatin1(GreenRhythm::Palette::kReserve);
         }
         ui->label_conn_pill->setText(pillText);
         // Пункт «Починить сеть Windows» на маке и в Linux СПРЯТАН, поэтому
@@ -2060,9 +2061,9 @@ void MainWindow::refresh_proxy_list_impl_refresh_data(const int &id) {
         auto f = f0->clone();
         f->setText(profile->bean->DisplayType());
         if (isRunning) f->setForeground(palette().link());
-        f->setIcon(MakeStatusDot(isRunning ? QColor(0x3F, 0xB9, 0x50)
-                                           : (profile->latency < 0 ? QColor(0xE5, 0x48, 0x4D)
-                                                                   : QColor(0x5A, 0x5F, 0x66))));
+        f->setIcon(MakeStatusDot(isRunning ? QColor(GreenRhythm::Palette::kAccent)
+                                           : (profile->latency < 0 ? QColor(GreenRhythm::Palette::kRed)
+                                                                   : QColor(GreenRhythm::Palette::kDim))));
         ui->proxyListTable->setItem(row, 0, f);
 
         // C1: Address+Port

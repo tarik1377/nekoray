@@ -1,6 +1,13 @@
 <RCC>
     <qresource prefix="/themes/feiyangqingyun">
         <file>qss/modern.css</file>
+        <file>qss/modern/switch-off.svg</file>
+        <file>qss/modern/switch-off-hover.svg</file>
+        <file>qss/modern/switch-on.svg</file>
+        <file>qss/modern/switch-on-hover.svg</file>
+        <file>qss/modern/switch-mid.svg</file>
+        <file>qss/modern/switch-off-disabled.svg</file>
+        <file>qss/modern/switch-on-disabled.svg</file>
         <file>qss/flatgray.css</file>
         <file>qss/lightblue.css</file>
         <file>qss/flatgray/add_bottom.png</file>

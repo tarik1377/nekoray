@@ -20,6 +20,7 @@
 
 #include "ui/MainShell.hpp"
 #include "ui/ServerCardDelegate.hpp"
+#include "ui/Palette.hpp"
 #include "main/ConnectionRow.hpp"
 #include "main/AppFont.hpp"
 
@@ -139,9 +140,9 @@ int main(int argc, char *argv[]) {
             // Те же значки, подписи и цвета, что в окне (LogAndConnections.cpp).
             const bool isProxy = tag == QStringLiteral("proxy");
             const bool isBlock = tag == QStringLiteral("block");
-            const QColor tagColor = isProxy ? QColor(0x3F, 0xB9, 0x50)
-                                    : isBlock ? QColor(0xE5, 0x48, 0x4D)
-                                              : QColor(0x9A, 0xA0, 0xA8);
+            const QColor tagColor = isProxy ? QColor(GreenRhythm::Palette::kAccent)
+                                    : isBlock ? QColor(GreenRhythm::Palette::kRed)
+                                              : QColor(GreenRhythm::Palette::kMuted);
             const QString tagIcon = isProxy ? QStringLiteral("gr-shield-check")
                                     : isBlock ? QStringLiteral("gr-ban")
                                               : QStringLiteral("gr-arrow-right");
