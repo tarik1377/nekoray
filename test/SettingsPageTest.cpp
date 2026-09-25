@@ -26,6 +26,11 @@
  * Route», «FakeDNS») были помечены «не переводить» ещё в NekoRay — и стояли
  * по-английски посреди русского окна, хотя перевод в ru_RU.ts давно есть.
  *
+ * Заход 2в — «Маршруты». Переносить тоже нечего, а вот слова — да: sniffing
+ * был переведён как «Режим подслушивания». В VPN-клиенте это читается как
+ * слежка, и по смыслу неверно: ядро лишь распознаёт домен по началу
+ * соединения, чтобы правила по доменам работали.
+ *
  * Запуск: ninja settings_page_test && ./settings_page_test
  */
 
@@ -339,12 +344,33 @@ static void tunnelDialogSpeaksRussian() {
     }
 }
 
+static void routesDialogWording() {
+    std::puts("«Маршруты»: слова, которые не пугают и не мешают языки");
+    const QString ts = slurp(QStringLiteral("translations/ru_RU.ts"));
+    const QString context = QStringLiteral("DialogManageRoutes");
+    is(QStringLiteral("в русском переводе нет «подслушивания» — ни в одном окне"),
+       !ts.isEmpty() && !ts.contains(QStringLiteral("одслушива")));
+    is(QStringLiteral("Sniffing Mode — «Распознавание домена»"),
+       russian(ts, context, QStringLiteral("Sniffing Mode")) == QStringLiteral("Распознавание домена"));
+    is(QStringLiteral("Sniff result for routing — «Только для правил маршрутизации»"),
+       russian(ts, context, QStringLiteral("Sniff result for routing")) == QStringLiteral("Только для правил маршрутизации"));
+    is(QStringLiteral("Sniff result for destination — «Для правил и адреса подключения»"),
+       russian(ts, context, QStringLiteral("Sniff result for destination")) ==
+           QStringLiteral("Для правил и адреса подключения"));
+    const QString global = russian(ts, context, QStringLiteral("Custom Route (global)"));
+    is(QStringLiteral("«Свои маршруты (для всех наборов)» — без «(global)» посреди русского"),
+       global == QStringLiteral("Свои маршруты (для всех наборов)"));
+    is(QStringLiteral("Custom Route — «Свои маршруты»"),
+       russian(ts, context, QStringLiteral("Custom Route")) == QStringLiteral("Свои маршруты"));
+}
+
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     shellShowsTheTruth();
     scheduleRule();
     sourcesWiredAndMoved();
     tunnelDialogSpeaksRussian();
+    routesDialogWording();
     std::printf("\n%d проверок, провалено %d\n", checks, fails);
     return fails == 0 ? 0 : 1;
 }
