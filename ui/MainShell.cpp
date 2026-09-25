@@ -291,6 +291,18 @@ namespace GreenRhythm {
             box->addWidget(button);
         }
         box->addStretch();
+        // Новая версия — блоком, а не окном: окно посреди работы раздражает, а
+        // блок ждёт, пока человек решит сам. Устроен как подписка ниже: одной
+        // кнопкой строка в колонку не влезала. «Обновить» — прежняя проверка с
+        // кнопками «Обновить» и «Открыть в браузере».
+        updateNotice = new QWidget(bar); updateNotice->setObjectName("grUpdateNotice");
+        auto *upd = new QVBoxLayout(updateNotice); upd->setContentsMargins(4, 8, 4, 8);
+        updateNoticeText = new QLabel(updateNotice); updateNoticeText->setObjectName("grUpdateNoticeText"); updateNoticeText->setWordWrap(true);
+        updateNoticeText->setStyleSheet(QStringLiteral("color: %1; font-weight: 600;").arg(kAccent));
+        auto *updateButton = new QPushButton(tr("Обновить"), updateNotice); updateButton->setObjectName("grUpdateNoticeButton");
+        updateButton->setStyleSheet(linkStyle(kAccent)); updateButton->setCursor(Qt::PointingHandCursor);
+        connect(updateButton, &QPushButton::clicked, this, &MainShell::checkUpdateRequested);
+        upd->addWidget(updateNoticeText); upd->addWidget(updateButton); updateNotice->hide(); box->addWidget(updateNotice);
         subBlock = new QWidget(bar);
         auto *sub = new QVBoxLayout(subBlock); sub->setContentsMargins(4, 8, 4, 8);
         subSummary = muted(subBlock, QString()); subSummary->setWordWrap(true);
@@ -482,6 +494,7 @@ namespace GreenRhythm {
         connect(subscriptionToggle, &QPushButton::clicked, this, &MainShell::subscriptionAutoUpdateToggled);
         subscriptionDetail = addRow(tr("Обновлять подписку автоматически"), QString(), "gr-refresh", subscriptionToggle); subscriptionDetail->setObjectName("grSubscriptionAutoUpdateDetail");
         auto *updates = new QPushButton(tr("Проверить"), page); updates->setObjectName("grCheckUpdates"); updates->setAccessibleName(tr("Проверить обновления"));
+        checkUpdatesButton = updates;
         connect(updates, &QPushButton::clicked, this, &MainShell::checkUpdateRequested);
         updatesDetail = addRow(tr("Обновления программы"), QString(), "gr-download", updates); updatesDetail->setObjectName("grCheckUpdatesDetail");
         setAppOptions(false, false, 0); setAppVersion(QString());
@@ -647,9 +660,31 @@ namespace GreenRhythm {
     }
 
     void MainShell::setAppVersion(const QString &version) {
+        installedVersion = version;
+        paintUpdates();
+    }
+
+    void MainShell::setUpdateAvailable(bool available, const QString &version) {
+        updateAvailable = available;
+        availableVersion = version;
+        paintUpdates();
+    }
+
+    void MainShell::paintUpdates() {
+        const QString fresh = availableVersion.isEmpty() ? tr("новая версия") : tr("версия %1").arg(availableVersion);
+        if (updateNotice != nullptr) {
+            updateNoticeText->setText(tr("Доступна %1").arg(fresh));
+            updateNotice->setVisible(updateAvailable);
+        }
+        if (checkUpdatesButton != nullptr) checkUpdatesButton->setText(updateAvailable ? tr("Обновить") : tr("Проверить"));
         if (updatesDetail == nullptr) return;
-        updatesDetail->setText(version.isEmpty() ? tr("Проверить, не вышла ли новая версия.")
-                                                 : tr("Установлена версия %1.").arg(version));
+        if (updateAvailable) {
+            updatesDetail->setText(installedVersion.isEmpty() ? tr("Доступна %1.").arg(fresh)
+                                                              : tr("Доступна %1, установлена %2.").arg(fresh, installedVersion));
+        } else {
+            updatesDetail->setText(installedVersion.isEmpty() ? tr("Проверить, не вышла ли новая версия.")
+                                                              : tr("Установлена версия %1.").arg(installedVersion));
+        }
     }
 
     void MainShell::setConnectionOptions(bool connectOnStart, bool autopilot, bool shareToLan,
