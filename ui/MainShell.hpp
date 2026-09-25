@@ -6,6 +6,7 @@ class QComboBox;
 class QLabel;
 class QPushButton;
 class QStackedWidget;
+class QTimer;
 class QVBoxLayout;
 
 namespace GreenRhythm {
@@ -47,7 +48,14 @@ namespace GreenRhythm {
          */
         void adopt(QWidget *servers, QWidget *logs);
 
-        /** Состояние: подключено ли, к чему, и задержка (пусто — не измерена). */
+        /**
+         * Состояние: подключено ли, к чему, и задержка (пусто — не измерена).
+         *
+         * Это ОПРОС: окно зовёт его раз в две секунды. Подписи он обновляет
+         * всегда, а кнопку — только из того, что есть на деле: идущую попытку
+         * («Подключаюсь…») не перебивает и отказ не стирает. Прежде перебивал,
+         * и оба состояния жили не дольше двух секунд.
+         */
         void setConnectionState(bool connected, const QString &server, const QString &latency);
 
         /** Показать страницу по номеру: 0 подключение, 1 серверы, 2 журнал. */
@@ -87,6 +95,11 @@ namespace GreenRhythm {
          * как «не подключено», — и не понимал, ждать ему или нажимать снова.
          * Причина отказа выводится строкой: сегодня их было три разных, и каждая
          * требовала своего действия.
+         *
+         * Connecting начинает попытку: она держится до finishConnecting, отказа
+         * или сторожа. Failed держится, пока человек не нажмёт кнопку, не выберет
+         * сервер, не начнётся новая попытка или клиент не окажется подключённым.
+         * Опрос (setConnectionState) сам по себе не снимает ни то, ни другое.
          */
         void setState(State state, const QString &reason = QString());
 
@@ -98,6 +111,28 @@ namespace GreenRhythm {
 
         /** Идёт подключение. Оставлено ради прежних вызовов: это State::Connecting. */
         void setBusy(bool busy);
+
+        /**
+         * Попытка подключения закончилась — чем бы ни кончилась.
+         *
+         * Кнопка показывает то, что есть: «Подключено», покой или отказ, если он
+         * был. Звать можно и после отказа, и повторно: лишний вызов ничего не
+         * меняет. Окно зовёт его из каждого выхода из neko_start.
+         */
+        void finishConnecting();
+
+        /** Идёт ли попытка: между setState(Connecting) и её концом. */
+        bool isConnecting() const;
+
+        /**
+         * Сторож попытки: столько миллисекунд «Подключаюсь…» держится без конца,
+         * потом кнопка включается с отказом «нет ответа». По умолчанию минута.
+         *
+         * Он для конца, который потерялся. Каждый известный выход заканчивает
+         * попытку сам, но выключенная навсегда кнопка — цена ошибки, которую
+         * платить нельзя: перезапуск клиента тогда единственный выход.
+         */
+        void setConnectingTimeout(int ms);
 
         /** Одна строка выбора сервера под кнопкой. */
         struct ServerItem {
@@ -188,6 +223,12 @@ namespace GreenRhythm {
         /** Страница с полями и заголовком вокруг чужого виджета. */
         QWidget *framed(QWidget *content, const QString &title);
         void selectPage(int index);
+        /** Нарисовать кнопку в состоянии; учёт попытки и отказа не трогает. */
+        void paint(State state, const QString &reason);
+        /** Что показывать по учёту: попытка, подключено, отказ или покой. */
+        State shown() const;
+        /** Действие человека: прежний отказ больше не новость. */
+        void dismissFailure();
 
         QStackedWidget *pages = nullptr;
         QList<QPushButton *> navButtons;
@@ -223,6 +264,13 @@ namespace GreenRhythm {
         QStringList serverSignature; ///< состав списка, чтобы не перестраивать зря
         QString idleServerName;
         bool connected = false;
+
+        // Учёт кнопки. Меняют его setState, finishConnecting, сторож и действия
+        // человека; опрос (setConnectionState) — только при подключении.
+        bool attempt = false;          ///< идёт попытка подключения
+        bool failed = false;           ///< последняя попытка не удалась
+        QString failureReason;         ///< почему; пусто — причина не названа
+        QTimer *connectWatchdog = nullptr;
     };
 
 } // namespace GreenRhythm

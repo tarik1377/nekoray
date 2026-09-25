@@ -1093,6 +1093,12 @@ void MainWindow::dialog_message_impl(const QString &sender, const QString &info)
             // ждёт (см. main/TunLifecycle.hpp).
             neko_stop(false, false, true);
         } else if (info == "CoreCrashed") {
+            // Ядро упало посреди попытки — например, не поднялось после
+            // перезапуска, которого ждал neko_start. Её конец уже не придёт:
+            // перезапуск ядра запомнит started_id, а у попытки его ещё нет.
+            if (shell != nullptr && shell->isConnecting()) {
+                shell->setState(GreenRhythm::MainShell::State::Failed, tr("ядро остановилось"));
+            }
             neko_stop(true);
         } else if (info.startsWith("CoreStarted")) {
             neko_start(info.split(",")[1].toInt());
