@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Раздавать VPN другим устройствам: монитор и телефон рядом. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-width="1.8"
+     stroke-linecap="round" stroke-linejoin="round">
+  <rect x="2.5" y="4.5" width="13" height="9.5" rx="1.5"/>
+  <path d="M6.5 18.5 H11.5"/>
+  <path d="M9 14 V18.5"/>
+  <rect x="17" y="8.5" width="4.5" height="11" rx="1.2"/>
+</svg>

@@ -26,6 +26,15 @@
  * Route», «FakeDNS») были помечены «не переводить» ещё в NekoRay — и стояли
  * по-английски посреди русского окна, хотя перевод в ru_RU.ts давно есть.
  *
+ * Аудит 25.09 — «что ещё забыли». В «Ещё → Все команды» жили вещи, которые
+ * людям нужны, но о которых они не знали: автоподключение при запуске
+ * (пункт назывался «Запомнить последний профиль»), автопилот соединения
+ * (включён у всех), резервное подключение (отдельная услуга), раздача VPN
+ * другим устройствам, поддержка, диагностика и «О программе». Теперь это
+ * строки страницы; меню осталось второй дверью к тем же пунктам. Адрес для
+ * раздачи выбирает ui/LanAddress.hpp — у машины много адаптеров, и почти все
+ * не те.
+ *
  * Заход 2в — «Маршруты». Переносить тоже нечего, а вот слова — да: sniffing
  * был переведён как «Режим подслушивания». В VPN-клиенте это читается как
  * слежка, и по смыслу неверно: ядро лишь распознаёт домен по началу
@@ -34,6 +43,7 @@
  * Запуск: ninja settings_page_test && ./settings_page_test
  */
 
+#include "ui/LanAddress.hpp"
 #include "ui/MainShell.hpp"
 #include "ui/SubscriptionSchedule.hpp"
 
@@ -364,6 +374,130 @@ static void routesDialogWording() {
        russian(ts, context, QStringLiteral("Custom Route")) == QStringLiteral("Свои маршруты"));
 }
 
+/** Строки, вынесенные из «Все команды», — на странице и отвечают на нажатие. */
+static void hiddenFeaturesOnThePage() {
+    std::puts("Вынесенное из «Все команды»: на странице, молча ставится, отвечает на нажатие");
+    Shell s;
+    const auto button = [&](const char *name) { return s.w.findChild<QPushButton *>(QString::fromLatin1(name)); };
+    QPushButton *connectOnStart = button("grConnectOnStart");
+    QPushButton *autopilot = button("grAutopilot");
+    QPushButton *share = button("grShareToLan");
+    QPushButton *relay = button("grRelay");
+    QPushButton *support = button("grSupport");
+    QPushButton *diagnostics = button("grDiagnostics");
+    QPushButton *about = button("grAbout");
+    auto *shareDetail = s.w.findChild<QLabel *>(QStringLiteral("grShareToLanDetail"));
+    const bool ready = connectOnStart && autopilot && share && relay && support && diagnostics && about && shareDetail;
+    is(QStringLiteral("строки на месте: при запуске, автопилот, раздача, резерв, поддержка, диагностика, о программе"), ready);
+    if (!ready) return;
+    is(QStringLiteral("три из них — переключатели, остальные — кнопки"),
+       connectOnStart->isCheckable() && autopilot->isCheckable() && share->isCheckable() && !relay->isCheckable() &&
+           !support->isCheckable() && !diagnostics->isCheckable() && !about->isCheckable());
+
+    QList<bool> startSignals, autopilotSignals, shareSignals;
+    int relays = 0, supports = 0, diagnoses = 0, abouts = 0;
+    QObject::connect(&s.w, &GreenRhythm::MainShell::connectOnStartToggled, [&](bool on) { startSignals << on; });
+    QObject::connect(&s.w, &GreenRhythm::MainShell::autopilotToggled, [&](bool on) { autopilotSignals << on; });
+    QObject::connect(&s.w, &GreenRhythm::MainShell::shareToLanToggled, [&](bool on) { shareSignals << on; });
+    QObject::connect(&s.w, &GreenRhythm::MainShell::relayRequested, [&] { relays++; });
+    QObject::connect(&s.w, &GreenRhythm::MainShell::supportRequested, [&] { supports++; });
+    QObject::connect(&s.w, &GreenRhythm::MainShell::diagnosticsRequested, [&] { diagnoses++; });
+    QObject::connect(&s.w, &GreenRhythm::MainShell::aboutRequested, [&] { abouts++; });
+
+    s.w.setConnectionOptions(true, false, false, QString(), 2080);
+    is(QStringLiteral("«подключаться при запуске» показан включённым, автопилот и раздача — нет"),
+       connectOnStart->isChecked() && !autopilot->isChecked() && !share->isChecked());
+    is(QStringLiteral("выключенная раздача предупреждает про общественный Wi-Fi"),
+       shareDetail->text().contains(QStringLiteral("общественном Wi-Fi")));
+    s.w.setConnectionOptions(false, true, true, QStringLiteral("192.168.1.5"), 2080);
+    is(QStringLiteral("включённая раздача называет адрес и порт: 192.168.1.5, 2080"),
+       share->isChecked() && shareDetail->text().contains(QStringLiteral("192.168.1.5")) &&
+           shareDetail->text().contains(QStringLiteral("2080")));
+    s.w.setConnectionOptions(false, true, true, QString(), 2080);
+    is(QStringLiteral("адрес не нашёлся — говорит, где его взять, и называет порт"),
+       shareDetail->text().contains(QStringLiteral("адрес этого компьютера")) &&
+           shareDetail->text().contains(QStringLiteral("2080")));
+    is(QStringLiteral("установка значений не шлёт ни одного сигнала"),
+       startSignals.isEmpty() && autopilotSignals.isEmpty() && shareSignals.isEmpty());
+
+    s.click(connectOnStart);
+    is(QStringLiteral("нажатие «при запуске» — один сигнал «вкл»"), startSignals == QList<bool>{true});
+    s.click(autopilot);
+    is(QStringLiteral("автопилот был включён — нажатие выключает"), autopilotSignals == QList<bool>{false});
+    s.click(share);
+    is(QStringLiteral("раздача была включена — нажатие выключает"), shareSignals == QList<bool>{false});
+    s.click(relay);
+    s.click(support);
+    s.click(diagnostics);
+    s.click(about);
+    is(QStringLiteral("резерв, поддержка, диагностика, о программе — по одному разу"),
+       relays == 1 && supports == 1 && diagnoses == 1 && abouts == 1);
+}
+
+/** Какой адрес назвать другим устройствам — ui/LanAddress.hpp. */
+static void lanAddressPick() {
+    std::puts("Адрес для раздачи: живой настоящий адаптер, частный IPv4");
+    using GreenRhythm::Lan::Candidate;
+    using GreenRhythm::Lan::pick;
+    const auto c = [](const char *name, const char *address, bool up = true, bool loopback = false) {
+        return Candidate{QString::fromUtf8(name), QString::fromLatin1(address), up, loopback};
+    };
+    is(QStringLiteral("домашний Wi-Fi, а не наш туннель, даже если туннель первый"),
+       pick({c("neko-tun", "172.19.0.1"), c("Wi-Fi", "192.168.1.5")}) == QStringLiteral("192.168.1.5"));
+    is(QStringLiteral("Ethernet 10.x, а не виртуальная сеть WSL"),
+       pick({c("vEthernet (WSL)", "172.25.64.1"), c("Ethernet", "10.0.0.12")}) == QStringLiteral("10.0.0.12"));
+    is(QStringLiteral("192.168 лучше 10.x"),
+       pick({c("Ethernet", "10.1.2.3"), c("Wi-Fi", "192.168.0.7")}) == QStringLiteral("192.168.0.7"));
+    is(QStringLiteral("точка доступа iPhone 172.20.10.x годится, когда другого нет"),
+       pick({c("Wi-Fi", "172.20.10.4")}) == QStringLiteral("172.20.10.4"));
+    is(QStringLiteral("Docker, VirtualBox, VMware — мимо"),
+       pick({c("docker0", "172.17.0.1"), c("VirtualBox Host-Only Network", "192.168.56.1"),
+             c("VMware Network Adapter VMnet8", "192.168.80.1")}).isEmpty());
+    is(QStringLiteral("выключенный, петлевой, link-local, публичный, IPv6 — мимо"),
+       pick({c("Ethernet 2", "192.168.5.5", false), c("Loopback Pseudo-Interface 1", "127.0.0.1", true, true),
+             c("Ethernet", "169.254.3.3"), c("Ethernet", "85.12.3.4"), c("Wi-Fi", "fe80::1")}).isEmpty());
+    is(QStringLiteral("адреса нашего туннеля 172.19.0.0/28 — мимо и под чужим именем"),
+       pick({c("Unknown adapter", "172.19.0.1")}).isEmpty());
+    is(QStringLiteral("Wintun и Teredo по имени системы — мимо"),
+       pick({c("GreenRhythm wintun", "10.7.0.2"), c("Teredo Tunneling Pseudo-Interface tunnel_32512", "10.9.9.9")})
+           .isEmpty());
+}
+
+/** Окно ведёт вынесенные строки туда же, куда вели пункты меню. */
+static void hiddenFeaturesWired() {
+    std::puts("Исходник окна: вынесенное ведёт в те же пункты меню");
+    const QString window = slurp(QStringLiteral("ui/mainwindow.cpp"));
+    for (const auto &pair: QList<QPair<QString, QString>>{
+             {QStringLiteral("relayRequested"), QStringLiteral("menu_gr_relay")},
+             {QStringLiteral("supportRequested"), QStringLiteral("menu_gr_telegram")},
+             {QStringLiteral("diagnosticsRequested"), QStringLiteral("menu_gr_diag")},
+             {QStringLiteral("aboutRequested"), QStringLiteral("menu_gr_about")}}) {
+        is(QStringLiteral("%1 → пункт %2").arg(pair.first, pair.second),
+           window.contains(QStringLiteral("MainShell::%1, ui->%2, &QAction::trigger").arg(pair.first, pair.second)));
+    }
+    is(QStringLiteral("автопилот — через галку пункта меню, как у панели «Зелёный Ритм»"),
+       handler(window, QStringLiteral("MainShell::autopilotToggled"))
+           .contains(QStringLiteral("ui->menu_gr_autopilot->setChecked(on)")));
+    const QString start = handler(window, QStringLiteral("MainShell::connectOnStartToggled"));
+    is(QStringLiteral("«подключаться при запуске» → remember_enable и сохранение"),
+       start.contains(QStringLiteral("remember_enable = on")) && start.contains(QStringLiteral("Save()")));
+    const QString share = handler(window, QStringLiteral("MainShell::shareToLanToggled"));
+    is(QStringLiteral("раздача → адрес входа и UpdateDataStore (вопрос о перезапуске ядра)"),
+       share.contains(QStringLiteral("inbound_address = on ? \"::\" : \"127.0.0.1\"")) &&
+           share.contains(QStringLiteral("UpdateDataStore")));
+    const QString refresh = window.mid(window.indexOf(QStringLiteral("void MainWindow::refresh_app_options()")), 1400);
+    is(QStringLiteral("правду на страницу кладёт окно: setConnectionOptions с настройками и адресом"),
+       refresh.contains(QStringLiteral("shell->setConnectionOptions(")) &&
+           refresh.contains(QStringLiteral("remember_enable")) && refresh.contains(QStringLiteral("connection_autopilot")) &&
+           refresh.contains(QStringLiteral("GreenRhythm::Lan::pick(")));
+    is(QStringLiteral("пункт меню «Запомнить последний профиль» — и страница следом"),
+       handler(window, QStringLiteral("actionRemember_last_proxy, &QAction::triggered"))
+           .contains(QStringLiteral("refresh_app_options()")));
+    is(QStringLiteral("галка автопилота в меню — и страница следом"),
+       handler(window, QStringLiteral("menu_gr_autopilot, &QAction::toggled"))
+           .contains(QStringLiteral("refresh_app_options()")));
+}
+
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     shellShowsTheTruth();
@@ -371,6 +505,9 @@ int main(int argc, char *argv[]) {
     sourcesWiredAndMoved();
     tunnelDialogSpeaksRussian();
     routesDialogWording();
+    hiddenFeaturesOnThePage();
+    lanAddressPick();
+    hiddenFeaturesWired();
     std::printf("\n%d проверок, провалено %d\n", checks, fails);
     return fails == 0 ? 0 : 1;
 }
