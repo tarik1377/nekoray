@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Флажок «лесной» темы — переключатель, как ModeSwitch в ui/MainShell.cpp. Выключено, недоступно. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="22" viewBox="0 0 40 22">
+  <g opacity="0.45">
+    <rect x="1" y="2" width="38" height="18" rx="9" fill="#293923"/>
+    <circle cx="11" cy="11" r="7" fill="#e8eee4"/>
+  </g>
+</svg>

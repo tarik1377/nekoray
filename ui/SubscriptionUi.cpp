@@ -1,4 +1,5 @@
 #include "ui/mainwindow_common.hpp"
+#include "ui/Palette.hpp"
 
 /**
  * Подписка: остаток, QR и приём ссылки.
@@ -168,7 +169,7 @@ void MainWindow::refresh_subscription_status() {
         return;
     }
 
-    const QString color = low ? QStringLiteral("#E3A008") : QStringLiteral("#3FB950");
+    const QString color = QString::fromLatin1(low ? GreenRhythm::Palette::kAmber : GreenRhythm::Palette::kAccent);
     QString text = QStringLiteral("<span style='color:%1;'>%2 %3</span>")
                        .arg(color, QString::fromUtf8("\xF0\x9F\x8C\xBF"), parts.join(QStringLiteral(" \xC2\xB7 "))); // 🌿 ·
     if (low) {

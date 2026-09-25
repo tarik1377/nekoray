@@ -1,5 +1,6 @@
 #include "ui/ServerCardDelegate.hpp"
 #include "ui/Icons.hpp"
+#include "ui/Palette.hpp"
 
 #include <QAbstractItemModel>
 #include <QPainter>
@@ -9,15 +10,15 @@ namespace GreenRhythm {
 
     namespace {
 
-        // Те же токены, что в теме и в оболочке.
-        const QColor kAccent(0xba, 0xd6, 0x5b);
-        const QColor kText(0xe8, 0xee, 0xe4);
-        const QColor kMuted(0x99, 0xa7, 0x95);
-        const QColor kLine(0x29, 0x39, 0x23);
-        const QColor kCard(0x12, 0x21, 0x16);
-        const QColor kCardHover(0x21, 0x33, 0x1f);
-        const QColor kAmber(0xe3, 0xa0, 0x08);
-        const QColor kRed(0xe5, 0x48, 0x4d);
+        // Те же токены, что в теме и в оболочке, — из ui/Palette.hpp.
+        const QColor kAccent(Palette::kAccent);
+        const QColor kText(Palette::kText);
+        const QColor kMuted(Palette::kMuted);
+        const QColor kLine(Palette::kLine);
+        const QColor kCard(Palette::kCard);
+        const QColor kCardHover(Palette::kCardHover);
+        const QColor kAmber(Palette::kAmber);
+        const QColor kRed(Palette::kRed);
 
         constexpr int kRowHeight = 76;
         constexpr int kPad = 14;

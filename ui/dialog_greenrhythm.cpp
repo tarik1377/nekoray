@@ -1,6 +1,7 @@
 #include "ui/dialog_greenrhythm.h"
 
 #include "main/RunningPrograms.hpp"
+#include "ui/Palette.hpp"
 
 #include <QCheckBox>
 #include <QDialogButtonBox>
@@ -23,8 +24,8 @@ namespace {
 // Почему литералом, а не палитрой: таблица стилей Qt перекрывает QPalette, и
 // цвет, выставленный палитрой, молча не применяется. Ровно на этом «Подключено»
 // осталось белым, хотя код честно просил акцентный цвет. Значения те же, что в
-// res/theme/feiyangqingyun/qss/modern.css.
-constexpr auto kAccent = "#3fb950";
+// res/theme/feiyangqingyun/qss/modern.css — берутся из ui/Palette.hpp.
+constexpr auto kAccent = GreenRhythm::Palette::kAccent;
 
 /** Заголовок раздела: прописные, разрежённые, приглушённые. */
 QLabel *sectionTitle(QWidget *parent, const QString &text) {

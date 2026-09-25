@@ -1,5 +1,6 @@
 #include "ui/MainShell.hpp"
 #include "ui/Icons.hpp"
+#include "ui/Palette.hpp"
 
 #include <QGridLayout>
 #include <QPainter>
@@ -24,22 +25,18 @@ namespace GreenRhythm {
 
     namespace {
 
-        // Токены темы — в одном месте. Палитрой их не задать: таблица стилей Qt
-        // перекрывает QPalette, и цвет, выставленный палитрой, молча не
-        // применяется. Значения те же, что в res/theme/feiyangqingyun/qss/modern.css.
-        constexpr auto kAccent = "#bad65b";
-        constexpr auto kAccentDim = "#a9c64b";
-        constexpr auto kSurface = "#0c1710";
-        constexpr auto kSurfaceUp = "#17251a";
-        // Колонка ТЕМНЕЕ страницы, карточки СВЕТЛЕЕ. Три яруса вместо одного:
-        // так глубина читается без рамок. Те же значения — в modern.css; менять
-        // только парой.
-        constexpr auto kSidebar = "#0a140d";
-        constexpr auto kText = "#e8eee4";
-        constexpr auto kMuted = "#99a795";
-        constexpr auto kLine = "#293923";
-        constexpr auto kAmber = "#e3a008";
-        constexpr auto kRed = "#e5484d";
+        // Токены темы — из ui/Palette.hpp, единственной копии для кода (вторая —
+        // modern.css). Здесь только короткие имена, которыми пишет оболочка.
+        constexpr auto kAccent = Palette::kAccent;
+        constexpr auto kAccentDim = Palette::kAccentDim;
+        constexpr auto kSurface = Palette::kSurface;
+        constexpr auto kSurfaceUp = Palette::kSurfaceUp;
+        constexpr auto kSidebar = Palette::kSidebar;
+        constexpr auto kText = Palette::kText;
+        constexpr auto kMuted = Palette::kMuted;
+        constexpr auto kLine = Palette::kLine;
+        constexpr auto kAmber = Palette::kAmber;
+        constexpr auto kRed = Palette::kRed;
 
 
         /**

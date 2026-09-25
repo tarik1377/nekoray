@@ -2,6 +2,8 @@
 #include <QApplication>
 #include <QStyleFactory>
 #include <QColor>
+
+#include "ui/Palette.hpp"
 #include <QPalette>
 #include <QFile>
 #include <QFileInfo>
@@ -105,7 +107,7 @@ void ThemeManager::ApplyTheme(const QString &theme) {
                     qApp->setPalette(QPalette(paletteColor));
                 } else if (themeId == 4) {
                     // GreenRhythm Modern — seed a dark base palette so unstyled bits stay dark
-                    qApp->setPalette(QPalette(QColor(0x0c, 0x17, 0x10)));
+                    qApp->setPalette(QPalette(QColor(GreenRhythm::Palette::kSurface)));
                 } else {
                     // other theme
                     qApp->setPalette(system_style->standardPalette());

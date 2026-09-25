@@ -1,6 +1,7 @@
 #include "Icon.hpp"
 
 #include "main/NekoGui.hpp"
+#include "ui/Palette.hpp"
 
 #include <QPainter>
 
@@ -35,11 +36,11 @@ QPixmap Icon::GetTrayIcon(Icon::TrayIconStatus status) {
     // но ни туннель, ни прокси не включены, то есть трафик пока идёт мимо.
     p.setPen(Qt::NoPen);
     if (status == TrayIconStatus::RUNNING) {
-        p.setBrush(QBrush(QColor(0xE3, 0xA0, 0x08)));
+        p.setBrush(QBrush(QColor(GreenRhythm::Palette::kAmber)));
     } else if (status == TrayIconStatus::SYSTEM_PROXY) {
-        p.setBrush(QBrush(QColor(0x4C, 0x9A, 0xFF)));
+        p.setBrush(QBrush(QColor(GreenRhythm::Palette::kBlue)));
     } else if (status == TrayIconStatus::VPN) {
-        p.setBrush(QBrush(QColor(0x3F, 0xB9, 0x50)));
+        p.setBrush(QBrush(QColor(GreenRhythm::Palette::kAccent)));
     }
     p.drawRoundedRect(
         QRect(side - d - margin,

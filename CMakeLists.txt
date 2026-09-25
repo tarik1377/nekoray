@@ -550,7 +550,11 @@ target_link_libraries(pac_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 # Заголовок берётся тот же, что собрал uic для приложения: два AUTOUIC на один
 # .ui дерутся за каталог autogen, а второй копии вёрстки нам не нужно — смысл
 # как раз в том, чтобы смотреть на ту же самую.
-add_executable(relay_dialog_preview EXCLUDE_FROM_ALL test/RelayDialogPreview.cpp)
+# Ресурсы темы — во всех превью: modern.css ссылается на картинки переключателей
+# (url(:/themes/…)), и без qss.qrc превью рисовало бы флажки пустым местом, а
+# человек в приложении видит переключатели. Снимок обязан показывать то же.
+add_executable(relay_dialog_preview EXCLUDE_FROM_ALL test/RelayDialogPreview.cpp res/theme/feiyangqingyun/qss.qrc)
+set_property(TARGET relay_dialog_preview PROPERTY AUTORCC ON)
 add_dependencies(relay_dialog_preview greenrhythm)
 target_include_directories(relay_dialog_preview PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
@@ -575,7 +579,9 @@ add_executable(dialogs_preview EXCLUDE_FROM_ALL
         # Свои виджеты, которые .ui подставляют вместо штатных: без них setupUi
         # не линкуется.
         3rdparty/QtExtKeySequenceEdit.cpp
+        res/theme/feiyangqingyun/qss.qrc
 )
+set_property(TARGET dialogs_preview PROPERTY AUTORCC ON)
 set_property(TARGET dialogs_preview PROPERTY AUTOMOC ON)
 add_dependencies(dialogs_preview greenrhythm)
 # И от шага генерации заголовков ОТДЕЛЬНО: зависимость от цели greenrhythm
@@ -598,6 +604,7 @@ add_executable(mainwindow_preview EXCLUDE_FROM_ALL
         # Ресурсы: без них значки в колонке возьмутся из пустоты, и снимок
         # покажет аккуратную вёрстку без единого значка — то есть соврёт.
         res/neko.qrc
+        res/theme/feiyangqingyun/qss.qrc
 )
 set_property(TARGET mainwindow_preview PROPERTY AUTORCC ON)
 set_property(TARGET mainwindow_preview PROPERTY AUTOMOC ON)
@@ -684,6 +691,12 @@ target_link_libraries(power_state_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt
 add_executable(icons_test EXCLUDE_FROM_ALL test/IconsTest.cpp)
 target_link_libraries(icons_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 
+# ОДНА ПАЛИТРА. Цвета ui/Palette.hpp против копии в modern.css, запрет цветов
+# прежней палитры в коде окон и картинки таблицы стилей в qss.qrc. Только
+# чтение файлов — ни окон, ни сети.
+add_executable(palette_test EXCLUDE_FROM_ALL test/PaletteTest.cpp)
+target_link_libraries(palette_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+
 add_executable(connection_row_test EXCLUDE_FROM_ALL
         test/ConnectionRowTest.cpp
         main/ConnectionRow.cpp
@@ -718,6 +731,7 @@ add_executable(greenrhythm_panel_preview EXCLUDE_FROM_ALL
         # снимок покажет аккуратную вёрстку с невидимой иконкой — то есть соврёт
         # ровно про то, что мы пришли проверять.
         res/neko.qrc
+        res/theme/feiyangqingyun/qss.qrc
 )
 set_property(TARGET greenrhythm_panel_preview PROPERTY AUTORCC ON)
 target_include_directories(greenrhythm_panel_preview PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -732,7 +746,9 @@ set_property(TARGET greenrhythm_panel_preview PROPERTY AUTOMOC ON)
 add_executable(macos_mode_preview EXCLUDE_FROM_ALL
         test/MacosModePreview.cpp
         ui/dialog_macos_mode.cpp
+        res/theme/feiyangqingyun/qss.qrc
 )
+set_property(TARGET macos_mode_preview PROPERTY AUTORCC ON)
 # Свой AUTOMOC: у диалога есть Q_OBJECT, и без обработки moc'ом линковка не
 # найдёт staticMetaObject. Слоя настроек здесь нет намеренно — именно ради
 # этого хранение и вынесено из диалога.
@@ -775,6 +791,7 @@ set(GR_TEST_TARGETS
         interference_test
         connection_row_test
         icons_test
+        palette_test
 )
 
 add_custom_target(build-tests DEPENDS ${GR_TEST_TARGETS})
