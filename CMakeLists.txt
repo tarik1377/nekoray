@@ -710,6 +710,13 @@ target_link_libraries(icons_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 # ОДНА ПАЛИТРА. Цвета ui/Palette.hpp против копии в modern.css, запрет цветов
 # прежней палитры в коде окон и картинки таблицы стилей в qss.qrc. Только
 # чтение файлов — ни окон, ни сети.
+# Автозапуск: Windows — задачей планировщика с наивысшими правами (туннель без
+# UAC при входе), мак — через SMAppService. Сценарий регистрации и сторож
+# исходников; ни планировщика, ни окон.
+add_executable(autorun_task_test EXCLUDE_FROM_ALL test/AutoRunTaskTest.cpp)
+target_include_directories(autorun_task_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(autorun_task_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+
 add_executable(palette_test EXCLUDE_FROM_ALL test/PaletteTest.cpp)
 target_link_libraries(palette_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 
@@ -809,6 +816,7 @@ set(GR_TEST_TARGETS
         connection_row_test
         icons_test
         palette_test
+        autorun_task_test
 )
 
 add_custom_target(build-tests DEPENDS ${GR_TEST_TARGETS})

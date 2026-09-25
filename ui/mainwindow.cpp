@@ -450,8 +450,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         // ядра не нужен: ни одна из трёх настроек в его конфиг не попадает,
         // поэтому Save() напрямую, а не UpdateDataStore с вопросом «перезапустить?».
         connect(shell, &GreenRhythm::MainShell::autostartToggled, this, [this](bool on) {
-            AutoRun_SetEnabled(on);
-            refresh_app_options();
+            // В рабочем потоке: на Windows включение спрашивает UAC и ждёт
+            // PowerShell (sys/AutoRunTask.hpp) — окно не должно висеть, пока
+            // человек отвечает системе.
+            runOnNewThread([this, on] {
+                AutoRun_SetEnabled(on);
+                runOnUiThread([this] { refresh_app_options(); });
+            });
         });
         connect(shell, &GreenRhythm::MainShell::startHiddenToggled, this, [this](bool on) {
             NekoGui::dataStore->start_minimal = on;
@@ -804,8 +809,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         refresh_app_options();
     });
     connect(ui->actionStart_with_system, &QAction::triggered, this, [=](bool checked) {
-        AutoRun_SetEnabled(checked);
-        refresh_app_options();
+        // Как у строки страницы: UAC и PowerShell — не в потоке окна.
+        runOnNewThread([this, checked] {
+            AutoRun_SetEnabled(checked);
+            runOnUiThread([this] { refresh_app_options(); });
+        });
     });
     connect(ui->actionAllow_LAN, &QAction::triggered, this, [=](bool checked) {
         NekoGui::dataStore->inbound_address = checked ? "::" : "127.0.0.1";
@@ -1032,6 +1040,20 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Страница «Настройки» — после миграции интервала выше: иначе первый запуск
     // после обновления показал бы прежнее число.
     refresh_app_options();
+
+#ifdef Q_OS_WIN
+    // Программа с правами (человек перезапустил её ради туннеля), а автозапуск
+    // ещё через Run — разово переносим его в задачу с наивысшими правами: UAC
+    // сейчас не нужен, а со следующего входа туннель поднимется без вопросов.
+    if (NekoGui::IsAdmin()) {
+        runOnNewThread([this] {
+            if (AutoRun_IsEnabled() && !AutoRun_IsElevated()) {
+                AutoRun_SetEnabled(true);
+                runOnUiThread([this] { refresh_app_options(); });
+            }
+        });
+    }
+#endif
 
     // ТИХАЯ ПРОВЕРКА ОБНОВЛЕНИЙ (ui/UpdateNotice.hpp). Раньше — только по кнопке,
     // и человек на сборке со сломанной кнопкой питания о починке не узнавал.
