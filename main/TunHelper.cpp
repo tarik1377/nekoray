@@ -1,6 +1,7 @@
 #include "TunHelper.hpp"
 
 #include <QFile>
+#include <QHostAddress>
 #include <QObject>
 #include <QRegularExpression>
 
@@ -23,6 +24,49 @@ namespace GreenRhythm::TunHelper {
     QString pidPath(const QString &configDir) { return configDir + "/" + kPidFile; }
     QString logPath(const QString &configDir) { return configDir + "/" + kLogFile; }
     QString ourAddress() { return kOurAddress; }
+
+    QStringList excludeWithoutTunSubnets(const QStringList &excludes, const QStringList &tunSubnets) {
+        using Subnet = QPair<QHostAddress, int>;
+        const auto subtract = [](const auto &self, const Subnet &range, const Subnet &keep,
+                                 QStringList &result) -> void {
+            const auto &base = range.first;
+            const int bits = range.second;
+            if (base.protocol() != keep.first.protocol() ||
+                (!base.isInSubnet(keep) && !keep.first.isInSubnet(range))) {
+                result << base.toString() + "/" + QString::number(bits);
+                return;
+            }
+            if (bits >= keep.second) return; // whole excluded prefix is reserved for TUN
+            // Overlap with a narrower TUN subnet: split into two CIDRs and
+            // recurse only along the overlapping branch. At most 128 levels.
+            QHostAddress upper;
+            if (base.protocol() == QAbstractSocket::IPv4Protocol) {
+                upper = QHostAddress(base.toIPv4Address() | (quint32(1) << (31 - bits)));
+            } else {
+                auto bytes = base.toIPv6Address();
+                bytes[bits / 8] |= quint8(1u << (7 - bits % 8));
+                upper = QHostAddress(bytes);
+            }
+            self(self, Subnet{base, bits + 1}, keep, result);
+            self(self, Subnet{upper, bits + 1}, keep, result);
+        };
+        auto result = excludes;
+        for (const auto &tunSubnet : tunSubnets) {
+            const auto keep = QHostAddress::parseSubnet(tunSubnet);
+            if (keep.second < 0 || keep.first.isNull()) continue;
+            QStringList next;
+            for (const auto &prefix : result) {
+                const auto range = QHostAddress::parseSubnet(prefix);
+                if (range.second < 0 || range.first.isNull()) {
+                    next << prefix; // let the core report invalid user input
+                } else {
+                    subtract(subtract, range, keep, next);
+                }
+            }
+            result = next;
+        }
+        return result;
+    }
 
     qint64 parsePid(const QString &text) {
         bool ok = false;

@@ -18,6 +18,7 @@
 
 #include <QCoreApplication>
 #include <QFile>
+#include <QHostAddress>
 #include <QRegularExpression>
 #include <QString>
 #include <QTemporaryFile>
@@ -237,6 +238,46 @@ int main(int argc, char *argv[]) {
            broken.isEmpty());
     }
 
+    {
+        const QStringList original{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fd00::/8", "fe80::/10"};
+        const auto fixed = excludeWithoutTunSubnets(original, {"172.19.0.1/28", "fdfe:dcba:9876::1/126"});
+        const auto excluded = [&](const QString &address) {
+            for (const auto &prefix : fixed) {
+                if (QHostAddress(address).isInSubnet(QHostAddress::parseSubnet(prefix))) return true;
+            }
+            return false;
+        };
+        is("IPv4 TCP forwarder peer stays inside TUN", !excluded("172.19.0.2"));
+        is("whole IPv4 TUN subnet stays inside TUN", !excluded("172.19.0.0") && !excluded("172.19.0.15"));
+        is("IPv6 TCP forwarder peer stays inside TUN", !excluded("fdfe:dcba:9876::2"));
+        is("whole IPv6 TUN subnet stays inside TUN", !excluded("fdfe:dcba:9876::") && !excluded("fdfe:dcba:9876::3"));
+        is("adjacent LAN addresses remain excluded", excluded("172.18.255.255") && excluded("172.19.0.16") && excluded("172.31.255.255"));
+        is("adjacent IPv6 LAN remains excluded", excluded("fdfe:dcba:9875:ffff:ffff:ffff:ffff:ffff") && excluded("fdfe:dcba:9876::4"));
+        is("other private ranges stay excluded", excluded("10.1.2.3") && excluded("192.168.1.1") && excluded("fd01::1") && excluded("fe80::1"));
+        is("public and fake IP ranges stay routed", !excluded("1.1.1.1") && !excluded("198.18.0.1") && !excluded("fc00::1"));
+        is("specific user exclusion cannot swallow peer", excludeWithoutTunSubnets({"172.19.0.2/32"}, {"172.19.0.1/28"}).isEmpty());
+        is("malformed user exclusions remain available for core validation", excludeWithoutTunSubnets({"invalid-prefix"}, {"172.19.0.1/28"}) == QStringList{"invalid-prefix"});
+        is("normalization is idempotent", excludeWithoutTunSubnets(fixed, {"172.19.0.1/28", "fdfe:dcba:9876::1/126"}) == fixed);
+        const auto universal = excludeWithoutTunSubnets({"0.0.0.0/0", "::/0"}, {"172.19.0.1/28", "fdfe:dcba:9876::1/126"});
+        bool peerExcluded = false;
+        for (const auto &prefix : universal) {
+            const auto subnet = QHostAddress::parseSubnet(prefix);
+            peerExcluded |= QHostAddress("172.19.0.2").isInSubnet(subnet) || QHostAddress("fdfe:dcba:9876::2").isInSubnet(subnet);
+        }
+        is("catch-all exclusions also preserve both TUN peers", !peerExcluded && !universal.isEmpty());
+        const QStringList multiple{"192.0.2.35/28", "192.0.2.96/27", "192.0.2.254/31"};
+        const auto carved = excludeWithoutTunSubnets({"192.0.2.0/24"}, multiple);
+        bool exact = true;
+        for (int octet = 0; octet < 256; ++octet) {
+            const QHostAddress address(QStringLiteral("192.0.2.%1").arg(octet));
+            bool reserved = false;
+            bool bypassed = false;
+            for (const auto &prefix : multiple) reserved |= address.isInSubnet(QHostAddress::parseSubnet(prefix));
+            for (const auto &prefix : carved) bypassed |= address.isInSubnet(QHostAddress::parseSubnet(prefix));
+            exact &= reserved != bypassed;
+        }
+        is("all 256 addresses preserve exact multi-subnet subtraction", exact);
+    }
     std::printf("\nпроверок %d, провалов %d\n", checks, fails);
     return fails == 0 ? 0 : 1;
 }

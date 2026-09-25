@@ -15,7 +15,8 @@ namespace NekoGui_sys {
      * ЗВАТЬ ТОЛЬКО ИЗ РАБОЧЕГО ПОТОКА: внутри ifconfig/route и до шести секунд
      * ожидания соединений. На Windows не используется (туннель там внутри ядра).
      */
-    GreenRhythm::TunHelper::Chain ProbeTunChain(qint64 helperPid, const QString &socksAddr, int socksPort);
+    GreenRhythm::TunHelper::Chain ProbeTunChain(qint64 helperPid, const QString &socksAddr, int socksPort,
+                                               const QString &socksUser = {}, const QString &socksPassword = {});
 
     /**
      * Жив ли процесс с этим номером И ЯДРО ЛИ ЭТО.
