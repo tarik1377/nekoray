@@ -417,6 +417,11 @@ namespace GreenRhythm {
         modeTun = toggle(page, tr("Включить")); modeTun->setObjectName("grModeTun"); modeTun->setAccessibleName(tr("Туннель для всего устройства"));
         connect(modeTun, &QPushButton::clicked, this, &MainShell::tunToggled);
         addRow(tr("Туннель"), tr("Трафик всего устройства. Для запуска нужны права администратора."), "gr-shield-check", modeTun);
+        // Окно параметров туннеля открывалось только из «Ещё → Все команды». Всё в
+        // нём техническое, поэтому оно остаётся окном, но вход — рядом с туннелем.
+        auto *tunnelSettings = new QPushButton(tr("Настроить"), page); tunnelSettings->setObjectName("grTunnelSettings"); tunnelSettings->setAccessibleName(tr("Параметры туннеля"));
+        connect(tunnelSettings, &QPushButton::clicked, this, &MainShell::tunnelSettingsRequested);
+        addRow(tr("Параметры туннеля"), tr("Стек, MTU, IPv6 и что пускать мимо туннеля: адреса и программы."), "gr-sliders", tunnelSettings);
         modeProxy = toggle(page, tr("Включить")); modeProxy->setAccessibleName(tr("Системный прокси"));
         connect(modeProxy, &QPushButton::clicked, this, &MainShell::systemProxyToggled);
         addRow(tr("Системный прокси"), tr("Для браузеров и приложений, использующих настройки прокси системы."), "gr-nav-connect", modeProxy);

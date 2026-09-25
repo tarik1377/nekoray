@@ -216,6 +216,8 @@ namespace GreenRhythm {
 
         /** Инструменты, переехавшие из верхнего ряда. */
         void routesRequested();
+        /** Окно параметров туннеля: стек, MTU, IPv6, исключения. */
+        void tunnelSettingsRequested();
         /** «Что мешает подключению» — только под Windows. */
         void interferenceRequested();
         void updateSubscriptionRequested();

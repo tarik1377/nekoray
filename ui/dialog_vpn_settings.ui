@@ -32,7 +32,7 @@
          </sizepolicy>
         </property>
         <property name="text">
-         <string notr="true">Stack</string>
+         <string>Stack</string>
         </property>
        </widget>
       </item>
@@ -107,14 +107,14 @@
       <item>
        <widget class="QCheckBox" name="strict_route">
         <property name="text">
-         <string notr="true">Strict Route</string>
+         <string>Strict Route</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="QCheckBox" name="fake_dns">
         <property name="text">
-         <string notr="true">FakeDNS</string>
+         <string>FakeDNS</string>
         </property>
        </widget>
       </item>

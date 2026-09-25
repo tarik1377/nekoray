@@ -455,6 +455,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         shell->setAppVersion(appVersion);
         connect(shell, &GreenRhythm::MainShell::routesRequested, this,
                 [this] { on_menu_routing_settings_triggered(); });
+        connect(shell, &GreenRhythm::MainShell::tunnelSettingsRequested, this,
+                [this] { on_menu_vpn_settings_triggered(); });
         connect(shell, &GreenRhythm::MainShell::interferenceRequested, this,
                 [this] { on_menu_interference_triggered(); });
         connect(shell, &GreenRhythm::MainShell::settingsRequested, this,
