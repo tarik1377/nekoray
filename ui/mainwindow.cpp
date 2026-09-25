@@ -18,6 +18,7 @@
 #include "ui/Palette.hpp"
 #include "ui/SubscriptionSchedule.hpp"
 #include "ui/LanAddress.hpp"
+#include "ui/UpdateNotice.hpp"
 
 #include <QNetworkInterface>
 
@@ -1031,6 +1032,17 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Страница «Настройки» — после миграции интервала выше: иначе первый запуск
     // после обновления показал бы прежнее число.
     refresh_app_options();
+
+    // ТИХАЯ ПРОВЕРКА ОБНОВЛЕНИЙ (ui/UpdateNotice.hpp). Раньше — только по кнопке,
+    // и человек на сборке со сломанной кнопкой питания о починке не узнавал.
+    // Минута после запуска, дальше раз в сутки; спрашивается наш сайт (манифест
+    // /api/app/version), найденная версия — строкой в колонке, без окон.
+    auto *updateTimer = new QTimer(this);
+    connect(updateTimer, &QTimer::timeout, this, [this, updateTimer] {
+        updateTimer->setInterval(GreenRhythm::Update::kCheckEveryMs);
+        runOnNewThread([this] { CheckUpdate(true); });
+    });
+    updateTimer->start(GreenRhythm::Update::kFirstCheckMs);
 
     if (!NekoGui::dataStore->flag_tray) show();
 }

@@ -35,6 +35,11 @@
  * раздачи выбирает ui/LanAddress.hpp — у машины много адаптеров, и почти все
  * не те.
  *
+ * Обновления: раньше проверка шла только по кнопке, и человек на сборке со
+ * сломанной кнопкой питания о починке не узнавал. Теперь окно спрашивает само
+ * (минута после запуска, дальше раз в сутки) и показывает найденную версию
+ * строкой в колонке — без окон. Номер — из имени пакета (ui/UpdateNotice.hpp).
+ *
  * Заход 2в — «Маршруты». Переносить тоже нечего, а вот слова — да: sniffing
  * был переведён как «Режим подслушивания». В VPN-клиенте это читается как
  * слежка, и по смыслу неверно: ядро лишь распознаёт домен по началу
@@ -46,6 +51,7 @@
 #include "ui/LanAddress.hpp"
 #include "ui/MainShell.hpp"
 #include "ui/SubscriptionSchedule.hpp"
+#include "ui/UpdateNotice.hpp"
 
 #include <QApplication>
 #include <QFile>
@@ -498,6 +504,83 @@ static void hiddenFeaturesWired() {
            .contains(QStringLiteral("refresh_app_options()")));
 }
 
+/** Найденная версия — строкой в колонке и в «Обновлениях программы». */
+static void updateNoticeInSidebar() {
+    std::puts("Новая версия: строка в колонке, без окна");
+    Shell s;
+    auto *notice = s.w.findChild<QWidget *>(QStringLiteral("grUpdateNotice"));
+    auto *noticeText = s.w.findChild<QLabel *>(QStringLiteral("grUpdateNoticeText"));
+    auto *noticeButton = s.w.findChild<QPushButton *>(QStringLiteral("grUpdateNoticeButton"));
+    is(QStringLiteral("блок о новой версии есть в колонке: текст и «Обновить»"),
+       notice != nullptr && noticeText != nullptr && noticeButton != nullptr && s.ready());
+    if (notice == nullptr || noticeText == nullptr || noticeButton == nullptr || !s.ready()) return;
+    is(QStringLiteral("пока новой версии нет — строка спрятана"), notice->isHidden());
+
+    s.w.setAppVersion(QStringLiteral("1.8.3"));
+    s.w.setUpdateAvailable(true, QStringLiteral("1.8.4"));
+    is(QStringLiteral("вышла 1.8.4 — блок виден и называет номер"),
+       !notice->isHidden() && noticeText->text().contains(QStringLiteral("1.8.4")));
+    is(QStringLiteral("текст блока переносится, а не режется краем колонки"), noticeText->wordWrap());
+    is(QStringLiteral("«Обновления программы» называют и новую, и установленную"),
+       s.updatesDetail->text().contains(QStringLiteral("1.8.4")) &&
+           s.updatesDetail->text().contains(QStringLiteral("1.8.3")));
+    is(QStringLiteral("кнопка строки — «Обновить», а не «Проверить»"),
+       s.checkUpdates->text() == QStringLiteral("Обновить"));
+    is(QStringLiteral("установка значения не шлёт сигнала"), s.updateChecks == 0);
+    s.click(noticeButton);
+    is(QStringLiteral("«Обновить» в колонке — прежняя проверка с кнопками, ровно раз"), s.updateChecks == 1);
+
+    s.w.setUpdateAvailable(true);
+    is(QStringLiteral("номер не нашёлся — «новая версия» без номера"),
+       !notice->isHidden() && noticeText->text().contains(QStringLiteral("новая версия")));
+    s.w.setUpdateAvailable(false);
+    is(QStringLiteral("обновлений нет — строка прячется, кнопка снова «Проверить»"),
+       notice->isHidden() && s.checkUpdates->text() == QStringLiteral("Проверить") &&
+           s.updatesDetail->text().contains(QStringLiteral("1.8.3")));
+}
+
+/** Номер версии из имени пакета — ui/UpdateNotice.hpp. */
+static void versionFromAssetName() {
+    std::puts("Номер версии из имени пакета");
+    using GreenRhythm::Update::versionFromAsset;
+    is(QStringLiteral("GreenRhythm-v1.8.4-windows-x64.zip → 1.8.4"),
+       versionFromAsset(QStringLiteral("GreenRhythm-v1.8.4-windows-x64.zip")) == QStringLiteral("1.8.4"));
+    is(QStringLiteral("GreenRhythm-1.9.0-macos-arm64.dmg → 1.9.0"),
+       versionFromAsset(QStringLiteral("GreenRhythm-1.9.0-macos-arm64.dmg")) == QStringLiteral("1.9.0"));
+    is(QStringLiteral("GreenRhythm-v2.0-windows-x64.zip → 2.0"),
+       versionFromAsset(QStringLiteral("GreenRhythm-v2.0-windows-x64.zip")) == QStringLiteral("2.0"));
+    is(QStringLiteral("без номера — пусто, а не «64» из x64"),
+       versionFromAsset(QStringLiteral("greenrhythm-windows-x64.zip")).isEmpty() &&
+           versionFromAsset(QString()).isEmpty());
+    is(QStringLiteral("первая проверка — через минуту, дальше — раз в сутки"),
+       GreenRhythm::Update::kFirstCheckMs == 60 * 1000 &&
+           GreenRhythm::Update::kCheckEveryMs == 24 * 60 * 60 * 1000);
+}
+
+/** Окно спрашивает само и молчит обо всём, кроме найденной версии. */
+static void quietUpdateCheckWired() {
+    std::puts("Исходник окна: тихая проверка по таймеру");
+    const QString window = slurp(QStringLiteral("ui/mainwindow.cpp"));
+    const QString grpc = slurp(QStringLiteral("ui/mainwindow_grpc.cpp"));
+    const QString header = slurp(QStringLiteral("ui/mainwindow.h"));
+    is(QStringLiteral("CheckUpdate умеет молчать: void CheckUpdate(bool quiet = false)"),
+       header.contains(QStringLiteral("void CheckUpdate(bool quiet = false);")));
+    const int timer = window.indexOf(QStringLiteral("GreenRhythm::Update::kFirstCheckMs"));
+    const QString around = timer > 0 ? window.mid(timer - 900, 1400) : QString();
+    is(QStringLiteral("окно заводит тихую проверку: минута после запуска, потом раз в сутки"),
+       timer > 0 && around.contains(QStringLiteral("GreenRhythm::Update::kCheckEveryMs")) &&
+           around.contains(QStringLiteral("CheckUpdate(true)")) && around.contains(QStringLiteral("runOnNewThread")));
+    const QString check = grpc.mid(grpc.indexOf(QStringLiteral("void MainWindow::CheckUpdate(bool quiet)")), 2600);
+    is(QStringLiteral("тихая проверка не показывает ни «обновлений нет», ни ошибку сети"),
+       check.contains(QStringLiteral("if (!quiet) MessageBoxInfo(QObject::tr(\"Update\"), QObject::tr(\"No update\"));")) &&
+           check.contains(QStringLiteral("if (quiet) return;")));
+    is(QStringLiteral("найденная версия — в колонку, номер из имени пакета"),
+       check.contains(QStringLiteral("shell->setUpdateAvailable(true,")) &&
+           check.contains(QStringLiteral("GreenRhythm::Update::versionFromAsset(")));
+    is(QStringLiteral("ядро ещё не поднято — тихая проверка просто выходит"),
+       check.contains(QStringLiteral("NekoGui_rpc::defaultClient == nullptr")));
+}
+
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     shellShowsTheTruth();
@@ -508,6 +591,9 @@ int main(int argc, char *argv[]) {
     hiddenFeaturesOnThePage();
     lanAddressPick();
     hiddenFeaturesWired();
+    updateNoticeInSidebar();
+    versionFromAssetName();
+    quietUpdateCheckWired();
     std::printf("\n%d проверок, провалено %d\n", checks, fails);
     return fails == 0 ? 0 : 1;
 }

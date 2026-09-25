@@ -221,6 +221,7 @@ int main(int argc, char *argv[]) {
     shell->setAppOptions(true, false, 120);
     shell->setAppVersion(QStringLiteral("1.8.3"));
     shell->setConnectionOptions(true, true, true, QStringLiteral("192.168.1.5"), 2080);
+    shell->setUpdateAvailable(true, QStringLiteral("1.8.4"));
     shell->setServers({{4, QStringLiteral("tarik"), QStringLiteral("32 мс")},
                        {1, QStringLiteral("Germany-admin"), QString()},
                        {5, QStringLiteral("orsana-admin"), QStringLiteral("106 мс")}},

@@ -1,6 +1,7 @@
 #include "./ui_mainwindow.h"
 #include "main/Interference.hpp"
 #include "main/TunLifecycle.hpp"
+#include "ui/UpdateNotice.hpp"
 #include "mainwindow.h"
 
 #include "db/Database.hpp"
@@ -667,9 +668,13 @@ void MainWindow::neko_stop(bool crash, bool sem, bool keep_tunnel) {
     });
 }
 
-void MainWindow::CheckUpdate() {
+void MainWindow::CheckUpdate(bool quiet) {
     // on new thread...
 #ifndef NKR_NO_GRPC
+    // Тихая проверка (по таймеру, ui/UpdateNotice.hpp) молчит обо всём, кроме
+    // найденной версии: «обновлений нет» и сбой сети посреди работы — не повод
+    // для окна. Ядро могло ещё не подняться — тогда просто выходим.
+    if (quiet && NekoGui_rpc::defaultClient == nullptr) return;
     bool ok;
     libcore::UpdateReq request;
     request.set_action(libcore::UpdateAction::Check);
@@ -679,6 +684,7 @@ void MainWindow::CheckUpdate() {
 
     auto err = response.error();
     if (!err.empty()) {
+        if (quiet) return;
         runOnUiThread([=] {
             MessageBoxWarning(QObject::tr("Update"), err.c_str());
         });
@@ -687,10 +693,19 @@ void MainWindow::CheckUpdate() {
 
     if (response.download_url().empty()) {
         runOnUiThread([=] {
-            MessageBoxInfo(QObject::tr("Update"), QObject::tr("No update"));
+            if (shell != nullptr) shell->setUpdateAvailable(false);
+            if (!quiet) MessageBoxInfo(QObject::tr("Update"), QObject::tr("No update"));
         });
         return;
     }
+
+    // Найденная версия — строкой в колонку и при тихой проверке, и по кнопке:
+    // строка висит, пока человек не обновится. Номер — из имени пакета.
+    const QString found = GreenRhythm::Update::versionFromAsset(QString::fromStdString(response.assets_name()));
+    runOnUiThread([=] {
+        if (shell != nullptr) shell->setUpdateAvailable(true, found);
+    });
+    if (quiet) return;
 
     runOnUiThread([=] {
         auto allow_updater = !NekoGui::dataStore->flag_use_appdata;

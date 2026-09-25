@@ -252,7 +252,8 @@ private:
 
     static void stop_core_daemon();
 
-    void CheckUpdate();
+    // quiet — проверка по таймеру: молчит обо всём, кроме найденной версии.
+    void CheckUpdate(bool quiet = false);
 
     void open_greenrhythm_panel();      // наши функции одним окном, с объяснениями
     void open_what_broke();             // разбор «почему не работает эта программа»

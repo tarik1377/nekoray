@@ -213,6 +213,16 @@ namespace GreenRhythm {
         void setConnectionOptions(bool connectOnStart, bool autopilot, bool shareToLan,
                                   const QString &lanAddress, int port);
 
+        /**
+         * Вышла новая версия — строка в колонке и в «Обновлениях программы».
+         * Окна нет: посреди работы оно раздражает, а строка ждёт, пока человек
+         * решит сам. Нажатие — прежняя проверка с кнопками «Обновить» и «Открыть
+         * в браузере» (checkUpdateRequested).
+         *
+         * @param version номер; пусто при available — «новая версия» без номера
+         */
+        void setUpdateAvailable(bool available, const QString &version = QString());
+
     signals:
         void connectToggled();
 
@@ -284,6 +294,8 @@ namespace GreenRhythm {
         State shown() const;
         /** Действие человека: прежний отказ больше не новость. */
         void dismissFailure();
+        /** Строка в колонке и «Обновления программы» — по установленной и найденной версии. */
+        void paintUpdates();
 
         QStackedWidget *pages = nullptr;
         QList<QPushButton *> navButtons;
@@ -324,6 +336,12 @@ namespace GreenRhythm {
         QPushButton *autopilotToggle = nullptr;
         QPushButton *shareToLanToggle = nullptr;
         QLabel *shareToLanDetail = nullptr;
+        QWidget *updateNotice = nullptr;
+        QLabel *updateNoticeText = nullptr;
+        QPushButton *checkUpdatesButton = nullptr;
+        QString installedVersion;
+        QString availableVersion;
+        bool updateAvailable = false;
         QLineEdit *serverSearch = nullptr;
         QLabel *searchResult = nullptr;
         QLabel *modeSummary = nullptr;
