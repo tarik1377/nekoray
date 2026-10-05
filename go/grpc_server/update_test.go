@@ -15,16 +15,16 @@ func TestShouldUpdate(t *testing.T) {
 		latest, cur string
 		want        bool
 	}{
-		{"v1.2.0", "v1.1.1", true},               // normal upgrade
-		{"v1.1.1", "v1.1.1", false},              // same version
-		{"v1.1.1", "v1.2.0", false},              // current is newer
-		{"v1.2.0", "4.0.1-2024-12-12", true},     // legacy upstream straggler -> rescue
-		{"v1.2.0", "v1.2.0", false},              // equal
-		{"v1.2.10", "v1.2.9", true},              // numeric, not lexical
-		{"v1.10.0", "v1.9.0", true},              // numeric minor
-		{"v2.0.0", "v1.99.99", true},             // major wins
-		{"garbage", "v1.1.1", false},             // unparseable latest -> no junk prompt
-		{"v1.2.0", "", true},                     // empty current -> rescue
+		{"v1.2.0", "v1.1.1", true},           // normal upgrade
+		{"v1.1.1", "v1.1.1", false},          // same version
+		{"v1.1.1", "v1.2.0", false},          // current is newer
+		{"v1.2.0", "4.0.1-2024-12-12", true}, // legacy upstream straggler -> rescue
+		{"v1.2.0", "v1.2.0", false},          // equal
+		{"v1.2.10", "v1.2.9", true},          // numeric, not lexical
+		{"v1.10.0", "v1.9.0", true},          // numeric minor
+		{"v2.0.0", "v1.99.99", true},         // major wins
+		{"garbage", "v1.1.1", false},         // unparseable latest -> no junk prompt
+		{"v1.2.0", "", true},                 // empty current -> rescue
 	}
 	for _, c := range cases {
 		if got := shouldUpdate(c.latest, c.cur); got != c.want {
@@ -127,12 +127,13 @@ func TestFetchManifest(t *testing.T) {
 		wantNil bool
 	}{
 		{
-			name:   "нормальный ответ принимается",
+			name:   "ответ с суммой без подписи отклоняется",
 			status: 200,
 			body: `{"versionCode":10402,"version":"1.4.2",
 			        "url":"https://verdantvibe.ru/downloads/x.zip",
 			        "sha256":"` + goodSha + `","sizeBytes":57436947,
 			        "notes":"","mandatory":false,"platform":"windows-x64"}`,
+			wantErr: "формат подписи",
 		},
 		{
 			name:    "204 — выпусков нет, и это не ошибка",

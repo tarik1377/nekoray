@@ -15,9 +15,11 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/matsuridayo/libneko/neko_common"
+	releaseauth "greenrhythm_release"
 )
 
 /*
@@ -38,6 +40,9 @@ var update_download_url string
 
 /** sha256 из манифеста. Пустая строка означает «проверять нечем» — это отказ. */
 var update_expected_sha string
+
+var verifiedUpdate *releaseauth.Manifest
+var updateMu sync.Mutex
 
 /**
  * Наш ли это адрес.
@@ -110,14 +115,23 @@ func (v *flexInt64) UnmarshalJSON(data []byte) error {
 type releaseManifest struct {
 	// versionCode тоже терпимый: он приходит из той же таблицы и однажды
 	// приедет строкой по той же причине.
-	VersionCode flexInt64 `json:"versionCode"`
-	Version     string    `json:"version"`
-	Url         string    `json:"url"`
-	Sha256      string    `json:"sha256"`
-	SizeBytes   flexInt64 `json:"sizeBytes"`
-	Notes       string    `json:"notes"`
-	Mandatory   bool      `json:"mandatory"`
-	Platform    string    `json:"platform"`
+	VersionCode        flexInt64 `json:"versionCode"`
+	Version            string    `json:"version"`
+	Url                string    `json:"url"`
+	Sha256             string    `json:"sha256"`
+	SizeBytes          flexInt64 `json:"sizeBytes"`
+	Notes              string    `json:"notes"`
+	Mandatory          bool      `json:"mandatory"`
+	Platform           string    `json:"platform"`
+	SignatureAlgorithm string    `json:"signatureAlgorithm"`
+	SigningKeyID       string    `json:"signingKeyId"`
+	Signature          string    `json:"signature"`
+}
+
+func (m *releaseManifest) signedManifest() *releaseauth.Manifest {
+	return &releaseauth.Manifest{VersionCode: int64(m.VersionCode), Version: m.Version, URL: m.Url, SHA256: m.Sha256,
+		SizeBytes: int64(m.SizeBytes), Mandatory: m.Mandatory, Platform: m.Platform,
+		Algorithm: m.SignatureAlgorithm, KeyID: m.SigningKeyID, Signature: m.Signature}
 }
 
 /**
@@ -168,10 +182,15 @@ func fetchManifest(ctx context.Context, client *http.Client, platform string) (*
 	if !looksLikeSha256(m.Sha256) {
 		return nil, errors.New("контрольная сумма в манифесте не читается — обновление отменено")
 	}
+	if err := releaseauth.Verify(m.signedManifest(), platform); err != nil {
+		return nil, err
+	}
 	return &m, nil
 }
 
 func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.UpdateResp, error) {
+	updateMu.Lock()
+	defer updateMu.Unlock()
 	ret := &gen.UpdateResp{}
 
 	// НАШ САЙТ БЕРЁМ НАПРЯМУЮ, А ЧЕРЕЗ ТУННЕЛЬ — ТОЛЬКО ЕСЛИ НАПРЯМУЮ НЕ ВЫШЛО.
@@ -190,6 +209,8 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 	fallback := neko_common.CreateProxyHttpClient(neko_common.GetCurrentInstance())
 
 	if in.Action == gen.UpdateAction_Check { // Check update
+		verifiedUpdate = nil
+		update_download_url, update_expected_sha = "", ""
 		ctx, cancel := context.WithTimeout(ctx, time.Second*10)
 		defer cancel()
 
@@ -222,6 +243,7 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 
 		update_download_url = m.Url
 		update_expected_sha = m.Sha256
+		verifiedUpdate = m.signedManifest()
 
 		// Имя берётся из адреса, а не придумывается: оно показывается человеку и
 		// должно совпадать с тем, что он увидит в папке загрузок.
@@ -237,10 +259,14 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		ret.IsPreRelease = false
 		return ret, nil
 	} else { // Download update
-		if update_download_url == "" || update_expected_sha == "" {
+		if update_download_url == "" || update_expected_sha == "" || verifiedUpdate == nil {
 			// Оба условия — одно и то же состояние: проверка не проходила или не
 			// прошла. Скачивать при этом нечего и не с чем сверять.
 			ret.Error = "No update URL"
+			return ret, nil
+		}
+		if err := releaseauth.Verify(verifiedUpdate, manifestPlatform()); err != nil {
+			ret.Error = err.Error()
 			return ret, nil
 		}
 		// Повторная проверка адреса перед походом. Между проверкой и скачиванием
@@ -316,7 +342,7 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		// а зависший ответ. Порог с запасом: на самом плохом мобильном интернете
 		// байты идут чаще.
 		guard, stopGuard := newIdleGuard(resp.Body, 90*time.Second, cancelDownload)
-		_, err = io.Copy(io.MultiWriter(f, h), guard)
+		downloadedBytes, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(guard, verifiedUpdate.SizeBytes+1))
 		stopGuard()
 		if err != nil {
 			f.Close()
@@ -340,27 +366,34 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		 * она приходит в самом манифесте и без неё сюда не доходят вовсе:
 		 * несостоявшаяся проверка равна проваленной.
 		 *
-		 * Честно про предел: сумма едет по тому же TLS и с того же сайта, что и
-		 * файл. Она ловит битую закачку и подмену по дороге, но не сайт,
-		 * которым завладели. Настоящее лечение — подпись офлайновым ключом,
-		 * открытая часть которого лежит в клиенте; называть sha256 подписью
-		 * нечестно, и здесь она ею не называется.
+		 * SHA256 описывает байты архива; доверие к этому значению даёт подпись
+		 * Ed25519 всего манифеста. Её проверяют и перед предложением обновиться,
+		 * и отдельно в updater. Закрытого ключа на сервере раздачи нет.
 		 */
 		got := hex.EncodeToString(h.Sum(nil))
-		if !strings.EqualFold(got, update_expected_sha) {
-			// Файл убирается сразу. Оставленный, он дождётся распаковщика,
-			// который проверок не делает вовсе.
+		if downloadedBytes != verifiedUpdate.SizeBytes || !strings.EqualFold(got, update_expected_sha) {
+			// Не оставляем повреждённый пакет даже после проверки в downloader:
+			// updater независимо проверит подпись, размер и сумму до распаковки.
 			f.Close()
 			os.Remove(zipPath)
 			ret.Error = "контрольная сумма пакета не сошлась — обновление отменено"
 			return ret, nil
 		}
+		manifestBytes, err := json.Marshal(verifiedUpdate)
+		if err != nil {
+			ret.Error = err.Error()
+			return ret, nil
+		}
+		if err := os.WriteFile(zipPath+".manifest.json", manifestBytes, 0644); err != nil {
+			f.Close()
+			os.Remove(zipPath)
+			ret.Error = "не удалось сохранить подписанный манифест: " + err.Error()
+			return ret, nil
+		}
 
-		// Сумма кладётся рядом с архивом, потому что применяет его ДРУГОЙ
-		// процесс — updater, — и до сих пор он применял любой архив, какой
-		// найдёт. Проверка на стороне, которая ничего не применяет, не
-		// защищает применяющего. Предел у этого тот же, что описан выше, и
-		// так же назван в go/cmd/updater/verify.go: это не подпись.
+		// Sidecar суммы сохраняется для перехода со старого updater. Новый
+		// updater принимает только .manifest.json с подписью закреплённого
+		// ключа; один .sha256 никогда не разрешает установку.
 		if err := os.WriteFile(zipPath+".sha256", []byte(got), 0644); err != nil {
 			f.Close()
 			os.Remove(zipPath)

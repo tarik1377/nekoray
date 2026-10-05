@@ -3,6 +3,7 @@ module grpc_server
 go 1.24.0
 
 require (
+	greenrhythm_release v0.0.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/matsuridayo/libneko v1.0.0 // replaced
 	google.golang.org/grpc v1.79.1
@@ -19,3 +20,5 @@ require (
 exclude cloud.google.com/go v0.26.0
 
 replace github.com/matsuridayo/libneko v1.0.0 => ../../../libneko
+
+replace greenrhythm_release => ../release_auth

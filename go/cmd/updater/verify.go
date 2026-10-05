@@ -3,59 +3,58 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	releaseauth "greenrhythm_release"
 	"io"
 	"os"
-	"strings"
 )
 
-// verifyArchive проверяет пакет обновления перед тем, как его применить.
-//
-// ЗАЧЕМ, ЕСЛИ СУММУ УЖЕ СВЕРИЛИ ПРИ СКАЧИВАНИИ. Потому что сверял её ДРУГОЙ
-// процесс. Обновлятор берёт архив по имени из каталога установки и до сих пор
-// применял любой, какой там окажется: положенный туда кем угодно, оставшийся от
-// прерванного обновления, или переданный первым аргументом командной строки.
-// Проверка на стороне, которая ничего не применяет, не защищает того, кто
-// применяет: только применяющий знает, что именно он раскладывает поверх
-// программы.
-//
-// ЧЕСТНО ПРО ПРЕДЕЛ. Сумма лежит файлом рядом с архивом, и тот, кто может
-// положить свой архив в каталог установки, может положить и свою сумму. Это не
-// подпись и здесь ею не называется — ровно как и в go/grpc_server/update.go.
-// Что проверка действительно закрывает: применение битого, недокачанного,
-// устаревшего или просто чужого архива, оказавшегося рядом не тем путём,
-// которым обновление приходит. Настоящее лечение — офлайновый ключ, открытая
-// часть которого лежит в обновляторе; его здесь нет, и делать вид, что есть,
-// хуже, чем сказать об этом.
+// verifyArchive checks the signed manifest and actual bytes in the installer process.
+// Its trust comes from the key embedded in the binary, never from a checksum sidecar.
 func verifyArchive(path string) error {
-	shaPath := path + ".sha256"
-	raw, err := os.ReadFile(shaPath)
+	return verifyArchiveWith(path, releaseauth.Platform(), releaseauth.Verify)
+}
+
+// A checksum alone is insufficient: verify the pinned key before opening the archive.
+func verifyArchiveWith(path, platform string, verify func(*releaseauth.Manifest, string) error) error {
+	sidecar, err := os.Open(path + ".manifest.json")
 	if err != nil {
-		return errors.New("рядом с пакетом нет файла с контрольной суммой (" + shaPath +
-			"). Пакет не применён: скачайте обновление заново через программу")
+		return errors.New("нет подписанного манифеста — скачайте обновление заново через программу")
 	}
-
-	// Файл может содержать «<сумма>  <имя>» — форму sha256sum.
-	want := strings.TrimSpace(string(raw))
-	if i := strings.IndexAny(want, " \t"); i > 0 {
-		want = want[:i]
+	defer sidecar.Close()
+	stat, err := sidecar.Stat()
+	if err != nil || !stat.Mode().IsRegular() || stat.Size() > 64*1024 {
+		return errors.New("манифест выпуска повреждён")
 	}
-	if len(want) != 64 {
-		return errors.New("контрольная сумма рядом с пакетом испорчена — обновление отменено")
+	var m releaseauth.Manifest
+	d := json.NewDecoder(io.LimitReader(sidecar, 64*1024))
+	d.DisallowUnknownFields()
+	if err = d.Decode(&m); err != nil {
+		return err
 	}
-
+	if err = d.Decode(new(interface{})); err != io.EOF {
+		return errors.New("лишние данные в манифесте")
+	}
+	if err = verify(&m, platform); err != nil {
+		return err
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-
+	stat, err = f.Stat()
+	if err != nil || !stat.Mode().IsRegular() || stat.Size() != m.SizeBytes {
+		return errors.New("размер пакета не совпадает с подписанным выпуском")
+	}
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	n, err := io.Copy(h, io.LimitReader(f, m.SizeBytes+1))
+	if err != nil {
 		return err
 	}
 	got := hex.EncodeToString(h.Sum(nil))
-	if !strings.EqualFold(got, want) {
+	if n != m.SizeBytes || got != m.SHA256 {
 		return errors.New("контрольная сумма пакета не сошлась — обновление отменено")
 	}
 	return nil

@@ -3,6 +3,7 @@ module nekobox_core
 go 1.24.7
 
 require (
+	greenrhythm_release v0.0.0
 	github.com/matsuridayo/libneko v1.0.0
 	github.com/sagernet/sing v0.8.12
 	github.com/sagernet/sing-box v1.13.18
@@ -157,6 +158,8 @@ require (
 )
 
 replace grpc_server => ../../grpc_server
+
+replace greenrhythm_release => ../../release_auth
 
 replace github.com/matsuridayo/libneko => ../../../../libneko
 

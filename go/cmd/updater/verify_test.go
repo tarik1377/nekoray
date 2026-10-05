@@ -1,102 +1,73 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	releaseauth "greenrhythm_release"
 )
 
-// Набор стоит перед одной ошибкой: применить не тот пакет. Каждый случай здесь —
-// это форма, в которой «не тот» уже приходил или может прийти.
-
-func writeArchive(t *testing.T, dir, name string, body []byte) string {
-	t.Helper()
-	p := filepath.Join(dir, name)
-	if err := os.WriteFile(p, body, 0644); err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
-
-func sumOf(body []byte) string {
+func TestInstallerRejectsChecksumOnly(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "greenrhythm.zip")
+	body := []byte("untrusted package")
 	h := sha256.Sum256(body)
-	return hex.EncodeToString(h[:])
+	os.WriteFile(p, body, 0644)
+	os.WriteFile(p+".sha256", []byte(hex.EncodeToString(h[:])), 0644)
+	if verifyArchive(p) == nil {
+		t.Fatal("unsigned archive accepted")
+	}
 }
 
-func TestVerifyArchiveAcceptsMatchingSum(t *testing.T) {
-	dir := t.TempDir()
-	body := []byte("это содержимое пакета")
-	p := writeArchive(t, dir, "greenrhythm.zip", body)
-	if err := os.WriteFile(p+".sha256", []byte(sumOf(body)), 0644); err != nil {
+func TestInstallerVerifiesSignatureAndActualBytes(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "greenrhythm.zip")
+	body := []byte("trusted package bytes")
+	h := sha256.Sum256(body)
+	pub, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyArchive(p); err != nil {
-		t.Fatalf("совпадающая сумма должна приниматься, получено: %v", err)
-	}
-}
-
-func TestVerifyArchiveAcceptsSha256sumFormat(t *testing.T) {
-	// Человек может положить файл, полученный обычным sha256sum: «<сумма>  <имя>».
-	dir := t.TempDir()
-	body := []byte("пакет")
-	p := writeArchive(t, dir, "greenrhythm.zip", body)
-	line := sumOf(body) + "  greenrhythm.zip\n"
-	if err := os.WriteFile(p+".sha256", []byte(line), 0644); err != nil {
+	m := &releaseauth.Manifest{VersionCode: 1602, Version: "1.6.2", URL: "https://verdantvibe.ru/downloads/test.zip", SHA256: hex.EncodeToString(h[:]), SizeBytes: int64(len(body)), Platform: releaseauth.Platform(), Algorithm: releaseauth.Algorithm, KeyID: "test-key"}
+	payload, err := releaseauth.Payload(m)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyArchive(p); err != nil {
-		t.Fatalf("форма sha256sum должна приниматься, получено: %v", err)
+	m.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(key, payload))
+	keys := map[string]string{"test-key": base64.StdEncoding.EncodeToString(pub)}
+	verify := func(m *releaseauth.Manifest, platform string) error {
+		return releaseauth.VerifyWithKeys(m, platform, keys)
 	}
-}
-
-func TestVerifyArchiveRejectsWrongSum(t *testing.T) {
-	dir := t.TempDir()
-	p := writeArchive(t, dir, "greenrhythm.zip", []byte("настоящий пакет"))
-	if err := os.WriteFile(p+".sha256", []byte(sumOf([]byte("другой пакет"))), 0644); err != nil {
+	encoded, _ := json.Marshal(m)
+	os.WriteFile(p+".manifest.json", encoded, 0644)
+	os.WriteFile(p, body, 0644)
+	if err := verifyArchiveWith(p, releaseauth.Platform(), verify); err != nil {
 		t.Fatal(err)
 	}
-	err := verifyArchive(p)
-	if err == nil {
-		t.Fatal("несовпадающая сумма должна отвергаться")
+	if verifyArchive(p) == nil {
+		t.Fatal("test key accepted by production installer")
 	}
-	if !strings.Contains(err.Error(), "не сошлась") {
-		t.Fatalf("причина отказа должна быть названа, получено: %v", err)
+	if verifyArchiveWith(p, "wrong-platform", verify) == nil {
+		t.Fatal("wrong platform accepted")
 	}
-}
-
-func TestVerifyArchiveRejectsMissingSidecar(t *testing.T) {
-	// Ровно тот случай, ради которого набор и написан: архив положили рядом с
-	// программой, а нашим путём он не приходил.
-	dir := t.TempDir()
-	p := writeArchive(t, dir, "greenrhythm.zip", []byte("подложенный пакет"))
-	if err := verifyArchive(p); err == nil {
-		t.Fatal("пакет без файла суммы применять нельзя")
+	os.WriteFile(p, []byte("tampered package byte"), 0644)
+	if verifyArchiveWith(p, releaseauth.Platform(), verify) == nil {
+		t.Fatal("tampered bytes accepted")
 	}
-}
-
-func TestVerifyArchiveRejectsTruncatedSum(t *testing.T) {
-	dir := t.TempDir()
-	body := []byte("пакет")
-	p := writeArchive(t, dir, "greenrhythm.zip", body)
-	// Обрезанная сумма не должна проходить как «совпала по началу».
-	if err := os.WriteFile(p+".sha256", []byte(sumOf(body)[:32]), 0644); err != nil {
-		t.Fatal(err)
+	os.WriteFile(p, body, 0644)
+	m.VersionCode++
+	encoded, _ = json.Marshal(m)
+	os.WriteFile(p+".manifest.json", encoded, 0644)
+	if verifyArchiveWith(p, releaseauth.Platform(), verify) == nil {
+		t.Fatal("tampered manifest accepted")
 	}
-	if err := verifyArchive(p); err == nil {
-		t.Fatal("сумма неверной длины должна отвергаться")
-	}
-}
-
-func TestVerifyArchiveRejectsMissingArchive(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, "greenrhythm.zip")
-	if err := os.WriteFile(p+".sha256", []byte(sumOf([]byte("x"))), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := verifyArchive(p); err == nil {
-		t.Fatal("отсутствующий архив должен давать ошибку, а не проходить")
+	os.WriteFile(p+".manifest.json", append(encoded, []byte(" {}")...), 0644)
+	if verifyArchiveWith(p, releaseauth.Platform(), verify) == nil {
+		t.Fatal("trailing JSON accepted")
 	}
 }

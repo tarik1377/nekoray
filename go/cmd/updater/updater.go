@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-
 // waitForPreviousInstance ждёт, пока прежняя копия отпустит свои файлы.
 //
 // ЗАЧЕМ. Программа запускает обновлятор и лишь ПОТОМ начинает выходить, а её
@@ -85,6 +84,7 @@ func Updater() {
 	if err := verifyArchive(updatePackagePath); err != nil {
 		os.Remove(updatePackagePath)
 		os.Remove(updatePackagePath + ".sha256")
+		os.Remove(updatePackagePath + ".manifest.json")
 		MessageBoxPlain("GreenRhythm Updater", err.Error())
 		log.Fatalln(err.Error())
 	}
@@ -147,8 +147,10 @@ func Updater() {
 	os.RemoveAll(extractDir)
 	os.Remove("./greenrhythm.zip")
 	os.Remove("./greenrhythm.zip.sha256")
+	os.Remove("./greenrhythm.zip.manifest.json")
 	os.Remove("./greenrhythm.tar.gz")
 	os.Remove("./greenrhythm.tar.gz.sha256")
+	os.Remove("./greenrhythm.tar.gz.manifest.json")
 
 	// clean up old binaries from previous versions
 	os.Remove("./nekoray.exe")
