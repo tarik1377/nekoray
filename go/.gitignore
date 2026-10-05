@@ -1,6 +1,7 @@
 *.log
 *.pem
 *.json
+!release_auth/trusted_keys.json
 *.exe
 *.dat
 /cmd/nekoray_core/nekoray_core

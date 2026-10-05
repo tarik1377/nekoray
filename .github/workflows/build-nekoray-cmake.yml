@@ -90,6 +90,7 @@ jobs:
         if: matrix.cross_os == 'windows'
         shell: bash
         run: |
+          (cd go/release_auth && go test ./...)
           (cd go/grpc_server && go test ./...)
           # С ТОЙ ЖЕ ПРАВКОЙ SING-BOX, ЧТО И СБОРКА (patches/README.md, _overlay).
           # Без неё здесь проверялся бы штатный клиент REALITY, а в выпуск шёл бы
