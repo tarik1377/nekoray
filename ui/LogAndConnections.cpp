@@ -4,6 +4,8 @@
 
 #include "main/ConnectionRow.hpp"
 
+#include <memory>
+
 /**
  * Журнал и список соединений — две поверхности, которыми чинят подключение.
  *
@@ -81,13 +83,15 @@ void MainWindow::show_log_impl(const QString &log) {
 }
 
 void MainWindow::on_masterLogBrowser_customContextMenuRequested(const QPoint &pos) {
-    QMenu *menu = ui->masterLogBrowser->createStandardContextMenu();
+    // Each popup and its actions must die when exec() returns, rather than
+    // accumulating under the browser and main window for the entire session.
+    std::unique_ptr<QMenu> menu(ui->masterLogBrowser->createStandardContextMenu());
 
-    auto sep = new QAction(this);
+    auto sep = new QAction(menu.get());
     sep->setSeparator(true);
     menu->addAction(sep);
 
-    auto action_add_ignore = new QAction(this);
+    auto action_add_ignore = new QAction(menu.get());
     action_add_ignore->setText(tr("Set ignore keyword"));
     connect(action_add_ignore, &QAction::triggered, this, [=] {
         auto list = NekoGui::dataStore->log_ignore;
@@ -102,7 +106,7 @@ void MainWindow::on_masterLogBrowser_customContextMenuRequested(const QPoint &po
     });
     menu->addAction(action_add_ignore);
 
-    auto action_add_route = new QAction(this);
+    auto action_add_route = new QAction(menu.get());
     action_add_route->setText(tr("Save as route"));
     connect(action_add_route, &QAction::triggered, this, [=] {
         auto newStr = ui->masterLogBrowser->textCursor().selectedText().trimmed();
@@ -149,7 +153,7 @@ void MainWindow::on_masterLogBrowser_customContextMenuRequested(const QPoint &po
 
     // «Сохранить лог…» — one attachment for support instead of a wall of screenshots.
     // Writes the secret-free header plus the full on-disk history (both rotated files).
-    auto action_save_log = new QAction(this);
+    auto action_save_log = new QAction(menu.get());
     action_save_log->setText(tr("Сохранить лог в файл…"));
     connect(action_save_log, &QAction::triggered, this, [=] {
         const QString suggested = QDir::homePath() + "/greenrhythm-log-" +
@@ -188,7 +192,7 @@ void MainWindow::on_masterLogBrowser_customContextMenuRequested(const QPoint &po
     });
     menu->addAction(action_save_log);
 
-    auto action_clear = new QAction(this);
+    auto action_clear = new QAction(menu.get());
     action_clear->setText(tr("Clear"));
     connect(action_clear, &QAction::triggered, this, [=] {
         qvLogDocument->clear();

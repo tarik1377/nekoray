@@ -275,12 +275,7 @@ void runOnNewThread(const std::function<void()> &callback) {
 }
 
 void setTimeout(const std::function<void()> &callback, QObject *obj, int timeout) {
-    auto t = new QTimer;
-    QObject::connect(t, &QTimer::timeout, obj, [=] {
-        callback();
-        t->deleteLater();
-    });
-    t->setSingleShot(true);
-    t->setInterval(timeout);
-    t->start();
+    // Qt cancels the callback and releases its timer if the process/window
+    // disappears before the delay. An unparented timer leaked then.
+    QTimer::singleShot(timeout, obj, callback);
 }

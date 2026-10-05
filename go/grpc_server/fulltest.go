@@ -23,22 +23,18 @@ const (
 )
 
 func getBetweenStr(str, start, end string) string {
-	n := strings.Index(str, start)
-	if n == -1 {
-		n = 0
+	_, tail, found := strings.Cut(str, start)
+	if !found {
+		return ""
 	}
-	str = string([]byte(str)[n:])
-	m := strings.Index(str, end)
-	if m == -1 {
-		m = len(str)
-	}
-	str = string([]byte(str)[:m])
-	return str[len(start):]
+	value, _, _ := strings.Cut(tail, end)
+	return value
 }
 
 func DoFullTest(ctx context.Context, in *gen.TestReq, instance interface{}) (out *gen.TestResp, _ error) {
 	out = &gen.TestResp{}
 	httpClient := neko_common.CreateProxyHttpClient(instance)
+	defer httpClient.CloseIdleConnections()
 
 	// Latency
 	var latency string
@@ -55,7 +51,7 @@ func DoFullTest(ctx context.Context, in *gen.TestReq, instance interface{}) (out
 	// UDP Latency
 	var udpLatency string
 	if in.FullUdpLatency {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+		ctx, cancel := context.WithTimeout(ctx, time.Second*3)
 		result := make(chan string, 1) // buffered so the goroutine never leaks on timeout
 
 		go func() {
@@ -63,6 +59,10 @@ func DoFullTest(ctx context.Context, in *gen.TestReq, instance interface{}) (out
 			pc, err := neko_common.DialContext(ctx, instance, "udp", "8.8.8.8:53")
 			if err == nil {
 				defer pc.Close()
+				// DialContext only cancels dialing. A silent DNS peer otherwise
+				// leaves Read, its goroutine and the socket alive after timeout.
+				stopClose := context.AfterFunc(ctx, func() { _ = pc.Close() })
+				defer stopClose()
 				dnsPacket, _ := hex.DecodeString("0000010000010000000000000377777706676f6f676c6503636f6d0000010001")
 				_, err = pc.Write(dnsPacket)
 				if err == nil {
@@ -75,7 +75,11 @@ func DoFullTest(ctx context.Context, in *gen.TestReq, instance interface{}) (out
 				result <- fmt.Sprint(endTime.Sub(startTime).Abs().Milliseconds(), "ms")
 			} else {
 				log.Println("UDP Latency test error:", err)
-				result <- "Error"
+				if ctx.Err() != nil {
+					result <- "Timeout"
+				} else {
+					result <- "Error"
+				}
 			}
 			close(result)
 		}()
@@ -103,14 +107,27 @@ func DoFullTest(ctx context.Context, in *gen.TestReq, instance interface{}) (out
 	// 出口 IP
 	var out_ip string
 	if in.FullInOut {
-		resp, err := httpClient.Get("https://www.cloudflare.com/cdn-cgi/trace")
-		if err == nil {
-			b, _ := io.ReadAll(resp.Body)
-			out_ip = getBetweenStr(string(b), "ip=", "\n")
-			resp.Body.Close()
-		} else {
-			out_ip = "Error"
-		}
+		out_ip = func() string {
+			requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			req, err := http.NewRequestWithContext(requestCtx, "GET", "https://www.cloudflare.com/cdn-cgi/trace", nil)
+			if err != nil {
+				return "Error"
+			}
+			resp, err := httpClient.Do(req)
+			if err != nil {
+				return "Error"
+			}
+			defer resp.Body.Close()
+			// The trace is tiny. An error page or faulty peer must not grow
+			// memory without a bound or keep the cancelled test running.
+			b, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			ip := getBetweenStr(string(b), "ip=", "\n")
+			if err != nil || resp.StatusCode != http.StatusOK || net.ParseIP(ip) == nil {
+				return "Error"
+			}
+			return ip
+		}()
 	}
 
 	// 下载
@@ -120,7 +137,7 @@ func DoFullTest(ctx context.Context, in *gen.TestReq, instance interface{}) (out
 			in.FullSpeedTimeout = 30
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(in.FullSpeedTimeout))
+		ctx, cancel := context.WithTimeout(ctx, time.Second*time.Duration(in.FullSpeedTimeout))
 		result := make(chan string, 1) // buffered so the goroutine never leaks on timeout
 
 		// ЗАКРЫВАТЕЛЬ ТЕЛА СЮДА НЕ ВЫНОСИТСЯ.
@@ -135,7 +152,11 @@ func DoFullTest(ctx context.Context, in *gen.TestReq, instance interface{}) (out
 		// срока cancel() обрывает io.Copy, defer закрывает тело — то же самое,
 		// что делала внешняя переменная, только без общего состояния.
 		go func() {
-			req, _ := http.NewRequestWithContext(ctx, "GET", in.FullSpeedUrl, nil)
+			req, err := http.NewRequestWithContext(ctx, "GET", in.FullSpeedUrl, nil)
+			if err != nil {
+				result <- "Error"
+				return
+			}
 			resp, err := httpClient.Do(req)
 			if err == nil && resp != nil && resp.Body != nil {
 				defer resp.Body.Close()
