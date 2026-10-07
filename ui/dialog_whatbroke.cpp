@@ -36,6 +36,8 @@ namespace {
 DialogWhatBroke::DialogWhatBroke(QWidget *parent) : QDialog(parent) {
     setWindowTitle(tr("Что-то не работает"));
     resize(560, 520);
+    // finished приходит и при Escape, и при закрытии крестиком, и при accept.
+    connect(this, &QDialog::finished, this, [this] { stopWatch(); });
 
     auto *outer = new QVBoxLayout(this);
     outer->setContentsMargins(24, 20, 24, 16);
@@ -178,28 +180,40 @@ void DialogWhatBroke::inspect(const QString &name) {
     if (name.isEmpty()) return;
     program = name;
     watch.clear();
+    observing = true;
     watchTitle->setText(tr("Смотрю, что делает «%1»").arg(program));
     watchCount->setText(tr("Пока ничего не замечено."));
     pages->setCurrentIndex(1);
 }
 
 void DialogWhatBroke::stopWatch() {
+    observing = false;
     program.clear();
     watch.clear();
 }
 
 void DialogWhatBroke::feed(const QList<GreenRhythm::Seen> &batch) {
-    if (program.isEmpty()) return;
+    if (!observing) return;
     watch.add(batch);
     const auto f = watch.finish(program);
     const int mine = f.viaTunnel + f.direct;
-    watchCount->setText(mine == 0
+    QString status = mine == 0
                             ? tr("Пока ничего не замечено.")
-                            : tr("Замечено попыток связаться: %1").arg(mine));
+                            : tr("Замечено попыток связаться: %1").arg(mine);
+    if (watch.truncated()) {
+        status += tr("\nУчтены первые %1 соединений. Подведите итог или начните наблюдение заново.")
+                      .arg(GreenRhythm::Watch::kMaxRecords);
+    }
+    watchCount->setText(status);
 }
 
 void DialogWhatBroke::conclude() {
+    if (!observing) return;
     const auto f = watch.finish(program);
+    const bool limited = watch.truncated();
+    // Имя ещё нужно кнопке исправления, но ответы ядра больше не собираем.
+    observing = false;
+    watch.clear();
     const bool covered = alreadyDirect.contains(program, Qt::CaseInsensitive);
 
     fixButton->setVisible(false);
@@ -274,6 +288,13 @@ void DialogWhatBroke::conclude() {
                              tr("\n\nЕсли в игре не считается пинг — это чинится отдельно и сразу "
                                 "для всех программ: у проверок связи нет владельца, и разобрать их "
                                 "по программам нельзя."));
+    }
+
+    if (limited) {
+        verdictBody->setText(verdictBody->text() +
+                            tr("\n\nНаблюдение ограничено первыми %1 соединениями всей машины. "
+                               "Последующие соединения не учтены. При необходимости начните наблюдение заново.")
+                                .arg(GreenRhythm::Watch::kMaxRecords));
     }
 
     // Замечание о машине — последним и всегда: оно не про названную программу,
