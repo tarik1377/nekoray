@@ -13,7 +13,7 @@ namespace NekoGui_traffic {
         long long downlink_rate = 0;
         long long uplink_rate = 0;
 
-        long long last_update;
+        long long last_update = 0;
 
         explicit TrafficData(std::string tag) {
             this->tag = std::move(tag);

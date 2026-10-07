@@ -43,7 +43,7 @@ public:
     void feed(const QList<GreenRhythm::Seen> &batch);
 
     /** Имя наблюдаемой программы; пусто, когда наблюдение не идёт. */
-    QString watching() const { return program; }
+    QString watching() const { return observing ? program : QString(); }
 
     /**
      * Начать разбор названной программы, минуя выбор.
@@ -108,6 +108,7 @@ private:
 
     GreenRhythm::Watch watch;
     QString program;
+    bool observing = false;
     QStringList alreadyDirect;
     bool applied = false;
     bool canFix = true;

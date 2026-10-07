@@ -61,6 +61,10 @@ namespace GreenRhythm {
      */
     class Watch {
     public:
+        // Окно можно оставить открытым надолго; история и ключи не должны
+        // расти вместе со всем трафиком машины.
+        static constexpr int kMaxRecords = 4096;
+
         /** Очередной ответ ядра. Повторы отсеиваются сами. */
         void add(const QList<Seen> &batch);
 
@@ -69,12 +73,14 @@ namespace GreenRhythm {
 
         /** Сколько разных соединений замечено всего — для строки хода наблюдения. */
         int total() const { return records.size(); }
+        bool truncated() const { return overflowed; }
 
         void clear();
 
     private:
         QList<Seen> records;
         QSet<QString> seenKeys;
+        bool overflowed = false;
     };
 
 } // namespace GreenRhythm

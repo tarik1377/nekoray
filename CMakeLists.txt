@@ -794,6 +794,29 @@ target_link_libraries(macos_mode_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 # собирает и гоняет всё; CI зовёт то же самое.
 enable_testing()
 
+if (NOT NKR_NO_GRPC)
+    add_executable(traffic_update_queue_test
+            test/TrafficUpdateQueueTest.cpp
+            db/traffic/TrafficLooper.cpp
+            ui/mainwindow.h)
+    set_target_properties(traffic_update_queue_test PROPERTIES AUTOMOC ON)
+    target_compile_definitions(traffic_update_queue_test PRIVATE MW_INTERFACE=)
+    target_include_directories(traffic_update_queue_test PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(traffic_update_queue_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets myproto)
+    if (WIN32)
+        target_link_libraries(traffic_update_queue_test PRIVATE psapi)
+    endif ()
+endif ()
+
+add_executable(program_watch_lifetime_test
+        test/ProgramWatchLifetimeTest.cpp
+        main/ProgramTrouble.cpp
+        ui/dialog_whatbroke.cpp
+        ui/dialog_whatbroke.h)
+set_target_properties(program_watch_lifetime_test PROPERTIES AUTOMOC ON)
+target_include_directories(program_watch_lifetime_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(program_watch_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+
 set(GR_TEST_TARGETS
         relaytrace_test
         credentials_test
@@ -805,6 +828,7 @@ set(GR_TEST_TARGETS
         tun_helper_test
         route_order_test
         program_trouble_test
+        program_watch_lifetime_test
         port_health_test
         widget_lifetime_test
         power_button_test
@@ -819,6 +843,9 @@ set(GR_TEST_TARGETS
         autorun_task_test
 )
 
+if (NOT NKR_NO_GRPC)
+    list(APPEND GR_TEST_TARGETS traffic_update_queue_test)
+endif ()
 add_custom_target(build-tests DEPENDS ${GR_TEST_TARGETS})
 
 # Рабочий каталог оставлен по умолчанию — каталогом сборки, и это не мелочь.

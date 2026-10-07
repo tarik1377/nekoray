@@ -27,14 +27,20 @@ namespace GreenRhythm {
         for (const auto &s: batch) {
             const auto key = keyOf(s);
             if (seenKeys.contains(key)) continue;
+            if (records.size() >= kMaxRecords) {
+                overflowed = true;
+                continue;
+            }
             seenKeys.insert(key);
             records += s;
         }
     }
 
     void Watch::clear() {
-        records.clear();
-        seenKeys.clear();
+        // Освобождаем и ёмкость контейнеров после завершения наблюдения.
+        records = QList<Seen>{};
+        seenKeys = QSet<QString>{};
+        overflowed = false;
     }
 
     Finding Watch::finish(const QString &program) const {
