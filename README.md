@@ -26,11 +26,16 @@ A cross-platform proxy client with Qt GUI, built on the **sing-box 1.13.x** core
 ### Key Features
 
 - **sing-box core** — VLESS+Reality performance (exact version: see `go/cmd/nekobox_core/go.mod`)
-- **Smart routing** — RU sites direct, everything else through proxy
+- **Smart routing** — RU sites and selected video services direct, remaining traffic through proxy
 - **TUN mode** — system-wide VPN with one click
 - **Auto config** — optimized defaults out of the box
 - **Ad blocking** — built-in geosite ad filter
 - **DNS splitting** — Yandex DNS for RU, Cloudflare for international
+
+The RU preset connects `twitch.tv`, Twitch media on `ttvnw.net`, and Anistar HD
+on `sfv.an-media.org` directly, outside the VPN. Those servers see your normal IP.
+Existing RU schemes receive these rules once after updating; explicit proxy and
+block rules are preserved, and custom full-tunnel schemes are left unchanged.
 
 ### Supported Protocols
 

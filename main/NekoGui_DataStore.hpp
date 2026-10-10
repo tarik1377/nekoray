@@ -48,6 +48,9 @@ namespace NekoGui {
         static bool MigrateGameBypass(Routing *r);
 
         static int MigrateGamesAll();
+
+        // Both active and saved RU schemes; false keeps the one-shot flag retryable.
+        static bool MigrateVideosAll(int *changed = nullptr);
     };
 
     class ExtraCore : public JsonStore {
@@ -170,6 +173,7 @@ namespace NekoGui {
         // ходит он ровно один раз за флаг: без нового флага расширенный шаблон
         // достался бы только тем, кто ставит клиент с нуля.
         bool routing_launcher_migrated = false;
+        bool routing_video_migrated = false;
 
         // Security
         bool skip_cert = false;

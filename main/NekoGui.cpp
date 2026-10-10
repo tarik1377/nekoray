@@ -1,5 +1,6 @@
 #include "NekoGui.hpp"
 #include "fmt/Preset.hpp"
+#include "VideoRoutes.hpp"
 
 #include <QFile>
 #include <QDir>
@@ -289,6 +290,7 @@ namespace NekoGui {
         _add(new configItem("routing_quic_migrated", &routing_quic_migrated, itemType::boolean));
         _add(new configItem("routing_games_migrated", &routing_games_migrated, itemType::boolean));
         _add(new configItem("routing_launcher_migrated", &routing_launcher_migrated, itemType::boolean));
+        _add(new configItem("routing_video_migrated", &routing_video_migrated, itemType::boolean));
         _add(new configItem("log_ignore", &log_ignore, itemType::stringList));
         _add(new configItem("start_minimal", &start_minimal, itemType::boolean));
         _add(new configItem("max_log_line", &max_log_line, itemType::integer));
@@ -410,6 +412,7 @@ namespace NekoGui {
                 "domain:steamcommunity.com\n"
                 "domain:steamserver.net\n"
                 "domain:steamcontent.com";
+            direct_domain = GreenRhythm::VideoRoutes::appendDefaults(direct_domain);
             direct_ip =
                 "geoip:ru\n"
                 "geoip:private";
@@ -725,6 +728,26 @@ namespace NekoGui {
 
     int Routing::MigrateGamesAll() {
         return migrateEach(&Routing::MigrateGameBypass);
+    }
+
+    bool Routing::MigrateVideosAll(int *changed) {
+        int updated = 0;
+        bool complete = true;
+        for (const auto &name : List()) {
+            QString *loaded = name == dataStore->active_routing && dataStore->routing
+                                  ? &dataStore->routing->direct_domain : nullptr;
+            QString error;
+            const auto result = GreenRhythm::VideoRoutes::migrateFile(
+                ROUTES_PREFIX + name, dataStore->custom_route_global, loaded, &error);
+            if (result == GreenRhythm::VideoRoutes::FileResult::Failed) {
+                complete = false;
+                qWarning() << "video routing migration failed:" << name << error;
+            } else if (result == GreenRhythm::VideoRoutes::FileResult::Updated) {
+                updated++;
+            }
+        }
+        if (changed) *changed = updated;
+        return complete;
     }
 
     bool Routing::SetToActive(const QString &name) {

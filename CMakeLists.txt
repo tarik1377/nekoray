@@ -144,6 +144,7 @@ set(PROJECT_SOURCES
 
         main/main.cpp
         main/NekoGui.cpp
+        main/VideoRoutes.cpp
         main/NekoGui_Utils.cpp
         main/HTTPRequestHelper.cpp
         main/RelayTrace.cpp
@@ -794,6 +795,10 @@ target_link_libraries(macos_mode_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 # собирает и гоняет всё; CI зовёт то же самое.
 enable_testing()
 
+add_executable(video_routes_test EXCLUDE_FROM_ALL test/VideoRoutesTest.cpp main/VideoRoutes.cpp)
+target_include_directories(video_routes_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(video_routes_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+
 if (NOT NKR_NO_GRPC)
     add_executable(traffic_update_queue_test
             test/TrafficUpdateQueueTest.cpp
@@ -818,6 +823,7 @@ target_include_directories(program_watch_lifetime_test PRIVATE ${CMAKE_SOURCE_DI
 target_link_libraries(program_watch_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
 set(GR_TEST_TARGETS
+        video_routes_test
         relaytrace_test
         credentials_test
         relay_component_test
