@@ -33,8 +33,10 @@ A cross-platform proxy client with Qt GUI, built on the **sing-box 1.13.x** core
 - **DNS splitting** — Yandex DNS for RU, Cloudflare for international
 
 The RU preset connects `twitch.tv`, Twitch media on `ttvnw.net`, and Anistar HD
-on `sfv.an-media.org` directly, outside the VPN. Those servers see your normal IP.
-Existing RU schemes receive these rules once after updating; explicit proxy and
+on `sfv.an-media.org` and changing `ip<number>.ahcdn.com` video hosts directly,
+outside the VPN. Other `ahcdn.com` hosts are not added. Those servers see your normal IP.
+Existing RU schemes receive missing rules after updating, including users of the
+first video routing fix. Migration revisions persist only after all schemes succeed; explicit proxy and
 block rules are preserved, and custom full-tunnel schemes are left unchanged.
 
 ### Supported Protocols

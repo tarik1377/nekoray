@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <QJsonDocument>
+#include <QRegularExpression>
 #include <QTemporaryDir>
 #include <cstdio>
 
@@ -12,6 +13,7 @@
 
 using namespace GreenRhythm::VideoRoutes;
 static int checks = 0, failures = 0;
+static constexpr auto hdCdnRule = "regexp:^ip[0-9]+\\.ahcdn\\.com$";
 
 static void check(bool value, const char *name) {
     ++checks;
@@ -47,11 +49,27 @@ int main(int argc, char **argv) {
     const auto before = legacyRu();
     const auto after = migrate(before);
     check(has(after, "domain:twitch.tv") && has(after, "domain:ttvnw.net")
-          && has(after, "full:sfv.an-media.org"), "legacy RU schemes receive page and media routes");
+          && has(after, "full:sfv.an-media.org") && has(after, hdCdnRule),
+          "legacy RU schemes receive page, playlist and HD segment routes");
+    const QRegularExpression cdnExpression(QString::fromLatin1(hdCdnRule).mid(7));
+    check(cdnExpression.isValid()
+          && cdnExpression.match("ip144161388.ahcdn.com").hasMatch()
+          && cdnExpression.match("ip142234872.ahcdn.com").hasMatch(),
+          "HD segment rule covers changing observed CDN hosts");
+    check(!cdnExpression.match("ahcdn.com").hasMatch()
+          && !cdnExpression.match("static.ahcdn.com").hasMatch()
+          && !cdnExpression.match("ip.ahcdn.com").hasMatch()
+          && !cdnExpression.match("ip142234872.ahcdn.com.evil.example").hasMatch(),
+          "shared CDN routing is limited to numbered video hosts");
     auto withoutDomains = after;
     withoutDomains["direct_domain"] = before["direct_domain"];
     check(withoutDomains == before, "all other fields and unknown settings survive");
     check(migrate(after) == after, "repeat migration is idempotent");
+    auto firstVideoFix = after;
+    auto firstVideoDomains = firstVideoFix.value("direct_domain").toString().split('\n');
+    firstVideoDomains.removeAll(QString::fromLatin1(hdCdnRule));
+    firstVideoFix["direct_domain"] = firstVideoDomains.join('\n');
+    check(migrate(firstVideoFix) == after, "first video fix receives the missing HD CDN rule");
     const auto defaults = appendDefaults("domain:ru\n");
     check(defaults == after.value("direct_domain").toString().replace("domain:example.org\n", ""),
           "fresh defaults and legacy migration use the same media rules");
@@ -63,7 +81,8 @@ int main(int argc, char **argv) {
     check(migrate(scheme) == scheme, "full-tunnel schemes stay full-tunnel");
     scheme["direct_domain"] = "domain:twitch.tv";
     const auto alreadyDirect = migrate(scheme);
-    check(has(alreadyDirect, "domain:ttvnw.net") && !has(alreadyDirect, "full:sfv.an-media.org"),
+    check(has(alreadyDirect, "domain:ttvnw.net") && !has(alreadyDirect, "full:sfv.an-media.org")
+          && !has(alreadyDirect, hdCdnRule),
           "existing Twitch direct choice extends only to Twitch media");
     scheme = before;
     scheme["direct_domain"] = " # keep comment\r\n DOMAIN:RU \r\ndomain:an-media.org\ndomain:ttvnw.net";
@@ -71,6 +90,11 @@ int main(int argc, char **argv) {
     check(!covered.contains("full:sfv.an-media.org") && covered.count("domain:ttvnw.net") == 1,
           "existing broader direct rules need no duplicate");
     check(covered.startsWith(scheme.value("direct_domain").toString()), "original comments and formatting retained");
+    scheme = before;
+    scheme["direct_domain"] = "domain:ru\ndomain:ahcdn.com";
+    check(!has(migrate(scheme), hdCdnRule), "broader explicit direct CDN route needs no duplicate");
+    scheme["direct_domain"] = "domain:ru\nfull:ip144161388.ahcdn.com";
+    check(has(migrate(scheme), hdCdnRule), "one CDN address does not cover future HD hosts");
 
     for (const auto &rule : {"domain:ttvnw.net", "full:usher.ttvnw.net", "domain:twitch.tv", "domain:net"}) {
         scheme = before;
@@ -81,7 +105,8 @@ int main(int argc, char **argv) {
     }
     scheme = before;
     scheme["block_domain"] = "full:sfv.an-media.org";
-    check(!has(migrate(scheme), "full:sfv.an-media.org") && has(migrate(scheme), "domain:ttvnw.net"),
+    check(!has(migrate(scheme), "full:sfv.an-media.org") && !has(migrate(scheme), hdCdnRule)
+          && has(migrate(scheme), "domain:ttvnw.net"),
           "Anistar block preserved without suppressing Twitch repair");
     scheme["block_domain"] = "domain:an-media.org";
     check(!has(migrate(scheme), "full:sfv.an-media.org"), "parent-domain block preserved");
@@ -89,6 +114,16 @@ int main(int argc, char **argv) {
     check(has(migrate(scheme), "full:sfv.an-media.org"), "similar-looking domains do not conflict");
     scheme["proxy_domain"] = "keyword:usher";
     check(!has(migrate(scheme), "domain:ttvnw.net"), "keyword exception not widened over arbitrary subdomains");
+    for (const auto &rule : {"domain:ahcdn.com", "full:ip142234872.ahcdn.com", "regexp:^ip144161388\\.ahcdn\\.com$"}) {
+        scheme = before;
+        scheme["proxy_domain"] = rule;
+        const auto result = migrate(scheme);
+        check(!has(result, hdCdnRule) && !has(result, "full:sfv.an-media.org"),
+              "explicit HD CDN proxy choices protect Anistar routing");
+    }
+    scheme = before;
+    scheme["block_domain"] = "domain:ahcdn.com";
+    check(!has(migrate(scheme), hdCdnRule), "explicit HD CDN block is preserved");
 
     scheme = before;
     scheme["custom"] = R"({"rules":[{"outbound":"proxy","domain_suffix":".ttvnw.net"}]})";
@@ -97,6 +132,8 @@ int main(int argc, char **argv) {
     const auto global = QStringLiteral(R"({"rules":[{"outbound":"proxy","domain":["sfv.an-media.org"]}]})");
     check(!has(migrate(before, global), "full:sfv.an-media.org") && has(migrate(before, global), "domain:ttvnw.net"),
           "global custom rules retained too");
+    const auto cdnGlobal = QStringLiteral(R"({"rules":[{"outbound":"proxy","domain":["ip142234872.ahcdn.com"]}]})");
+    check(!has(migrate(before, cdnGlobal), hdCdnRule), "custom HD CDN routing is retained too");
     scheme["custom"] = R"({"rules":[{"type":"logical","mode":"or","rules":[{"domain_suffix":["twitch.tv"]}],"outbound":"block"}]})";
     check(!has(migrate(scheme), "domain:ttvnw.net"), "logical child selection protected");
     for (const auto &invalid : {"{broken", "[]", "{}", "{\"rules\":[42]}"}) {
@@ -153,7 +190,16 @@ int main(int argc, char **argv) {
     write(settingsPath, QJsonDocument(settings).toJson());
     check(markComplete(settingsPath, &error), "new migration flag persisted for previous upgraders");
     auto marked = QJsonDocument::fromJson(bytes(settingsPath)).object();
-    check(marked.take("routing_video_migrated").toBool() && marked == settings, "flag update preserves old settings");
+    check(marked.take("routing_video_migrated").toBool()
+          && marked.take("routing_video_revision").toInt() == MigrationRevision && marked == settings,
+          "revision update preserves old settings");
+    auto oldVideoSettings = settings;
+    oldVideoSettings["routing_video_migrated"] = true;
+    write(settingsPath, QJsonDocument(oldVideoSettings).toJson());
+    check(markComplete(settingsPath, &error), "first video fix users receive the new migration revision");
+    marked = QJsonDocument::fromJson(bytes(settingsPath)).object();
+    check(marked.take("routing_video_revision").toInt() == MigrationRevision && marked == oldVideoSettings,
+          "legacy video flag does not suppress the HD upgrade");
     write(settingsPath, "{broken");
     check(!markComplete(settingsPath, &error) && bytes(settingsPath) == "{broken", "flag not recorded on persistence failure");
     std::printf("Video route migration: %d checks, %d failures\n", checks, failures);

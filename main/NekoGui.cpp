@@ -291,6 +291,7 @@ namespace NekoGui {
         _add(new configItem("routing_games_migrated", &routing_games_migrated, itemType::boolean));
         _add(new configItem("routing_launcher_migrated", &routing_launcher_migrated, itemType::boolean));
         _add(new configItem("routing_video_migrated", &routing_video_migrated, itemType::boolean));
+        _add(new configItem("routing_video_revision", &routing_video_revision, itemType::integer));
         _add(new configItem("log_ignore", &log_ignore, itemType::stringList));
         _add(new configItem("start_minimal", &start_minimal, itemType::boolean));
         _add(new configItem("max_log_line", &max_log_line, itemType::integer));

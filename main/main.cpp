@@ -417,13 +417,14 @@ int main(int argc, char* argv[]) {
     }
 
     // Before constructing the window/core: the first restored connection must
-    // already use the media rules. A new flag reaches previous upgraders too.
-    if (!NekoGui::dataStore->routing_video_migrated) {
+    // already use the media rules. Revisions also reach users of earlier fixes.
+    if (NekoGui::dataStore->routing_video_revision < GreenRhythm::VideoRoutes::MigrationRevision) {
         int changed = 0;
         QString error;
         if (NekoGui::Routing::MigrateVideosAll(&changed)
             && GreenRhythm::VideoRoutes::markComplete(NekoGui::dataStore->fn, &error)) {
             NekoGui::dataStore->routing_video_migrated = true;
+            NekoGui::dataStore->routing_video_revision = GreenRhythm::VideoRoutes::MigrationRevision;
         } else {
             qWarning() << "video routing migration will retry on next start" << error;
         }
