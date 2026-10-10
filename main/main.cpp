@@ -17,6 +17,7 @@
 
 #include "3rdparty/RunGuard.hpp"
 #include "main/NekoGui.hpp"
+#include "main/VideoRoutes.hpp"
 #include "main/TunHelper.hpp"
 
 #include "ui/mainwindow_interface.h"
@@ -413,6 +414,20 @@ int main(int argc, char* argv[]) {
     isLoaded = NekoGui::dataStore->routing->Load();
     if (!isLoaded) {
         NekoGui::dataStore->routing->Save();
+    }
+
+    // Before constructing the window/core: the first restored connection must
+    // already use the media rules. A new flag reaches previous upgraders too.
+    if (!NekoGui::dataStore->routing_video_migrated) {
+        int changed = 0;
+        QString error;
+        if (NekoGui::Routing::MigrateVideosAll(&changed)
+            && GreenRhythm::VideoRoutes::markComplete(NekoGui::dataStore->fn, &error)) {
+            NekoGui::dataStore->routing_video_migrated = true;
+        } else {
+            qWarning() << "video routing migration will retry on next start" << error;
+        }
+        if (changed > 0) qInfo() << "video routing updated, schemes:" << changed;
     }
 
     // Translate
