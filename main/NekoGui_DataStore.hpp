@@ -174,6 +174,8 @@ namespace NekoGui {
         // достался бы только тем, кто ставит клиент с нуля.
         bool routing_launcher_migrated = false;
         bool routing_video_migrated = false;
+        // Revision 2 reaches users who already received the first video fix.
+        int routing_video_revision = 0;
 
         // Security
         bool skip_cert = false;

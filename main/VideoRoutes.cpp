@@ -10,10 +10,14 @@
 namespace GreenRhythm::VideoRoutes {
 namespace {
 
-struct Target { QString host; bool suffix; };
+struct Target { QString host; bool suffix; QString directSelector; };
 const QList<Target> twitch{{QStringLiteral("twitch.tv"), true},
                           {QStringLiteral("ttvnw.net"), true}};
-const QList<Target> anistar{{QStringLiteral("sfv.an-media.org"), false}};
+// HD playlists switch between ip<number>.ahcdn.com hosts. Restrict direct
+// routing to that host family instead of the entire shared CDN.
+const QList<Target> anistar{{QStringLiteral("sfv.an-media.org"), false},
+                           {QStringLiteral("ahcdn.com"), true,
+                            QStringLiteral("regexp:^ip[0-9]+\\.ahcdn\\.com$")}};
 
 QStringList lines(const QString &text) {
     QStringList result;
@@ -105,6 +109,7 @@ bool allowed(const QJsonObject &scheme, const QString &global, const QList<Targe
 
 bool covers(const QString &direct, const Target &target) {
     for (const auto &line : lines(direct)) {
+        if (!target.directSelector.isEmpty() && line == target.directSelector) return true;
         const int colon = line.indexOf(':');
         const auto kind = colon < 0 ? QStringLiteral("domain") : line.left(colon);
         const auto value = hostname(colon < 0 ? line : line.mid(colon + 1));
@@ -118,7 +123,9 @@ QString append(QString direct, const QList<Target> &targets) {
     for (const auto &target : targets) {
         if (covers(direct, target)) continue;
         if (!direct.isEmpty() && !direct.endsWith('\n')) direct += '\n';
-        direct += (target.suffix ? "domain:" : "full:") + target.host;
+        direct += target.directSelector.isEmpty()
+                      ? (target.suffix ? "domain:" : "full:") + target.host
+                      : target.directSelector;
     }
     return direct;
 }
@@ -194,6 +201,7 @@ bool markComplete(const QString &settingsPath, QString *error) {
     QJsonObject settings;
     if (!readObject(settingsPath, &settings, error)) return false;
     settings.insert("routing_video_migrated", true);
+    settings.insert("routing_video_revision", MigrationRevision);
     return writeObject(settingsPath, settings, error);
 }
 

@@ -5,6 +5,8 @@
 
 namespace GreenRhythm::VideoRoutes {
 
+inline constexpr int MigrationRevision = 2;
+
 QString appendDefaults(const QString &directDomains);
 QJsonObject migrate(const QJsonObject &scheme, const QString &globalRules = {});
 
