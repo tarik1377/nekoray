@@ -142,6 +142,9 @@ func (m *releaseManifest) signedManifest() *releaseauth.Manifest {
  * означать это может что угодно — от сломанного DNS до подменённого ответа.
  */
 func fetchManifest(ctx context.Context, client *http.Client, platform string) (*releaseManifest, error) {
+	return fetchManifestVerified(ctx, client, platform, releaseauth.Verify)
+}
+func fetchManifestVerified(ctx context.Context, client *http.Client, platform string, verify func(*releaseauth.Manifest, string) error) (*releaseManifest, error) {
 	if platform == "" {
 		return nil, errors.New("Not official support platform")
 	}
@@ -182,16 +185,28 @@ func fetchManifest(ctx context.Context, client *http.Client, platform string) (*
 	if !looksLikeSha256(m.Sha256) {
 		return nil, errors.New("контрольная сумма в манифесте не читается — обновление отменено")
 	}
-	if err := releaseauth.Verify(m.signedManifest(), platform); err != nil {
+	if err := verify(m.signedManifest(), platform); err != nil {
 		return nil, err
 	}
 	return &m, nil
 }
 
 func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.UpdateResp, error) {
-	updateMu.Lock()
-	defer updateMu.Unlock()
+	client := &http.Client{Timeout: 30 * time.Second}
+	fallback := neko_common.CreateProxyHttpClient(neko_common.GetCurrentInstance())
+	return s.updateWithNetwork(ctx, in, defaultUpdateNetwork(client, fallback))
+}
+func (s *BaseServer) updateWithNetwork(ctx context.Context, in *gen.UpdateReq, network updateNetwork) (*gen.UpdateResp, error) {
 	ret := &gen.UpdateResp{}
+	if in == nil || (in.Action != gen.UpdateAction_Check && in.Action != gen.UpdateAction_Download) {
+		ret.Error = "неизвестный запрос обновления"
+		return ret, nil
+	}
+	if !updateMu.TryLock() {
+		ret.Error = "проверка или загрузка обновления уже выполняется"
+		return ret, nil
+	}
+	defer updateMu.Unlock()
 
 	// НАШ САЙТ БЕРЁМ НАПРЯМУЮ, А ЧЕРЕЗ ТУННЕЛЬ — ТОЛЬКО ЕСЛИ НАПРЯМУЮ НЕ ВЫШЛО.
 	//
@@ -205,20 +220,16 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 	// Порядок именно такой. Прямой путь короче, дешевле и не зависит от того,
 	// поднят ли туннель вообще. Но у части людей наш сайт закрыт провайдером —
 	// для них остаётся прежний путь, вторым заходом.
-	client := &http.Client{Timeout: 30 * time.Second}
-	fallback := neko_common.CreateProxyHttpClient(neko_common.GetCurrentInstance())
+	client, fallback := network.direct, network.fallback
 
 	if in.Action == gen.UpdateAction_Check { // Check update
 		verifiedUpdate = nil
 		update_download_url, update_expected_sha = "", ""
-		ctx, cancel := context.WithTimeout(ctx, time.Second*10)
-		defer cancel()
-
-		m, err := fetchManifest(ctx, client, manifestPlatform())
-		if err != nil && fallback != nil {
+		m, err := fetchManifestAttempt(ctx, client, manifestPlatform(), network)
+		if err != nil && fallback != nil && ctx.Err() == nil {
 			// Прямой путь не вышел — пробуем через туннель, молча: человеку важен
 			// итог, а не то, какой дорогой мы его добыли.
-			m, err = fetchManifest(ctx, fallback, manifestPlatform())
+			m, err = fetchManifestAttempt(ctx, fallback, manifestPlatform(), network)
 			if err == nil {
 				client = fallback
 			}
@@ -265,7 +276,7 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 			ret.Error = "No update URL"
 			return ret, nil
 		}
-		if err := releaseauth.Verify(verifiedUpdate, manifestPlatform()); err != nil {
+		if err := network.verify(verifiedUpdate, manifestPlatform()); err != nil {
 			ret.Error = err.Error()
 			return ret, nil
 		}
@@ -297,28 +308,15 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		 * сервере чтение висело бы бесконечно. Границей стала ПАУЗА между
 		 * байтами — см. idle.go: медленная закачка проходит, заглохшая нет.
 		 */
-		download := *client
-		download.Timeout = 0
-
-		dlCtx, cancelDownload := context.WithCancel(ctx)
-		defer cancelDownload()
-
-		req, _ := http.NewRequestWithContext(dlCtx, "GET", update_download_url, nil)
-		resp, err := download.Do(req)
-		if err != nil && fallback != nil {
-			// Тот же запасной путь, что и у проверки. Скачивание приходит
-			// ОТДЕЛЬНЫМ вызовом, поэтому выбор, сделанный при проверке, сюда не
-			// доезжает — и без этой ветки человек, у которого наш сайт закрыт
-			// провайдером, увидел бы новую версию и не смог бы её взять.
-			viaTunnel := *fallback
-			viaTunnel.Timeout = 0
-			req2, _ := http.NewRequestWithContext(dlCtx, "GET", update_download_url, nil)
-			resp, err = viaTunnel.Do(req2)
+		resp, cancelDownload, err := beginUpdateDownload(ctx, client, update_download_url, network.headerTimeout)
+		if err != nil && fallback != nil && ctx.Err() == nil {
+			resp, cancelDownload, err = beginUpdateDownload(ctx, fallback, update_download_url, network.headerTimeout)
 		}
 		if err != nil {
 			ret.Error = err.Error()
 			return ret, nil
 		}
+		defer cancelDownload()
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			ret.Error = "сайт ответил " + strconv.Itoa(resp.StatusCode)
@@ -327,7 +325,7 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 
 		// Кладётся как greenrhythm.zip — этого имени ждёт распаковщик, и другого
 		// формата он не понимает.
-		const zipPath = "../greenrhythm.zip"
+		zipPath := network.archivePath
 		f, err := os.OpenFile(zipPath, os.O_TRUNC|os.O_CREATE|os.O_RDWR, 0644)
 		if err != nil {
 			ret.Error = err.Error()
@@ -341,7 +339,7 @@ func (s *BaseServer) Update(ctx context.Context, in *gen.UpdateReq) (*gen.Update
 		// Полторы минуты тишины при живом соединении — это не медленный канал,
 		// а зависший ответ. Порог с запасом: на самом плохом мобильном интернете
 		// байты идут чаще.
-		guard, stopGuard := newIdleGuard(resp.Body, 90*time.Second, cancelDownload)
+		guard, stopGuard := newIdleGuard(resp.Body, network.idleTimeout, cancelDownload)
 		downloadedBytes, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(guard, verifiedUpdate.SizeBytes+1))
 		stopGuard()
 		if err != nil {

@@ -21,6 +21,7 @@
 #include <QProgressDialog>
 #include <QFileInfo>
 #include <QApplication>
+#include <QPointer>
 
 // ext core
 
@@ -669,105 +670,112 @@ void MainWindow::neko_stop(bool crash, bool sem, bool keep_tunnel) {
 }
 
 void MainWindow::CheckUpdate(bool quiet) {
-    // on new thread...
 #ifndef NKR_NO_GRPC
-    // Тихая проверка (по таймеру, ui/UpdateNotice.hpp) молчит обо всём, кроме
-    // найденной версии: «обновлений нет» и сбой сети посреди работы — не повод
-    // для окна. Ядро могло ещё не подняться — тогда просто выходим.
-    if (quiet && NekoGui_rpc::defaultClient == nullptr) return;
-    bool ok;
+    const auto window = QPointer<MainWindow>(this);
+    const auto includePreRelease = NekoGui::dataStore->check_include_pre;
+    // The application outlives its window during shutdown. Results target this
+    // context and only inspect the weak window reference on the GUI thread.
+    const auto post = [](const std::function<void()> &callback) {
+        auto *app = QCoreApplication::instance();
+        if (app && !QCoreApplication::closingDown())
+            QMetaObject::invokeMethod(app, callback, Qt::QueuedConnection);
+    };
+    runOnNewThread([window, quiet, includePreRelease, post] {
+    const auto checkFailed = [window, quiet] {
+        if (quiet || !window) return;
+        MessageBoxWarning(QObject::tr("Update"),
+            QObject::tr("Не удалось проверить обновления. Программа продолжает работать; повторите попытку позже."));
+    };
+    if (NekoGui_rpc::defaultClient == nullptr) { post(checkFailed); return; }
+    bool ok = false;
     libcore::UpdateReq request;
     request.set_action(libcore::UpdateAction::Check);
-    request.set_check_pre_release(NekoGui::dataStore->check_include_pre);
-    auto response = NekoGui_rpc::defaultClient->Update(&ok, request);
-    if (!ok) return;
+    request.set_check_pre_release(includePreRelease);
+    const auto response = NekoGui_rpc::defaultClient->Update(&ok, request);
+    if (!ok) { post(checkFailed); return; }
 
-    auto err = response.error();
+    const auto err = response.error();
     if (!err.empty()) {
-        if (quiet) return;
-        runOnUiThread([=] {
-            MessageBoxWarning(QObject::tr("Update"), err.c_str());
+        if (!quiet) post([window, err] {
+            if (window) MessageBoxWarning(QObject::tr("Update"), QString::fromStdString(err));
         });
         return;
     }
-
     if (response.download_url().empty()) {
-        runOnUiThread([=] {
-            if (shell != nullptr) shell->setUpdateAvailable(false);
+        post([window, quiet] {
+            if (!window) return;
+            if (window->shell) window->shell->setUpdateAvailable(false);
             if (!quiet) MessageBoxInfo(QObject::tr("Update"), QObject::tr("No update"));
         });
         return;
     }
-
-    // Найденная версия — строкой в колонку и при тихой проверке, и по кнопке:
-    // строка висит, пока человек не обновится. Номер — из имени пакета.
-    const QString found = GreenRhythm::Update::versionFromAsset(QString::fromStdString(response.assets_name()));
-    runOnUiThread([=] {
-        if (shell != nullptr) shell->setUpdateAvailable(true, found);
+    const auto found = GreenRhythm::Update::versionFromAsset(QString::fromStdString(response.assets_name()));
+    post([window, found] {
+        if (window && window->shell) window->shell->setUpdateAvailable(true, found);
     });
     if (quiet) return;
 
-    runOnUiThread([=] {
-        auto allow_updater = !NekoGui::dataStore->flag_use_appdata;
-        auto note_pre_release = response.is_pre_release() ? " (Pre-release)" : "";
+    post([window, response, post] {
+        if (!window) return;
+        const auto allow_updater = !NekoGui::dataStore->flag_use_appdata;
+        const auto note_pre_release = response.is_pre_release() ? " (Pre-release)" : "";
         QMessageBox box(QMessageBox::Question, QObject::tr("Update") + note_pre_release,
-                        QObject::tr("Update found: %1\nRelease note:\n%2").arg(response.assets_name().c_str(), response.release_note().c_str()));
-        //
-        QAbstractButton *btn1 = nullptr;
-        if (allow_updater) {
-            btn1 = box.addButton(QObject::tr("Update"), QMessageBox::AcceptRole);
-        }
-        QAbstractButton *btn2 = box.addButton(QObject::tr("Open in browser"), QMessageBox::AcceptRole);
+            QObject::tr("Update found: %1\nRelease note:\n%2").arg(
+                QString::fromStdString(response.assets_name()), QString::fromStdString(response.release_note())),
+            QMessageBox::NoButton, window);
+        QAbstractButton *install = nullptr;
+        if (allow_updater) install = box.addButton(QObject::tr("Update"), QMessageBox::AcceptRole);
+        auto *browser = box.addButton(QObject::tr("Open in browser"), QMessageBox::AcceptRole);
         box.addButton(QObject::tr("Close"), QMessageBox::RejectRole);
         box.exec();
-        //
-        if (btn1 == box.clickedButton() && allow_updater) {
-            // The download is a single blocking gRPC call for a ~55 MB package; without
-            // visible feedback the app looks frozen. Show a live progress dialog that
-            // polls the growing package on disk so the user sees real megabytes tick up.
-            auto *dlg = new QProgressDialog(QObject::tr("Загрузка обновления…"), QString(), 0, 0, this);
+        if (!window) return;
+        if (install == box.clickedButton() && allow_updater) {
+            const auto dlg = QPointer<QProgressDialog>(new QProgressDialog(QObject::tr("Загрузка обновления…"), QString(), 0, 0, window));
             dlg->setWindowTitle(QObject::tr("Обновление"));
             dlg->setWindowModality(Qt::WindowModal);
             dlg->setMinimumDuration(0);
-            dlg->setCancelButton(nullptr); // the core download can't be interrupted mid-call
-            dlg->setAutoClose(false);
-            dlg->setAutoReset(false);
-            const QString zipPath = QApplication::applicationDirPath() + "/greenrhythm.zip";
-            auto *poll = new QTimer(dlg);
-            connect(poll, &QTimer::timeout, dlg, [dlg, zipPath] {
-                QFileInfo fi(zipPath);
-                if (fi.exists()) {
-                    dlg->setLabelText(QObject::tr("Загрузка обновления… %1 МБ")
-                                          .arg(fi.size() / 1048576.0, 0, 'f', 1));
-                }
+            dlg->setCancelButton(nullptr);
+            dlg->setAutoClose(false); dlg->setAutoReset(false);
+            const auto zipPath = QApplication::applicationDirPath() + "/greenrhythm.zip";
+            const auto poll = QPointer<QTimer>(new QTimer(dlg));
+            QObject::connect(poll, &QTimer::timeout, dlg, [dlg, zipPath] {
+                if (!dlg) return;
+                QFileInfo file(zipPath);
+                if (file.exists()) dlg->setLabelText(QObject::tr("Загрузка обновления… %1 МБ").arg(file.size()/1048576.0, 0, 'f', 1));
             });
-            poll->start(250);
-            dlg->show();
-            // Download Update
-            runOnNewThread([=] {
-                bool ok2;
-                libcore::UpdateReq request2;
-                request2.set_action(libcore::UpdateAction::Download);
-                auto response2 = NekoGui_rpc::defaultClient->Update(&ok2, request2);
-                runOnUiThread([=] {
-                    poll->stop();
-                    dlg->close();
-                    dlg->deleteLater();
-                    if (response2.error().empty()) {
-                        auto q = QMessageBox::question(nullptr, QObject::tr("Update"),
-                                                       QObject::tr("Обновление загружено. Перезапустить для установки?"));
-                        if (q == QMessageBox::StandardButton::Yes) {
-                            this->exit_reason = 1;
-                            on_menu_exit_triggered();
-                        }
-                    } else {
-                        MessageBoxWarning(QObject::tr("Update"), response2.error().c_str());
+            poll->start(250); dlg->show();
+            runOnNewThread([window, dlg, poll, post] {
+                bool downloaded = false;
+                libcore::UpdateReq download;
+                download.set_action(libcore::UpdateAction::Download);
+                const auto response2 = NekoGui_rpc::defaultClient->Update(&downloaded, download);
+                post([window, dlg, poll, downloaded, response2] {
+                    if (poll) poll->stop();
+                    if (dlg) { dlg->close(); dlg->deleteLater(); }
+                    if (!window) return;
+                    // A failed RPC returns an empty protobuf reply as well.
+                    // Its empty error field is not proof that a file was downloaded.
+                    if (!downloaded) {
+                        MessageBoxWarning(QObject::tr("Update"),
+                            QObject::tr("Не удалось загрузить обновление. Программа продолжает работать; повторите попытку позже."));
+                        return;
+                    }
+                    if (!response2.error().empty()) {
+                        MessageBoxWarning(QObject::tr("Update"), QString::fromStdString(response2.error()));
+                        return;
+                    }
+                    const auto answer = QMessageBox::question(window, QObject::tr("Update"),
+                        QObject::tr("Обновление загружено. Перезапустить для установки?"));
+                    if (answer == QMessageBox::Yes && window) {
+                        window->exit_reason = 1;
+                        window->on_menu_exit_triggered();
                     }
                 });
             });
-        } else if (btn2 == box.clickedButton()) {
-            QDesktopServices::openUrl(QUrl(response.release_url().c_str()));
+        } else if (browser == box.clickedButton()) {
+            QDesktopServices::openUrl(QUrl(QString::fromStdString(response.release_url())));
         }
+    });
     });
 #endif
 }

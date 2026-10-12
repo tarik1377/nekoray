@@ -108,7 +108,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // makes the «Зелёный Ритм» menu (and the About dialog) reachable — otherwise it
     // lived only on the hidden menubar.
     ui->toolButton_ads->setMenu(ui->menu_greenrhythm);
-    connect(ui->toolButton_update, &QToolButton::clicked, this, [=] { runOnNewThread([=] { CheckUpdate(); }); });
+    connect(ui->toolButton_update, &QToolButton::clicked, this, [=] { CheckUpdate(); });
     connect(ui->toolButton_update_sub, &QToolButton::clicked, this, [=] { on_menu_update_subscription_triggered(); });
     connect(ui->toolButton_url_test, &QToolButton::clicked, this, [=] { speedtest_current_group(1, true); });
     connect(ui->toolButton_dashboard, &QToolButton::clicked, this, [=] {
@@ -510,7 +510,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         connect(shell, &GreenRhythm::MainShell::updateSubscriptionRequested, this,
                 [this] { on_menu_update_subscription_triggered(); });
         connect(shell, &GreenRhythm::MainShell::checkUpdateRequested, this,
-                [this] { runOnNewThread([this] { CheckUpdate(); }); });
+                [this] { CheckUpdate(); });
         connect(shell, &GreenRhythm::MainShell::moreRequested, this,
                 [this](const QPoint &pos) {
                     // Меню собирается из той же полосы, что была сверху: те же
@@ -1062,7 +1062,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     auto *updateTimer = new QTimer(this);
     connect(updateTimer, &QTimer::timeout, this, [this, updateTimer] {
         updateTimer->setInterval(GreenRhythm::Update::kCheckEveryMs);
-        runOnNewThread([this] { CheckUpdate(true); });
+        CheckUpdate(true);
     });
     updateTimer->start(GreenRhythm::Update::kFirstCheckMs);
 
