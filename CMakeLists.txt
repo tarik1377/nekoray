@@ -145,6 +145,7 @@ set(PROJECT_SOURCES
         main/main.cpp
         main/NekoGui.cpp
         main/VideoRoutes.cpp
+        main/LocalDns.cpp
         main/NekoGui_Utils.cpp
         main/HTTPRequestHelper.cpp
         main/RelayTrace.cpp
@@ -804,6 +805,10 @@ add_executable(video_routes_test EXCLUDE_FROM_ALL test/VideoRoutesTest.cpp main/
 target_include_directories(video_routes_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(video_routes_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 
+add_executable(local_dns_test EXCLUDE_FROM_ALL test/LocalDnsTest.cpp main/LocalDns.cpp)
+target_include_directories(local_dns_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(local_dns_test PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network)
+
 if (NOT NKR_NO_GRPC)
     add_executable(traffic_update_queue_test
             test/TrafficUpdateQueueTest.cpp
@@ -830,6 +835,7 @@ target_link_libraries(program_watch_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}:
 set(GR_TEST_TARGETS
         http_outage_test
         video_routes_test
+        local_dns_test
         relaytrace_test
         credentials_test
         relay_component_test

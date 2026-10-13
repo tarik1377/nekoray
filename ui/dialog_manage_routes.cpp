@@ -5,6 +5,7 @@
 #include "3rdparty/qv2ray/v2/ui/widgets/editors/w_JsonEditor.hpp"
 #include "3rdparty/qv2ray/v3/components/GeositeReader/GeositeReader.hpp"
 #include "main/GuiUtils.hpp"
+#include "main/LocalDns.hpp"
 #include "fmt/Preset.hpp"
 
 #include <QFile>
@@ -96,6 +97,13 @@ DialogManageRoutes::~DialogManageRoutes() {
 }
 
 void DialogManageRoutes::accept() {
+    QString error;
+    if (!ui->use_dns_object->isChecked()
+        && !GreenRhythm::LocalDns::parseSettings(ui->local_dns_domains->toPlainText(), ui->local_dns_server->text(),
+                                               nullptr, nullptr, &error)) {
+        MessageBoxWarning("DNS", error);
+        return;
+    }
     D_C_SAVE_STRING(custom_route_global)
     bool routeChanged = false;
     if (NekoGui::dataStore->active_routing != active_routing) routeChanged = true;
@@ -152,6 +160,8 @@ void DialogManageRoutes::UpdateDisplayRouting(NekoGui::Routing *conf, bool qv) {
     ui->remote_dns_strategy->setCurrentText(conf->remote_dns_strategy);
     ui->direct_dns->setCurrentText(conf->direct_dns);
     ui->direct_dns_strategy->setCurrentText(conf->direct_dns_strategy);
+    ui->local_dns_domains->setPlainText(conf->local_dns_domains);
+    ui->local_dns_server->setText(conf->local_dns_server);
     ui->dns_final_out->setCurrentText(conf->dns_final_out);
 }
 
@@ -175,6 +185,8 @@ void DialogManageRoutes::SaveDisplayRouting(NekoGui::Routing *conf) {
     conf->remote_dns_strategy = ui->remote_dns_strategy->currentText();
     conf->direct_dns = ui->direct_dns->currentText();
     conf->direct_dns_strategy = ui->direct_dns_strategy->currentText();
+    conf->local_dns_domains = ui->local_dns_domains->toPlainText();
+    conf->local_dns_server = ui->local_dns_server->text();
     conf->dns_final_out = ui->dns_final_out->currentText();
 }
 

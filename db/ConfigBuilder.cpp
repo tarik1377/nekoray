@@ -3,6 +3,7 @@
 #include "fmt/includes.h"
 #include "fmt/Preset.hpp"
 #include "main/TunHelper.hpp"
+#include "main/LocalDns.hpp"
 
 #include <QApplication>
 #include <QFile>
@@ -742,6 +743,14 @@ namespace NekoGui {
         if (dataStore->routing->use_dns_object) {
             dns = QString2QJsonObject(dataStore->routing->dns_object);
         }
+        QStringList localDnsDomains;
+        QString localDnsServer;
+        if (!dataStore->routing->use_dns_object
+            && !GreenRhythm::LocalDns::parseSettings(dataStore->routing->local_dns_domains,
+                                                   dataStore->routing->local_dns_server,
+                                                   &localDnsDomains, &localDnsServer,
+                                                   &status->result->error)) return;
+        GreenRhythm::LocalDns::addToDns(dns, localDnsDomains, localDnsServer);
         status->result->coreConfig.insert("dns", dns);
 
         // Routing
@@ -763,6 +772,9 @@ namespace NekoGui {
                 {"protocol", "dns"},
                 {"outbound", "dns-out"},
             };
+        }
+        if (!localDnsDomains.isEmpty()) {
+            status->routingRulesDns += GreenRhythm::LocalDns::resolveRule(localDnsDomains, dataStore->routing->direct_dns_strategy);
         }
 
         // sing-box routing rule object

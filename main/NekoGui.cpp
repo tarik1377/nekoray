@@ -488,6 +488,8 @@ namespace NekoGui {
         _add(new configItem("remote_dns_strategy", &this->remote_dns_strategy, itemType::string));
         _add(new configItem("direct_dns", &this->direct_dns, itemType::string));
         _add(new configItem("direct_dns_strategy", &this->direct_dns_strategy, itemType::string));
+        _add(new configItem("local_dns_domains", &this->local_dns_domains, itemType::string));
+        _add(new configItem("local_dns_server", &this->local_dns_server, itemType::string));
         _add(new configItem("domain_strategy", &this->domain_strategy, itemType::string));
         _add(new configItem("outbound_domain_strategy", &this->outbound_domain_strategy, itemType::string));
         _add(new configItem("dns_routing", &this->dns_routing, itemType::boolean));
