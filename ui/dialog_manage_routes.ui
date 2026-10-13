@@ -363,6 +363,26 @@ For more information, see the document &quot;Configuration/DNS&quot;.</string>
             </item>
            </layout>
           </item>
+          <item>
+           <widget class="QLabel" name="local_dns_domains_label">
+            <property name="text">
+             <string>DNS-домены локальной сети и рабочего VPN</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPlainTextEdit" name="local_dns_domains">
+            <property name="maximumHeight"><number>90</number></property>
+            <property name="placeholderText"><string>По одному домену на строку, например corp.example</string></property>
+            <property name="toolTip"><string>Эти домены и их поддомены разрешаются через указанный ниже DNS-сервер. Остальные DNS-правила сохраняются.</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="local_dns_server">
+            <property name="placeholderText"><string>IP DNS-сервера рабочего VPN, например 10.0.0.53</string></property>
+            <property name="toolTip"><string>Адрес DNS из настроек рабочего VPN или локальной сети. Подключение к нему следует маршруту Windows.</string></property>
+           </widget>
+          </item>
          </layout>
         </widget>
        </item>

@@ -18,6 +18,8 @@ namespace NekoGui {
         QString remote_dns_strategy = "ipv4_only";
         QString direct_dns = "77.88.8.8";
         QString direct_dns_strategy = "ipv4_only";
+        QString local_dns_domains;
+        QString local_dns_server;
         bool dns_routing = true;
         bool use_dns_object = false;
         QString dns_object = "";

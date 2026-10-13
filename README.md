@@ -39,6 +39,14 @@ Existing RU schemes receive missing rules after updating, including users of the
 first video routing fix. Migration revisions persist only after all schemes succeed; explicit proxy and
 block rules are preserved, and custom full-tunnel schemes are left unchanged.
 
+On Windows, direct connections to private networks follow the destination's
+Windows route, including an already connected corporate VPN. Public connections
+retain the default-interface binding needed by TUN mode. Explicit interface
+bindings and proxy/block routing choices keep their priority.
+Private DNS zones can use a separate VPN DNS server in the routing dialog without
+changing the resolver for other sites. See [Corporate VPN setup](docs/Corporate_VPN.md)
+for configuration and troubleshooting (на русском).
+
 ### Supported Protocols
 
 | Protocol | Status |

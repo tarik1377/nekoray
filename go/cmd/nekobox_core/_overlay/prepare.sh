@@ -1,19 +1,19 @@
 #!/bin/bash
 #
-# Готовит сборку ядра с правленым клиентом REALITY и печатает имя go.mod,
+# Готовит сборку ядра с правками sing-box и печатает имя go.mod,
 # который надо передать в -modfile.
 #
 #   go build -modfile "$(bash _overlay/prepare.sh)" ...
 #
-# ЗАЧЕМ. Ядру нужна правка одного файла sing-box (patches/README.md). Форк
-# всего sing-box в репозитории ради одного файла — это чужая история и чужие
+# ЗАЧЕМ. Ядру нужны правки REALITY и выбора интерфейса Windows (patches/README.md). Форк
+# всего sing-box в репозитории ради нескольких файлов — это чужая история и чужие
 # обновления на нашей совести. Правка в кэше модулей не годится: он сверяется
 # по контрольным суммам.
 #
 # ПОЧЕМУ НЕ -overlay. Он был первым выбором — подменить один файл для
 # компилятора, — но Go отказывает прямо: «Files beneath GOMODCACHE must not be
 # replaced». Поэтому здесь копия модуля: sing-box той же версии копируется из
-# кэша в _overlay/build/, туда кладётся правленый файл, а рядом с go.mod
+# кэша в _overlay/build/, туда кладутся правленые файлы, а рядом с go.mod
 # пишется go.overlay.mod с replace на эту копию. Закоммиченный go.mod не
 # меняется, кэш не трогается.
 #
@@ -21,7 +21,7 @@
 # из go.mod (grpc_server, libneko) должны значить то же самое, что и там.
 #
 # Каталог начинается с подчёркивания, и это не украшение: go ./... пропускает
-# такие каталоги, поэтому ни копия sing-box, ни правленый файл не собираются
+# такие каталоги, поэтому ни копия sing-box, ни правленые файлы не собираются
 # как пакеты нашего модуля.
 #
 # Зовётся из go/cmd/nekobox_core.
@@ -44,6 +44,15 @@ if [ -z "$want" ] || [ "$want" != "$have" ]; then
   exit 1
 fi
 
+# Every copied source has a base-version header, including Windows route helpers.
+while IFS= read -r file; do
+  base=$(grep -m1 '^// overlay-base: github.com/sagernet/sing-box ' "$file" | awk '{print $4}')
+  if [ "$base" != "$have" ]; then
+    echo "prepare.sh: $file is based on ${base:-?}, expected $have" >&2
+    exit 1
+  fi
+done < <(find _overlay/sing-box -type f -name '*.go')
+
 # СНАЧАЛА СКАЧАТЬ, ПОТОМ СПРАШИВАТЬ. go list -m модуль не качает: на чистой
 # машине — а раннер CI каждый раз чистый — .Dir пришёл бы пустым, и скрипт
 # отказал бы на ровном месте. go mod download ничего не делает, если модуль уже
@@ -62,7 +71,11 @@ mkdir -p "_overlay/build"
 cp -r "$src" "$dst"
 # Кэш модулей только для чтения, и копия наследует это.
 chmod -R u+w "$dst"
-cp "$patched" "$dst/common/tls/reality_client.go"
+while IFS= read -r file; do
+  relative="${file#_overlay/sing-box/}"
+  mkdir -p "$dst/$(dirname "$relative")"
+  cp "$file" "$dst/$relative"
+done < <(find _overlay/sing-box -type f -name '*.go')
 
 # Путь в replace — абсолютный и в виде, понятном Go на этой машине: из Git Bash
 # на Windows pwd дал бы /c/..., которого Go не знает.
