@@ -5,6 +5,8 @@
 // и сборка идёт с -modfile на replace к этой копии. Кэш модулей не трогается.
 //
 // overlay-base: github.com/sagernet/sing-box v1.13.18
+// ML-DSA-65 certificate verification is also added here; its protocol and tests
+// are in reality_mldsa65.go and reality_mldsa65_test.go (patches/README.md).
 //
 // ЗАЧЕМ. 8 сентября 2026 в xtls/reality вошёл коммит 8cdf7bf9c7f0 («Reject
 // outdated/strange Client Hello that doesn't have X25519MLKEM768 before
@@ -18,7 +20,7 @@
 // sing-box — SagerNet/sing-box#4520, открыт. Замечено на нашей панели orsana
 // 13.09.2026: после её обновления до 26.9.8 GreenRhythm перестал подключаться.
 //
-// ЧТО ИЗМЕНЕНО, три места, остальное совпадает с v1.13.18 байт в байт:
+// ИЗМЕНЕНИЯ CLIENTHELLO (проверка PQV описана отдельно выше):
 //  1. вместо вырезания гибридной доли — realityUClient: гарантирует ровно одну
 //     X25519MLKEM768 перед X25519 для любого отпечатка (в нашей utls гибрид есть
 //     только у Chrome; Firefox там 120, Safari 16, iOS 14 — без него);
@@ -44,10 +46,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/ecdh"
-	"crypto/ed25519"
-	"crypto/hmac"
 	"crypto/sha256"
-	"crypto/sha512"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -58,10 +57,10 @@ import (
 	mRand "math/rand"
 	"net"
 	"net/http"
-	"reflect"
 	"strings"
 	"time"
-	"unsafe"
+
+	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
 
 	"github.com/sagernet/sing-box/adapter"
 	C "github.com/sagernet/sing-box/constant"
@@ -80,10 +79,11 @@ import (
 var _ ConfigCompat = (*RealityClientConfig)(nil)
 
 type RealityClientConfig struct {
-	ctx       context.Context
-	uClient   *UTLSClientConfig
-	publicKey []byte
-	shortID   [8]byte
+	ctx           context.Context
+	uClient       *UTLSClientConfig
+	publicKey     []byte
+	shortID       [8]byte
+	mlDSA65Verify *mldsa65.PublicKey
 }
 
 func NewRealityClient(ctx context.Context, logger logger.ContextLogger, serverAddress string, options option.OutboundTLSOptions) (Config, error) {
@@ -112,7 +112,11 @@ func NewRealityClient(ctx context.Context, logger logger.ContextLogger, serverAd
 		return nil, E.New("invalid short_id")
 	}
 
-	var config Config = &RealityClientConfig{ctx, uClient.(*UTLSClientConfig), publicKey, shortID}
+	mlDSA65Verify, err := realityMLDSA65PublicKey(options.Reality.MLDSA65Verify)
+	if err != nil {
+		return nil, err
+	}
+	var config Config = &RealityClientConfig{ctx, uClient.(*UTLSClientConfig), publicKey, shortID, mlDSA65Verify}
 	if options.KernelRx || options.KernelTx {
 		if !C.IsLinux {
 			return nil, E.New("kTLS is only supported on Linux")
@@ -153,7 +157,8 @@ func (e *RealityClientConfig) Client(conn net.Conn) (Conn, error) {
 
 func (e *RealityClientConfig) ClientHandshake(ctx context.Context, conn net.Conn) (aTLS.Conn, error) {
 	verifier := &realityVerifier{
-		serverName: e.uClient.ServerName(),
+		serverName:    e.uClient.ServerName(),
+		mlDSA65Verify: e.mlDSA65Verify,
 	}
 	uConfig := e.uClient.config.Clone()
 	uConfig.InsecureSkipVerify = true
@@ -277,26 +282,45 @@ func (e *RealityClientConfig) Clone() Config {
 		e.uClient.Clone().(*UTLSClientConfig),
 		e.publicKey,
 		e.shortID,
+		e.mlDSA65Verify,
 	}
 }
 
 type realityVerifier struct {
 	*utls.UConn
-	serverName string
-	authKey    []byte
-	verified   bool
+	serverName    string
+	authKey       []byte
+	verified      bool
+	mlDSA65Verify *mldsa65.PublicKey
 }
 
 func (c *realityVerifier) VerifyPeerCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-	p, _ := reflect.TypeFor[utls.Conn]().FieldByName("peerCertificates")
-	certs := *(*([]*x509.Certificate))(unsafe.Add(unsafe.Pointer(c.Conn), p.Offset))
-	if pub, ok := certs[0].PublicKey.(ed25519.PublicKey); ok {
-		h := hmac.New(sha512.New, c.authKey)
-		h.Write(pub)
-		if bytes.Equal(h.Sum(nil), certs[0].Signature) {
-			c.verified = true
-			return nil
+	if len(rawCerts) == 0 {
+		return E.New("reality: missing peer certificate")
+	}
+	certs := make([]*x509.Certificate, len(rawCerts))
+	for i, raw := range rawCerts {
+		cert, err := x509.ParseCertificate(raw)
+		if err != nil {
+			return err
 		}
+		certs[i] = cert
+	}
+	var clientHello, serverHello []byte
+	if c.mlDSA65Verify != nil {
+		if c.HandshakeState.Hello == nil || c.HandshakeState.ServerHello == nil {
+			return E.New("reality: missing handshake transcript for ML-DSA-65")
+		}
+		clientHello = c.HandshakeState.Hello.Raw
+		serverHello = c.HandshakeState.ServerHello.Raw
+	}
+	verified, err := realityVerifyCertificate(certs[0], c.authKey, c.mlDSA65Verify, clientHello, serverHello)
+	if err != nil {
+		return err
+	}
+	if verified {
+		c.verified = true
+		return nil
 	}
 	opts := x509.VerifyOptions{
 		DNSName:       c.serverName,
