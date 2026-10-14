@@ -347,6 +347,16 @@ void MainWindow::neko_start(int _id) {
     auto group = NekoGui::profileManager->GetGroup(ent->gid);
     if (group == nullptr || group->archive) return;
 
+    const auto admission = connection_lifecycle.beginStart(ent->id);
+    if (admission == GreenRhythm::ConnectionLifecycle::Start::AlreadyStarting) return;
+    if (admission == GreenRhythm::ConnectionLifecycle::Start::WaitingForStop) {
+        if (shell != nullptr) shell->setState(GreenRhythm::MainShell::State::Connecting);
+        MW_show_log(tr("Остановка завершается; подключим выбранный сервер сразу после неё."));
+        return;
+    }
+    const auto startToken = connection_lifecycle.token();
+    const auto coreGeneration = core_process->generation();
+
     // «Подключаюсь» показываем ДО сборки конфига: она может занять секунду, и
     // всё это время кнопка стояла бы в положении «не подключено» — человек
     // нажимал бы второй раз.
@@ -359,6 +369,7 @@ void MainWindow::neko_start(int _id) {
         if (shell != nullptr) {
             shell->setState(GreenRhythm::MainShell::State::Failed, tr("ошибка в настройках профиля"));
         }
+        connection_lifecycle.finishStart();
         MessageBoxWarning("BuildConfig return error", result->error);
         return;
     }
@@ -390,6 +401,7 @@ void MainWindow::neko_start(int _id) {
         bool rpcOK = false;
         QString error;
         for (int attempt = 0; attempt < 3; attempt++) {
+            if (!connection_lifecycle.isCurrent(startToken) || core_process->generation() != coreGeneration) return false;
             if (attempt > 0) {
                 auto retry = BuildConfig(ent, false, false);
                 if (!retry->error.isEmpty()) break;
@@ -406,6 +418,23 @@ void MainWindow::neko_start(int _id) {
             }
 
             error = defaultClient->Start(&rpcOK, req);
+            if (!connection_lifecycle.isCurrent(startToken) || core_process->generation() != coreGeneration) {
+                // A disconnect or core crash superseded this request. Never
+                // publish its late success as the current connection.
+                if (core_process->generation() == coreGeneration) {
+                    bool stopped = false;
+                    const auto stopError = defaultClient->Stop(&stopped);
+                    if (!stopped || !stopError.isEmpty()) {
+                        runOnUiThread([=] {
+                            if (core_process->generation() == coreGeneration) {
+                                core_process->start_profile_when_core_is_up = -1;
+                                core_process->Restart();
+                            }
+                        }, DS_cores);
+                    }
+                }
+                return false;
+            }
             if (!rpcOK) {
                 // Ядро не ответило на вызов. Попытка окончена, и кнопка обязана
                 // это сказать: молча она вернулась бы к «Нажмите для
@@ -415,6 +444,12 @@ void MainWindow::neko_start(int _id) {
                         shell->setState(GreenRhythm::MainShell::State::Failed, tr("ядро не ответило"));
                     }
                 });
+                runOnUiThread([=] {
+                    if (core_process->generation() == coreGeneration) {
+                        core_process->start_profile_when_core_is_up = -1;
+                        core_process->Restart();
+                    }
+                }, DS_cores);
                 return false;
             }
             if (error.isEmpty()) break;
@@ -486,25 +521,9 @@ void MainWindow::neko_start(int _id) {
         return true;
     };
 
-    if (!mu_starting.tryLock()) {
-        MessageBoxWarning(software_name, "Another profile is starting...");
-        return;
-    }
-    // «Another profile is starting» выше попытку НЕ заканчивает: идёт чужая, и
-    // её конец придёт из её потока. Закончить её отсюда — снова включить
-    // кнопку посреди старта, ровно то, от чего защищает оболочка.
-    if (!mu_stopping.tryLock()) {
-        // Эта попытка не состоялась, и потока, который закончил бы её сам, не
-        // будет. Кнопка покажет то, что есть на деле, — остановка идёт.
-        if (shell != nullptr) shell->finishConnecting();
-        MessageBoxWarning(software_name, "Another profile is stopping...");
-        mu_starting.unlock();
-        return;
-    }
-    mu_stopping.unlock();
-
     // check core state
     if (!NekoGui::dataStore->core_running) {
+        pending_core_profile = ent->id;
         runOnUiThread(
             [=] {
                 MW_show_log("Try to start the config, but the core has not listened to the grpc port, so restart it...");
@@ -512,38 +531,41 @@ void MainWindow::neko_start(int _id) {
                 core_process->Restart();
             },
             DS_cores);
-        mu_starting.unlock();
+        connection_lifecycle.finishStart();
         return; // let CoreProcess call neko_start when core is up
     }
 
-    // timeout message
-    auto restartMsgbox = new QMessageBox(QMessageBox::Question, software_name, tr("If there is no response for a long time, it is recommended to restart the software."),
-                                         QMessageBox::Yes | QMessageBox::No, this);
-    connect(restartMsgbox, &QMessageBox::accepted, this, [=] { MW_dialog_message("", "RestartProgram"); });
-    auto restartMsgboxTimer = new MessageBoxTimer(this, restartMsgbox, 5000);
+    // The RPC has a deadline and recovery path. Progress must not open a
+    // second modal event loop or ask the user to restart during that recovery.
+    auto startProgressTimer = new QTimer(this);
+    startProgressTimer->setSingleShot(true);
+    connect(startProgressTimer, &QTimer::timeout, this, [=] {
+        MW_show_log(tr("Ожидаем ответ ядра; при сбое попытка завершится автоматически."));
+    });
+    startProgressTimer->start(4000);
 
     runOnNewThread([=] {
         // stop current running
-        if (NekoGui::dataStore->started_id >= 0) {
+        if (connection_lifecycle.isCurrent(startToken) && NekoGui::dataStore->started_id >= 0) {
             runOnUiThread([=] { neko_stop(false, true); });
             sem_stopped.acquire();
         }
         // do start
         MW_show_log(">>>>>>>> " + tr("Starting profile %1").arg(ent->bean->DisplayTypeAndName()));
-        if (!neko_start_stage2()) {
+        if (!connection_lifecycle.isCurrent(startToken) || !neko_start_stage2()) {
             MW_show_log("<<<<<<<< " + tr("Failed to start profile %1").arg(ent->bean->DisplayTypeAndName()));
         }
-        mu_starting.unlock();
         // cancel timeout
         runOnUiThread([=] {
-            restartMsgboxTimer->cancel();
-            restartMsgboxTimer->deleteLater();
-            restartMsgbox->deleteLater();
+            startProgressTimer->stop();
+            startProgressTimer->deleteLater();
             // Попытка закончена, чем бы ни кончилась. Удача к этому времени уже
             // отметилась подключением, отказ — причиной; если ни того ни
             // другого (новый ранний выход в neko_start_stage2), кнопка
             // вернётся в покой, а не будет ждать сторожа.
             if (shell != nullptr) shell->finishConnecting();
+            const auto pending = connection_lifecycle.finishStart();
+            if (pending >= 0 && !NekoGui::dataStore->prepare_exit) neko_start(pending);
 #ifdef Q_OS_LINUX
             // Check systemd-resolved
             if (NekoGui::dataStore->spmode_vpn && NekoGui::dataStore->routing->direct_dns.startsWith("local") && ReadFileText("/etc/resolv.conf").contains("systemd-resolved")) {
@@ -555,11 +577,25 @@ void MainWindow::neko_start(int _id) {
 }
 
 void MainWindow::neko_stop(bool crash, bool sem, bool keep_tunnel) {
+    if ((!crash && !sem) || NekoGui::dataStore->prepare_exit) {
+        connection_lifecycle.cancel();
+        pending_core_profile = -1;
+        runOnUiThread([=] { core_process->start_profile_when_core_is_up = -1; }, DS_cores);
+    }
     auto id = NekoGui::dataStore->started_id;
+    if (connection_lifecycle.isStopping()) {
+        // Join the existing stop. A waiter must not wake while that operation
+        // still owns the old core/configuration.
+        connection_lifecycle.beginStop(sem);
+        return;
+    }
     if (id < 0) {
         if (sem) sem_stopped.release();
         return;
     }
+    if (!connection_lifecycle.beginStop(sem)) return;
+    const auto stoppedProfile = running;
+    const auto coreGeneration = core_process->generation();
 
     /*
      * ВНЕШНИЙ ТУННЕЛЬ СНИМАЕТСЯ ДО ОСТАНОВКИ ЯДРА — иначе маршрут по умолчанию
@@ -584,6 +620,7 @@ void MainWindow::neko_stop(bool crash, bool sem, bool keep_tunnel) {
     }
 
     auto neko_stop_stage2 = [=] {
+        bool stoppedCleanly = true;
         runOnUiThread(
             [=] {
                 while (!NekoGui_sys::running_ext.empty()) {
@@ -606,14 +643,14 @@ void MainWindow::neko_stop(bool crash, bool sem, bool keep_tunnel) {
         }
         NekoGui_traffic::trafficLooper->loop_mutex.unlock();
 
-        if (!crash) {
+        if (!crash && core_process->generation() == coreGeneration) {
             bool rpcOK;
             QString error = defaultClient->Stop(&rpcOK);
             if (rpcOK && !error.isEmpty()) {
-                runOnUiThread([=] { MessageBoxWarning("Stop return error", error); });
-                return false;
+                MW_show_log(tr("Ядро не завершило остановку: %1").arg(error));
+                stoppedCleanly = false;
             } else if (!rpcOK) {
-                return false;
+                stoppedCleanly = false;
             }
         }
 #endif
@@ -621,6 +658,20 @@ void MainWindow::neko_stop(bool crash, bool sem, bool keep_tunnel) {
         NekoGui::dataStore->UpdateStartedId(-1919);
         NekoGui::dataStore->need_keep_vpn_off = false;
         running = nullptr;
+
+        if (!stoppedCleanly) {
+            // Only replace our own unchanged core. Its old request is already
+            // cancelled by the RPC deadline; another restart may have won.
+            QSemaphore recovered;
+            runOnUiThread([&] {
+                if (core_process->generation() == coreGeneration) {
+                    core_process->start_profile_when_core_is_up = -1;
+                    core_process->Restart();
+                }
+                recovered.release();
+            }, DS_cores);
+            recovered.acquire();
+        }
 
         runOnUiThread([=] {
             refresh_status();
@@ -640,33 +691,30 @@ void MainWindow::neko_stop(bool crash, bool sem, bool keep_tunnel) {
             });
         });
 
-        return true;
+        return stoppedCleanly;
     };
 
-    if (!mu_stopping.tryLock()) {
-        if (sem) sem_stopped.release();
-        return;
-    }
-
-    // timeout message
-    auto restartMsgbox = new QMessageBox(QMessageBox::Question, software_name, tr("If there is no response for a long time, it is recommended to restart the software."),
-                                         QMessageBox::Yes | QMessageBox::No, this);
-    connect(restartMsgbox, &QMessageBox::accepted, this, [=] { MW_dialog_message("", "RestartProgram"); });
-    auto restartMsgboxTimer = new MessageBoxTimer(this, restartMsgbox, 5000);
+    auto stopProgressTimer = new QTimer(this);
+    stopProgressTimer->setSingleShot(true);
+    connect(stopProgressTimer, &QTimer::timeout, this, [=] {
+        MW_show_log(tr("Завершаем остановку; зависшее ядро будет заменено автоматически."));
+    });
+    stopProgressTimer->start(2000);
 
     runOnNewThread([=] {
         // do stop
-        MW_show_log(">>>>>>>> " + tr("Stopping profile %1").arg(running->bean->DisplayTypeAndName()));
+        MW_show_log(">>>>>>>> " + tr("Stopping profile %1").arg(stoppedProfile ? stoppedProfile->bean->DisplayTypeAndName() : QString::number(id)));
         if (!neko_stop_stage2()) {
-            MW_show_log("<<<<<<<< " + tr("Failed to stop, please restart the program."));
+            MW_show_log(tr("Зависшее ядро заменено; подключение можно повторить."));
         }
-        mu_stopping.unlock();
-        if (sem) sem_stopped.release();
         // cancel timeout
         runOnUiThread([=] {
-            restartMsgboxTimer->cancel();
-            restartMsgboxTimer->deleteLater();
-            restartMsgbox->deleteLater();
+            stopProgressTimer->stop();
+            stopProgressTimer->deleteLater();
+            const auto completed = connection_lifecycle.finishStop();
+            if (completed.waiters > 0) sem_stopped.release(completed.waiters);
+            if (completed.pendingProfile >= 0 && !NekoGui::dataStore->prepare_exit)
+                neko_start(completed.pendingProfile);
         });
     });
 }

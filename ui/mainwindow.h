@@ -26,6 +26,7 @@
 
 #include "db/ProxyEntity.hpp"
 #include "main/GuiUtils.hpp"
+#include "main/ConnectionLifecycle.hpp"
 
 #endif
 
@@ -205,8 +206,8 @@ private:
     //
     int proxy_last_order = -1;
     bool select_mode = false;
-    QMutex mu_starting;
-    QMutex mu_stopping;
+    GreenRhythm::ConnectionLifecycle connection_lifecycle;
+    int pending_core_profile = -1;
     QMutex mu_exit;
     QSemaphore sem_stopped;
     int exit_reason = 0;

@@ -267,15 +267,15 @@ source:
         is(QStringLiteral("ядро не ответило (!rpcOK) — отказ до выхода"),
            between(QStringLiteral("if (!rpcOK)"), QStringLiteral("return false;"))
                .contains(QStringLiteral("State::Failed")));
-        is(QStringLiteral("идущая остановка заканчивает попытку до выхода"),
-           between(QStringLiteral("if (!mu_stopping.tryLock())"), QStringLiteral("return;"))
-               .contains(QStringLiteral("finishConnecting()")));
+        is(QStringLiteral("идущая остановка оставляет попытку в очереди подключения"),
+           between(QStringLiteral("if (admission == GreenRhythm::ConnectionLifecycle::Start::WaitingForStop)"), QStringLiteral("return;"))
+               .contains(QStringLiteral("State::Connecting")));
         // Обратное тоже важно: при «Another profile is starting» идёт ЧУЖАЯ
         // попытка, и закончить её отсюда — ровно тот баг, ради которого набор.
         is(QStringLiteral("повторное нажатие не заканчивает чужую попытку"),
-           !between(QStringLiteral("if (!mu_starting.tryLock())"), QStringLiteral("return;"))
+           !between(QStringLiteral("if (admission == GreenRhythm::ConnectionLifecycle::Start::AlreadyStarting)"), QStringLiteral("return;"))
                 .contains(QStringLiteral("finishConnecting")));
-        const int stage = body.indexOf(QStringLiteral("if (!neko_start_stage2())"));
+        const int stage = body.indexOf(QStringLiteral("!neko_start_stage2()"));
         is(QStringLiteral("поток попытки после neko_start_stage2 зовёт finishConnecting"),
            stage > begin && body.indexOf(QStringLiteral("finishConnecting()"), stage) > stage);
 

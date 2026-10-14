@@ -933,6 +933,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     args.push_back("-port");
     args.push_back(Int2String(NekoGui::dataStore->core_port));
     if (NekoGui::dataStore->flag_debug) args.push_back("-debug");
+    if (NekoGui::dataStore->remember_enable && NekoGui::dataStore->remember_id >= 0)
+        pending_core_profile = NekoGui::dataStore->remember_id;
 
     // Start core
     runOnUiThread(
@@ -1233,8 +1235,21 @@ void MainWindow::dialog_message_impl(const QString &sender, const QString &info)
                 shell->setState(GreenRhythm::MainShell::State::Failed, tr("ядро остановилось"));
             }
             neko_stop(true);
+        } else if (info == "CoreStartFailed") {
+            pending_core_profile = -1;
+            connection_lifecycle.cancel();
+            if (shell != nullptr)
+                shell->setState(GreenRhythm::MainShell::State::Failed, tr("не удалось запустить ядро"));
         } else if (info.startsWith("CoreStarted")) {
-            neko_start(info.split(",")[1].toInt());
+            const auto profile = info.split(",")[1].toInt();
+            // Explicit disconnect cancels an already queued core-ready event.
+            // A crash restart may resume the active profile, but never revive
+            // it while a user-requested stop is still running.
+            if (pending_core_profile == profile ||
+                (!connection_lifecycle.isStopping() && NekoGui::dataStore->started_id == profile)) {
+                pending_core_profile = -1;
+                neko_start(profile);
+            }
         }
     }
 }
@@ -1369,6 +1384,10 @@ void MainWindow::on_menu_exit_triggered() {
         hide();
         runOnNewThread([=] {
             sem_stopped.acquire();
+            // A disconnect can finish while a cancelled Start RPC is still
+            // returning. Keep the GUI alive until its completion callback has
+            // released the operation, then ask our core to exit.
+            connection_lifecycle.waitUntilIdle();
             stop_core_daemon();
             runOnUiThread([=] {
                 on_menu_exit_triggered(); // continue exit progress

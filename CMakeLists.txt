@@ -843,6 +843,9 @@ target_link_libraries(sidebar_actions_test PRIVATE Qt${QT_VERSION_MAJOR}::Widget
 target_link_libraries(local_dns_test PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network)
 
 if (NOT NKR_NO_GRPC)
+    add_executable(rpc_deadline_test EXCLUDE_FROM_ALL test/RpcDeadlineTest.cpp rpc/gRPC.cpp)
+    target_include_directories(rpc_deadline_test PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(rpc_deadline_test PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network myproto)
     add_executable(traffic_update_queue_test
             test/TrafficUpdateQueueTest.cpp
             db/traffic/TrafficLooper.cpp
@@ -856,6 +859,13 @@ if (NOT NKR_NO_GRPC)
     endif ()
 endif ()
 
+add_executable(connection_lifecycle_test EXCLUDE_FROM_ALL test/ConnectionLifecycleTest.cpp)
+target_include_directories(connection_lifecycle_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(connection_lifecycle_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+add_executable(core_process_lifecycle_test EXCLUDE_FROM_ALL test/CoreProcessLifecycleTest.cpp sys/ExternalProcess.cpp main/RelayTrace.cpp)
+target_include_directories(core_process_lifecycle_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(core_process_lifecycle_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
+
 add_executable(program_watch_lifetime_test
         test/ProgramWatchLifetimeTest.cpp
         main/ProgramTrouble.cpp
@@ -866,6 +876,8 @@ target_include_directories(program_watch_lifetime_test PRIVATE ${CMAKE_SOURCE_DI
 target_link_libraries(program_watch_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
 set(GR_TEST_TARGETS
+        connection_lifecycle_test
+        core_process_lifecycle_test
         import_integration_test
         sidebar_actions_test
         system_routes_patch_test
@@ -917,6 +929,7 @@ if (NOT NKR_NO_GRPC)
     target_link_libraries(update_progress_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
     list(APPEND GR_TEST_TARGETS update_progress_test)
     list(APPEND GR_TEST_TARGETS traffic_update_queue_test)
+    list(APPEND GR_TEST_TARGETS rpc_deadline_test)
 endif ()
 add_custom_target(build-tests DEPENDS ${GR_TEST_TARGETS})
 
