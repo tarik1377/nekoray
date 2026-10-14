@@ -1228,6 +1228,8 @@ void MainWindow::dialog_message_impl(const QString &sender, const QString &info)
             // ждёт (см. main/TunLifecycle.hpp).
             neko_stop(false, false, true);
         } else if (info == "CoreCrashed") {
+            if (!connection_lifecycle.isStopping() && NekoGui::dataStore->started_id >= 0)
+                pending_core_profile = NekoGui::dataStore->started_id;
             // Ядро упало посреди попытки — например, не поднялось после
             // перезапуска, которого ждал neko_start. Её конец уже не придёт:
             // перезапуск ядра запомнит started_id, а у попытки его ещё нет.
