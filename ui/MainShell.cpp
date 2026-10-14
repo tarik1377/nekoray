@@ -259,8 +259,21 @@ namespace GreenRhythm {
     }
 
     QWidget *MainShell::buildSidebar() {
-        auto *bar = new QWidget(this);
-        bar->setFixedWidth(208);
+        // Navigation plus both notices can exceed a compact window's height.
+        // Keep every action reachable without increasing the window minimum.
+        auto *scroll = new QScrollArea(this);
+        scroll->setObjectName(QStringLiteral("grSidebarScroll"));
+        scroll->setWidgetResizable(true);
+        scroll->setFrameShape(QFrame::NoFrame);
+        scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        scroll->setStyleSheet(QStringLiteral(
+            "QScrollArea#grSidebarScroll { background: %1; border: none; }"
+            "QScrollBar:vertical { background: %1; width: 6px; margin: 0; }"
+            "QScrollBar::handle:vertical { background: %2; min-height: 24px; border-radius: 3px; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+            "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }")
+                .arg(kSidebar, kLine));
+        auto *bar = new QWidget(scroll);
         bar->setObjectName(QStringLiteral("grSidebar"));
         bar->setStyleSheet(QStringLiteral("QWidget#grSidebar { background: %1; border-right: 1px solid %2; }").arg(kSidebar, kLine));
         auto *box = new QVBoxLayout(bar);
@@ -324,6 +337,7 @@ namespace GreenRhythm {
         auto *statusRow = new QHBoxLayout(status); statusRow->setContentsMargins(10, 12, 10, 12);
         stateDot = new QLabel(status); stateDot->setFixedSize(8, 8);
         sidebarStatus = muted(status, tr("Не подключено"), 0.9);
+        sidebarStatus->setWordWrap(true);
         statusRow->addWidget(stateDot); statusRow->addWidget(sidebarStatus, 1);
         box->addWidget(status);
         moreButton = new QPushButton(Icons::icon("gr-more", QColor(kMuted), QColor(kText), 20), tr("  Ещё"), bar);
@@ -338,7 +352,12 @@ namespace GreenRhythm {
             menu.exec(moreButton->mapToGlobal(QPoint(0, moreButton->height())));
         });
         box->addWidget(moreButton);
-        return bar;
+        // Font metrics can exceed the original 208px width on Windows.
+        // Reserve the narrow scrollbar so showing it does not clip labels.
+        bar->ensurePolished();
+        scroll->setFixedWidth(qMax(208, bar->minimumSizeHint().width() + 6));
+        scroll->setWidget(bar);
+        return scroll;
     }
 
     QWidget *MainShell::buildConnectPage() {
