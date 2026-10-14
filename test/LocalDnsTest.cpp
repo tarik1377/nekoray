@@ -62,6 +62,24 @@ int main(int argc, char **argv) {
           && resolve.value("strategy") == "prefer_ipv6", "local resolution exposes destination IP while honoring address-family preference");
     check(!GreenRhythm::LocalDns::resolveRule({"corp.example"}).contains("strategy"), "no unwanted IPv4-only constraint");
     check(GreenRhythm::LocalDns::resolveRule({}).isEmpty(), "empty setting adds no route action");
+    QJsonObject hosts;
+    check(GreenRhythm::LocalDns::parseHosts("# comment\n10.0.0.10 GIT.corp.example. alias.corp.example\nfd00::10 git.corp.example\n10.0.0.10 git.corp.example", &hosts, &error)
+          && hosts.value("git.corp.example").toArray() == QJsonArray{"10.0.0.10", "fd00::10"}, "internal host names and addresses normalize and deduplicate");
+    for (const auto &invalid : {"0.0.0.0 git.example", "224.0.0.1 git.example", "10.0.0.10", "10.0.0.10 *.corp.example", "10.0.0.10 https://git.example"}) {
+        const auto before = hosts;
+        check(!GreenRhythm::LocalDns::parseHosts(invalid, &hosts, &error) && hosts == before,
+              "invalid internal host setting leaves the previous map intact");
+    }
+    dns = original;
+    GreenRhythm::LocalDns::addHostsToDns(dns, {});
+    check(dns == original, "empty internal host map changes no defaults");
+    GreenRhythm::LocalDns::addHostsToDns(dns, hosts);
+    check(dns.value("rules").toArray().first().toObject().value("server") == "gr-local-hosts"
+          && dns.value("servers").toArray().last().toObject().value("predefined").toObject() == hosts,
+          "internal addresses take precedence over public DNS without changing the final server");
+    check(GreenRhythm::LocalDns::hostsResolveRule(hosts).value("domain").toArray().size() == 2,
+          "internal addresses resolve before destination IP routing");
+    check(GreenRhythm::LocalDns::hostsResolveRule({}).isEmpty(), "empty host map adds no resolve action");
     std::printf("Local VPN DNS: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

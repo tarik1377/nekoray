@@ -807,6 +807,26 @@ target_link_libraries(video_routes_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 
 add_executable(local_dns_test EXCLUDE_FROM_ALL test/LocalDnsTest.cpp main/LocalDns.cpp)
 target_include_directories(local_dns_test PRIVATE ${CMAKE_SOURCE_DIR})
+
+add_executable(import_integration_test EXCLUDE_FROM_ALL
+        test/ImportIntegrationTest.cpp
+        main/NekoGui.cpp main/NekoGui_Utils.cpp main/VideoRoutes.cpp main/LocalDns.cpp
+        main/HTTPRequestHelper.cpp main/DeviceCredentials.cpp main/RelayTrace.cpp
+        main/RelayComponent.cpp main/RelayComponentParse.cpp main/RelayActivation.cpp main/RelayActivationParse.cpp
+        db/Database.cpp db/ProfileFilter.cpp db/ConfigBuilder.cpp
+        fmt/AbstractBean.cpp fmt/Bean2CoreObj_box.cpp fmt/Bean2External.cpp fmt/Bean2Link.cpp fmt/Link2Bean.cpp
+        sub/GroupUpdater.cpp 3rdparty/base64.cpp ${PLATFORM_SOURCES})
+set_target_properties(import_integration_test PROPERTIES AUTOMOC ON)
+target_precompile_headers(import_integration_test PRIVATE main/pch.hpp)
+target_include_directories(import_integration_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(import_integration_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network
+        Qt${QT_VERSION_MAJOR}::Svg ${NKR_EXTERNAL_TARGETS} ${PLATFORM_LIBRARIES})
+
+add_executable(sidebar_actions_test EXCLUDE_FROM_ALL test/SidebarActionsTest.cpp
+        ui/MainShell.cpp ui/Icons.cpp ui/ServerCardDelegate.cpp res/neko.qrc)
+set_target_properties(sidebar_actions_test PROPERTIES AUTOMOC ON AUTORCC ON)
+target_include_directories(sidebar_actions_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(sidebar_actions_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg)
 target_link_libraries(local_dns_test PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network)
 
 if (NOT NKR_NO_GRPC)

@@ -62,6 +62,11 @@ namespace NekoGui_fmt {
                     {"public_key", reality_pbk},
                     {"short_id", reality_sid.split(",")[0]},
                 };
+                if (!reality_pqv.trimmed().isEmpty()) {
+                    auto reality = tls["reality"].toObject();
+                    reality["mldsa65_verify"] = reality_pqv;
+                    tls["reality"] = reality;
+                }
                 if (fp.isEmpty()) fp = "random";
             }
             if (!fp.isEmpty()) {

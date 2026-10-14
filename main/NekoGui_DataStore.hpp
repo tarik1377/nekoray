@@ -20,6 +20,7 @@ namespace NekoGui {
         QString direct_dns_strategy = "ipv4_only";
         QString local_dns_domains;
         QString local_dns_server;
+        QString local_dns_hosts;
         bool dns_routing = true;
         bool use_dns_object = false;
         QString dns_object = "";

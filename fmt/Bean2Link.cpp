@@ -46,6 +46,7 @@ namespace NekoGui_fmt {
             query.addQueryItem("pbk", stream->reality_pbk);
             if (!stream->reality_sid.isEmpty()) query.addQueryItem("sid", stream->reality_sid);
             if (!stream->reality_spx.isEmpty()) query.addQueryItem("spx", stream->reality_spx);
+            if (!stream->reality_pqv.isEmpty()) query.addQueryItem("pqv", stream->reality_pqv);
         }
 
         // type

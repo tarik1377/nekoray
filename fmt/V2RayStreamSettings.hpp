@@ -26,6 +26,7 @@ namespace NekoGui_fmt {
         QString reality_pbk = "";
         QString reality_sid = "";
         QString reality_spx = "";
+        QString reality_pqv = "";
         // multiplex
         int multiplex_status = 0;
 
@@ -46,6 +47,7 @@ namespace NekoGui_fmt {
             _add(new configItem("pbk", &reality_pbk, itemType::string));
             _add(new configItem("sid", &reality_sid, itemType::string));
             _add(new configItem("spx", &reality_spx, itemType::string));
+            _add(new configItem("pqv", &reality_pqv, itemType::string));
             _add(new configItem("mux_s", &multiplex_status, itemType::integer));
         }
 

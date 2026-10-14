@@ -383,6 +383,18 @@ For more information, see the document &quot;Configuration/DNS&quot;.</string>
             <property name="toolTip"><string>Адрес DNS из настроек рабочего VPN или локальной сети. Подключение к нему следует маршруту Windows.</string></property>
            </widget>
           </item>
+          <item>
+           <widget class="QLabel" name="local_dns_hosts_label">
+            <property name="text"><string>Фиксированные адреса внутренних сайтов (необязательно)</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPlainTextEdit" name="local_dns_hosts">
+            <property name="maximumHeight"><number>70</number></property>
+            <property name="placeholderText"><string>10.0.0.10 server.corp.example</string></property>
+            <property name="toolTip"><string>Для серверов с известным постоянным адресом. Указанные имена разрешаются внутри клиента до обращения к DNS. Остальные сайты продолжают использовать выбранные DNS-серверы.</string></property>
+           </widget>
+          </item>
          </layout>
         </widget>
        </item>

@@ -104,6 +104,11 @@ void DialogManageRoutes::accept() {
         MessageBoxWarning("DNS", error);
         return;
     }
+    if (!ui->use_dns_object->isChecked()
+        && !GreenRhythm::LocalDns::parseHosts(ui->local_dns_hosts->toPlainText(), nullptr, &error)) {
+        MessageBoxWarning("DNS", error);
+        return;
+    }
     D_C_SAVE_STRING(custom_route_global)
     bool routeChanged = false;
     if (NekoGui::dataStore->active_routing != active_routing) routeChanged = true;
@@ -162,6 +167,7 @@ void DialogManageRoutes::UpdateDisplayRouting(NekoGui::Routing *conf, bool qv) {
     ui->direct_dns_strategy->setCurrentText(conf->direct_dns_strategy);
     ui->local_dns_domains->setPlainText(conf->local_dns_domains);
     ui->local_dns_server->setText(conf->local_dns_server);
+    ui->local_dns_hosts->setPlainText(conf->local_dns_hosts);
     ui->dns_final_out->setCurrentText(conf->dns_final_out);
 }
 
@@ -187,6 +193,7 @@ void DialogManageRoutes::SaveDisplayRouting(NekoGui::Routing *conf) {
     conf->direct_dns_strategy = ui->direct_dns_strategy->currentText();
     conf->local_dns_domains = ui->local_dns_domains->toPlainText();
     conf->local_dns_server = ui->local_dns_server->text();
+    conf->local_dns_hosts = ui->local_dns_hosts->toPlainText();
     conf->dns_final_out = ui->dns_final_out->currentText();
 }
 

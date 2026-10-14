@@ -751,6 +751,11 @@ namespace NekoGui {
                                                    &localDnsDomains, &localDnsServer,
                                                    &status->result->error)) return;
         GreenRhythm::LocalDns::addToDns(dns, localDnsDomains, localDnsServer);
+        QJsonObject localHosts;
+        if (!dataStore->routing->use_dns_object
+            && !GreenRhythm::LocalDns::parseHosts(dataStore->routing->local_dns_hosts, &localHosts,
+                                               &status->result->error)) return;
+        GreenRhythm::LocalDns::addHostsToDns(dns, localHosts);
         status->result->coreConfig.insert("dns", dns);
 
         // Routing
@@ -772,6 +777,9 @@ namespace NekoGui {
                 {"protocol", "dns"},
                 {"outbound", "dns-out"},
             };
+        }
+        if (!localHosts.isEmpty()) {
+            status->routingRulesDns += GreenRhythm::LocalDns::hostsResolveRule(localHosts, dataStore->routing->direct_dns_strategy);
         }
         if (!localDnsDomains.isEmpty()) {
             status->routingRulesDns += GreenRhythm::LocalDns::resolveRule(localDnsDomains, dataStore->routing->direct_dns_strategy);
