@@ -303,8 +303,26 @@ int main(int argc, char **argv) {
     NekoGui::dataStore->vpn_rule_process_proxy = "Telegram.exe\nCodex.exe";
     const QJsonObject explicitProcesses{{"outbound", "proxy"}, {"process_name", QJsonArray{"Telegram.exe", "Codex.exe"}}};
     const auto selectedRules = runtimeRules(buildCurrent());
-    check(ruleIndex(selectedRules, explicitProcesses) >= 0 && ruleIndex(selectedRules, explicitProcesses) < ruIndex(selectedRules),
+#ifdef Q_OS_MACOS
+    // macOS always uses the privileged external TUN helper. A persisted true
+    // preference cannot opt its ordinary core into internal-TUN-only rules.
+    check(!NekoGui::PlatformSupportsInternalTun() && !NekoGui::UseInternalTun()
+          && ruleIndex(selectedRules, explicitProcesses) < 0 && ruIndex(selectedRules) >= 0
+          && ruleIndex(selectedRules, standardProcessProxy) > ruIndex(selectedRules),
+          "macOS excludes the internal TUN process list while preserving the RU default and application fallback");
+#else
+    check(ruIndex(selectedRules) >= 0 && ruleIndex(selectedRules, explicitProcesses) >= 0
+          && ruleIndex(selectedRules, explicitProcesses) < ruIndex(selectedRules),
           "actual user process VPN list retains priority over the RU default");
+#endif
+    check(NekoGui::dataStore->vpn_internal_tun
+          && NekoGui::dataStore->vpn_rule_process_proxy == QStringLiteral("Telegram.exe\nCodex.exe"),
+          "actual builder preserves saved TUN preference and process selection on every platform");
+    NekoGui::dataStore->vpn_internal_tun = false;
+    const auto externalRules = runtimeRules(buildCurrent());
+    check(ruleIndex(externalRules, explicitProcesses) < 0 && ruIndex(externalRules) >= 0
+          && ruleIndex(externalRules, standardProcessProxy) > ruIndex(externalRules),
+          "external TUN mode excludes internal-only process settings without losing RU and application fallback rules");
     NekoGui::dataStore->vpn_rule_process_proxy = previousProxyProcesses;
     NekoGui::dataStore->vpn_internal_tun = previousTun;
     NekoGui::dataStore->spmode_vpn = previousVpn;
