@@ -1368,7 +1368,15 @@ void MainWindow::on_menu_exit_triggered() {
         // «вернём, когда закроете клиент» дано без оговорок.
         if (GreenRhythm::interferencePaused()) GreenRhythm::resumeInterference(nullptr);
         //
+#ifdef Q_OS_WIN
+        if (!neko_set_spmode_system_proxy(false, false)) {
+            NekoGui::dataStore->prepare_exit = false;
+            mu_exit.unlock();
+            return; // keep the serving core alive if Windows cannot restore our proxy
+        }
+#else
         neko_set_spmode_system_proxy(false, false);
+#endif
         neko_set_spmode_vpn(false, false);
         if (NekoGui::dataStore->spmode_vpn) {
             mu_exit.unlock(); // retry
@@ -1434,14 +1442,14 @@ void MainWindow::on_menu_exit_triggered() {
     refresh_status();          \
     return;
 
-void MainWindow::neko_set_spmode_system_proxy(bool enable, bool save) {
+bool MainWindow::neko_set_spmode_system_proxy(bool enable, bool save) {
     bool applyRequested = enable != NekoGui::dataStore->spmode_system_proxy;
 #ifdef Q_OS_WIN
     // The selected mode is a preference, not proof of WinINET's current
     // state: another client can disable or replace the proxy. An explicit
     // enable (including "Connect browsers") must apply our current endpoint
     // again. This does not introduce periodic ownership fights.
-    applyRequested = applyRequested || enable;
+    applyRequested = true; // explicit disable also cleans up a partial failed enable
 #endif
     if (applyRequested) {
         if (enable) {
@@ -1465,16 +1473,37 @@ void MainWindow::neko_set_spmode_system_proxy(bool enable, bool save) {
                                   tr("Не удалось включить системный прокси. "
                                      "Возможно, настройками сети управляет организация."));
                 refresh_status();
-                return;
+                return false;
+            }
+#else
+#ifdef Q_OS_WIN
+            QString error;
+            if (!SetSystemProxy(http_port, socks_port, &error)) {
+                NekoGui::dataStore->spmode_system_proxy = false;
+                MW_show_log(tr("[Ошибка] Не удалось подтвердить системный прокси: %1").arg(error));
+                MessageBoxWarning(software_name, tr("Не удалось подтвердить включение системного прокси.\n\n%1").arg(error));
+                refresh_status();
+                return false;
             }
 #else
             SetSystemProxy(http_port, socks_port);
+#endif
 #endif
         } else {
 #ifdef Q_OS_MACOS
             macos_clear_pac();
 #else
+#ifdef Q_OS_WIN
+            QString error;
+            if (!ClearSystemProxy(&error)) {
+                MW_show_log(tr("[Ошибка] Не удалось вернуть системный прокси: %1").arg(error));
+                MessageBoxWarning(software_name, tr("Не удалось вернуть прежние настройки прокси. Программа продолжает работать.\n\n%1").arg(error));
+                refresh_status();
+                return false;
+            }
+#else
             ClearSystemProxy();
+#endif
 #endif
         }
     }
@@ -1489,6 +1518,7 @@ void MainWindow::neko_set_spmode_system_proxy(bool enable, bool save) {
 
     NekoGui::dataStore->spmode_system_proxy = enable;
     refresh_status();
+    return true;
 }
 
 void MainWindow::neko_set_spmode_vpn(bool enable, bool save) {

@@ -1,4 +1,4 @@
-set(PLATFORM_SOURCES 3rdparty/WinCommander.cpp sys/windows/guihelper.cpp sys/windows/MiniDump.cpp sys/windows/SealedStore_win.cpp)
+set(PLATFORM_SOURCES 3rdparty/WinCommander.cpp sys/windows/guihelper.cpp sys/windows/MiniDump.cpp sys/windows/SealedStore_win.cpp sys/windows/WindowsProxy.cpp)
 # crypt32 — DPAPI для запечатки реквизитов доступа (main/SealedStore.hpp)
 # Отдельными переменными: тестовой цели нужна только запечатка, без GUI-частей.
 set(SEALED_STORE_SOURCE sys/windows/SealedStore_win.cpp)

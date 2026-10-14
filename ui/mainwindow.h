@@ -71,7 +71,7 @@ public:
 
     void neko_stop(bool crash = false, bool sem = false, bool keep_tunnel = false);
 
-    void neko_set_spmode_system_proxy(bool enable, bool save = true);
+    bool neko_set_spmode_system_proxy(bool enable, bool save = true);
 
     void neko_set_spmode_vpn(bool enable, bool save = true);
 

@@ -4,8 +4,8 @@
 #include <QString>
 //
 namespace Qv2ray::components::proxy {
-    void ClearSystemProxy();
-    void SetSystemProxy(int http_port, int socks_port);
+    bool ClearSystemProxy(QString *error = nullptr);
+    bool SetSystemProxy(int http_port, int socks_port, QString *error = nullptr);
 } // namespace Qv2ray::components::proxy
 
 using namespace Qv2ray::components;
