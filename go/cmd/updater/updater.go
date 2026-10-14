@@ -122,9 +122,10 @@ func installUpdate(archive, install string, options installOptions) error {
 		report("Восстановление прежней установки…")
 		return errors.Join(err, tx.rollback())
 	}
+	var publication *snapshotPublication
 	if previousCandidate != "" {
 		report("Сохранение проверенной предыдущей версии для отката…")
-		if err = publishSnapshot(install, previousCandidate); err != nil {
+		if publication, err = beginSnapshotPublication(install, previousCandidate); err != nil {
 			return errors.Join(err, tx.rollback())
 		}
 	}
@@ -132,10 +133,16 @@ func installUpdate(archive, install string, options installOptions) error {
 	if err = options.start(install); err != nil {
 		report("Запуск не удался. Восстановление прежней установки…")
 		rollbackErr := tx.rollback()
+		if publication != nil {
+			rollbackErr = errors.Join(rollbackErr, publication.rollback())
+		}
 		if rollbackErr == nil {
 			return fmt.Errorf("новая программа не запустилась; прежняя установка восстановлена: %w", err)
 		}
 		return errors.Join(err, rollbackErr)
+	}
+	if publication != nil {
+		publication.commit()
 	}
 	tx.discard()
 	for _, p := range []string{archive, archive + ".sha256", archive + ".manifest.json"} {

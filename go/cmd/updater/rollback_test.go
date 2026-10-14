@@ -242,3 +242,132 @@ func TestRecordRejectsUnverifiedLegacyForeignPlatformAndPrivatePaths(t *testing.
 		}
 	}
 }
+
+func snapshotBytes(t *testing.T, root string) map[string]string {
+	t.Helper()
+	result := make(map[string]string)
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		bytes, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		result[rel] = string(bytes)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+func nextUpdateFixture(t *testing.T, archive, install string, options installOptions) installOptions {
+	t.Helper()
+	var current installationRecord
+	if err := readJSONFile(filepath.Join(install, installationReceipt), &current); err != nil {
+		t.Fatal(err)
+	}
+	entries := make(map[string]string)
+	for _, file := range current.Files {
+		entries["GreenRhythm/"+file.Path] = "version-C-" + file.Path
+	}
+	makeZip(t, archive, entries)
+	previousBuilder := options.record
+	options.record = func(archive, payload string, files []string) (*installationRecord, error) {
+		record, err := previousBuilder(archive, payload, files)
+		if err == nil {
+			record.Version = "v1.9.2.4"
+		}
+		return record, err
+	}
+	return options
+}
+func TestFailedThirdUpdateKeepsEarlierPreviousVersionByteExact(t *testing.T) {
+	if !runtimeWindows() {
+		t.Skip("Windows rollback")
+	}
+	archive, install, _, options := rollbackFixture(t)
+	if err := installUpdate(archive, install, options); err != nil {
+		t.Fatal(err)
+	}
+	originalPrevious := snapshotBytes(t, filepath.Join(install, previousDirectory))
+	beforeInfo := previousVersionInfo(install)
+	if !beforeInfo.Available || beforeInfo.Version != "v1.9.2.2" {
+		t.Fatal(beforeInfo)
+	}
+	var current installationRecord
+	_ = readJSONFile(filepath.Join(install, installationReceipt), &current)
+	next := nextUpdateFixture(t, archive, install, options)
+	next.start = func(string) error { return errors.New("version C immediate loader failure") }
+	if err := installUpdate(archive, install, next); err == nil {
+		t.Fatal("failed C accepted")
+	}
+	if err := verifyRuntimeFiles(install, &current); err != nil {
+		t.Fatal("A current was not restored", err)
+	}
+	afterPrevious := snapshotBytes(t, filepath.Join(install, previousDirectory))
+	if len(afterPrevious) != len(originalPrevious) {
+		t.Fatal("B previous file set changed")
+	}
+	for path, want := range originalPrevious {
+		if afterPrevious[path] != want {
+			t.Fatalf("B previous changed after C failure: %s", path)
+		}
+	}
+	afterInfo := previousVersionInfo(install)
+	if !afterInfo.Available || afterInfo.Version != beforeInfo.Version {
+		t.Fatal("B previous is unavailable after C failure", afterInfo)
+	}
+	assertPrivateFuture(t, install)
+}
+
+func TestDisplacedPreviousSnapshotIsRetainedUntilSuccessfulStartup(t *testing.T) {
+	if !runtimeWindows() {
+		t.Skip("Windows rollback")
+	}
+	archive, install, _, options := rollbackFixture(t)
+	if err := installUpdate(archive, install, options); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotBytes(t, filepath.Join(install, previousDirectory))
+	next := nextUpdateFixture(t, archive, install, options)
+	checked := false
+	next.start = func(string) error {
+		retired, _ := filepath.Glob(filepath.Join(install, ".greenrhythm-retired-*"))
+		if len(retired) != 1 {
+			t.Errorf("previous B was discarded before C startup: %v", retired)
+			return errors.New("missing B")
+		}
+		bytes := snapshotBytes(t, retired[0])
+		if len(bytes) != len(before) {
+			t.Error("retired B file set changed before C startup")
+		}
+		for path, want := range before {
+			if bytes[path] != want {
+				t.Errorf("retired B changed before C startup: %s", path)
+			}
+		}
+		checked = true
+		return nil
+	}
+	if err := installUpdate(archive, install, next); err != nil {
+		t.Fatal(err)
+	}
+	retired, _ := filepath.Glob(filepath.Join(install, ".greenrhythm-retired-*"))
+	if !checked || len(retired) != 0 {
+		t.Fatal("retired B was not discarded after successful C startup", retired)
+	}
+	info := previousVersionInfo(install)
+	if !info.Available || info.Version != "v1.9.2.3" {
+		t.Fatal("A is not offered as previous after successful C startup", info)
+	}
+	assertPrivateFuture(t, install)
+}

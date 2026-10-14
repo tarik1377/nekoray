@@ -251,36 +251,66 @@ func prepareSnapshot(install, source string, record *installationRecord) (string
 	}
 	return candidate, nil
 }
-func publishSnapshot(install, candidate string) error {
+
+type snapshotPublication struct {
+	previous, candidate, retired string
+}
+
+// Retain the displaced snapshot until the new application has passed its
+// startup check. A failure must restore both current runtime A and previous B.
+func beginSnapshotPublication(install, candidate string) (*snapshotPublication, error) {
 	previous := filepath.Join(install, previousDirectory)
 	retired := ""
 	if _, err := os.Lstat(previous); err == nil {
 		info, err := os.Lstat(previous)
 		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return errors.New("небезопасная папка предыдущей версии")
+			return nil, errors.New("небезопасная папка предыдущей версии")
 		}
 		retired, err = os.MkdirTemp(install, ".greenrhythm-retired-")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if err = os.Remove(retired); err != nil {
-			return err
+			return nil, err
 		}
 		if err = os.Rename(previous, retired); err != nil {
-			return fmt.Errorf("предыдущая резервная версия занята; установка отменена: %w", err)
+			return nil, fmt.Errorf("предыдущая резервная версия занята; установка отменена: %w", err)
 		}
 	} else if !os.IsNotExist(err) {
-		return err
+		return nil, err
 	}
 	if err := os.Rename(candidate, previous); err != nil {
 		if retired != "" {
-			return errors.Join(err, os.Rename(retired, previous))
+			return nil, errors.Join(err, os.Rename(retired, previous))
 		}
+		return nil, err
+	}
+	return &snapshotPublication{previous: previous, candidate: candidate, retired: retired}, nil
+}
+func (publication *snapshotPublication) commit() {
+	if publication.retired != "" {
+		_ = os.RemoveAll(publication.retired)
+	}
+}
+func (publication *snapshotPublication) rollback() error {
+	if err := os.Rename(publication.previous, publication.candidate); err != nil {
+		return fmt.Errorf("не удалось вернуть прежний снимок; его файлы сохранены в %s: %w", publication.retired, err)
+	}
+	if publication.retired != "" {
+		if err := os.Rename(publication.retired, publication.previous); err != nil {
+			// Keep both copies if restoring the original snapshot is blocked.
+			fallbackErr := os.Rename(publication.candidate, publication.previous)
+			return fmt.Errorf("не удалось вернуть прежний снимок; его файлы сохранены в %s: %w", publication.retired, errors.Join(err, fallbackErr))
+		}
+	}
+	return nil
+}
+func publishSnapshot(install, candidate string) error {
+	publication, err := beginSnapshotPublication(install, candidate)
+	if err != nil {
 		return err
 	}
-	if retired != "" {
-		_ = os.RemoveAll(retired)
-	}
+	publication.commit()
 	return nil
 }
 func loadPrevious(install string) (*installationRecord, error) {
