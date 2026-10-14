@@ -31,6 +31,8 @@ reload prompt for an existing connection. Merely opening preview, cancelling
 it, choosing Keep or installing an update does not interrupt a connection.
 The preview includes unsaved changes visible in the route editor; its backup
 always captures the previously saved scheme.
+Empty editor fields explicitly clear their saved values. Unsaved global-rule
+changes must first be saved with OK before Apply or Restore can proceed.
 
 Backups contain route JSON only, never profiles or subscriptions. They live in
 `config/route_backups` outside `routes_box`, so they cannot appear as selectable
@@ -44,6 +46,9 @@ The small **Return previous rules** link restores the last committed backup
 byte-for-byte, including unknown fields, user process rules and formatting.
 It refuses to overwrite later edits or load a backup for another scheme.
 Restore failures also roll back; unlocking the affected file permits retry.
+Active memory is rebuilt from the saved scheme's empty schema, including after
+rollback failures. Startup uses that same empty schema for existing files;
+omitted fields cannot silently reintroduce the bundled preset after a restart.
 
 The policy reads the selected scheme and its settings file only. It does not
 edit network interfaces, OS routes, system proxy, subscriptions or running

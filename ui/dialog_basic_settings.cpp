@@ -104,7 +104,8 @@ DialogBasicSettings::DialogBasicSettings(QWidget *parent)
     connect(ui->rollback_version, &QPushButton::clicked, this, [this] {
         const auto version = ui->rollback_version->property("rollbackVersion").toString();
         if (version.isEmpty() || QMessageBox::question(this, tr("Откатить версию"),
-            tr("Вернуть GreenRhythm %1?\n\nСерверы, подписки и настройки останутся текущими. "
+            tr("Вернуть GreenRhythm %1?\n\nУстановщик сохранит текущие серверы, подписки и настройки. "
+               "Старая версия может сбросить новые настройки выбора дефолтных маршрутов при своём сохранении. "
                "Для замены программы подключение закроется, окно установки покажет ход возврата и запустит сохранённую версию.").arg(version),
                QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
         if (!GreenRhythm::Rollback::launch(QApplication::applicationDirPath(), [] { MW_dialog_message("", "ExitForRollback"); })) {

@@ -1,17 +1,23 @@
 #include "db/ConfigBuilder.hpp"
 #include "fmt/includes.h"
 #include "main/HTTPRequestHelper.hpp"
+#include "main/RouteState.hpp"
 #include "sub/GroupUpdater.hpp"
 
 #include <QApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QTemporaryDir>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QUrlQuery>
 #include <iostream>
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 
 namespace {
 int failures = 0, checks = 0;
@@ -32,6 +38,76 @@ void write(const QString &path, const QByteArray &bytes) {
     QFile f(path);
     check(f.open(QIODevice::WriteOnly) && f.write(bytes) == bytes.size(), "private runtime config written");
 }
+struct FixtureStore : JsonStore {
+    QString known;
+    int number = 0;
+    QString nestedKnown;
+    JsonStore nested;
+    explicit FixtureStore(const QString &path) : JsonStore(path) {
+        _add(new configItem("known", &known, itemType::string));
+        _add(new configItem("number", &number, itemType::integer));
+        _add(new configItem("nested", &nested, itemType::jsonStore));
+        nested._add(new configItem("known", &nestedKnown, itemType::string));
+    }
+};
+void testJsonStoreRoundTrip() {
+    const auto path = QStringLiteral("groups/jsonstore-fixture.json");
+    const QJsonObject future{{"object", QJsonObject{{"opaque", 42}}},
+        {"array", QJsonArray{1, QStringLiteral("keep"), QJsonValue::Null}}};
+    const QJsonObject nestedFuture{{"deep", QJsonArray{true, 3.5}}};
+    const QJsonObject input{{"known", "before"}, {"number", 7}, {"future", future},
+        {"nested", QJsonObject{{"known", "nested-before"}, {"future", nestedFuture}}}};
+    write(path, QJsonDocument(input).toJson());
+    FixtureStore store(path);
+    check(store.Load() && store.known == "before", "actual JsonStore loads known and future settings from isolated file");
+    store.known = "after"; store.nestedKnown = "nested-after";
+    check(store.Save(), "actual JsonStore commits changed known values atomically");
+    const auto saved = QJsonDocument::fromJson(read(path)).object();
+    check(saved.value("known") == "after" && saved.value("future") == future,
+          "load-edit-save keeps unknown object and array fields");
+    check(saved.value("nested").toObject().value("known") == "nested-after"
+        && saved.value("nested").toObject().value("future") == nestedFuture,
+          "nested JsonStore preserves its own unknown fields");
+    store.known.clear(); store.nestedKnown.clear();
+    const auto emptyKnown = store.ToJson();
+    check(!emptyKnown.contains("known") && !emptyKnown.value("nested").toObject().contains("known"),
+          "known empty strings are removed instead of restored from old JSON");
+    check(!store.ToJson({"future", "nested"}).contains("future") && !store.ToJson({"future", "nested"}).contains("nested"),
+          "without suppresses unknown fields and registered nested values");
+    store.FromJson(QJsonObject{{"known", "replacement"}, {"nested", QJsonObject{{"known", "fresh"}}}, {"new-future", QJsonArray{4}}});
+    const auto replacement = store.ToJson();
+    check(!replacement.contains("future") && replacement.value("new-future").isArray()
+        && !replacement.value("nested").toObject().contains("future"),
+          "repeated FromJson replaces unknown fields without retaining stale root or nested data");
+    store.FromJson(QJsonObject{{"late-known", "old-value"}});
+    QString lateKnown;
+    store._add(new configItem("late-known", &lateKnown, itemType::string));
+    check(!store.ToJson().contains("late-known"), "newly registered empty value supersedes a former unknown field");
+    store.known = "durable";
+    check(store.Save() && !store.Save(), "Save preserves legacy changed versus unchanged result after successful commit");
+    const auto durableBytes = read(path);
+    const auto durableLastSave = store.last_save_content;
+    store.known = "retry-value";
+#ifdef Q_OS_WIN
+    const auto nativePath = QDir::toNativeSeparators(QFileInfo(path).absoluteFilePath());
+    const HANDLE handle = CreateFileW(reinterpret_cast<LPCWSTR>(nativePath.utf16()), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    check(handle != INVALID_HANDLE_VALUE, "Windows fixture holds target against replacement without blocking reads");
+    if (handle != INVALID_HANDLE_VALUE) {
+        check(!store.Save() && read(path) == durableBytes && store.last_save_content == durableLastSave,
+              "failed atomic replacement preserves existing bytes and committed-content marker");
+        CloseHandle(handle);
+        check(store.Save() && QJsonDocument::fromJson(read(path)).object().value("known") == "retry-value"
+            && store.last_save_content != durableLastSave, "Save retries the pending change after releasing Windows lock");
+    }
+#endif
+    const auto lastSuccessful = store.last_save_content;
+    store.known = "cannot-write";
+    store.fn = "nonexistent-parent/jsonstore.json";
+    check(!store.Save() && store.last_save_content == lastSuccessful && !QFileInfo::exists(store.fn),
+          "failed open never claims content was saved or creates a partial target");
+    store.fn = path;
+    check(store.Save(), "retry after failed open still commits a real pending change");
+}
 }
 
 int main(int argc, char **argv) {
@@ -44,6 +120,46 @@ int main(int argc, char **argv) {
     NekoGui::dataStore->current_group = 0;
     NekoGui::dataStore->routing = std::make_unique<NekoGui::Routing>();
     NekoGui::profileManager->LoadManager();
+
+    // Exercise the same complete snapshot and replacement helpers used by the
+    // route dialog, with the real Routing constructor/JsonStore implementation.
+    const QJsonObject savedRoute{{"def_outbound", "proxy"}, {"future", QJsonObject{{"keep", 7}}},
+        {"proxy_domain", "full:old-proxy.example"}, {"custom", "{\"rules\":[{\"process_name\":\"old.exe\",\"outbound\":\"proxy\"}]}"},
+        {"local_dns_domains", "domain:office.example"}, {"local_dns_server", "10.60.0.53"},
+        {"local_dns_hosts", "git.office.example=10.60.1.10"}};
+    NekoGui::Routing cleared(0);
+    cleared.custom.clear();
+    const auto mergedClears = GreenRhythm::RouteState::mergeEditor(savedRoute, cleared);
+    for (const auto &field : {"proxy_domain", "custom", "local_dns_domains", "local_dns_server", "local_dns_hosts"})
+        check(mergedClears.contains(field) && mergedClears.value(field).isString() && mergedClears.value(field).toString().isEmpty(),
+              "route-editor clearing remains an explicit empty saved value");
+    check(mergedClears.value("future") == savedRoute.value("future"), "route-editor merging retains unknown saved fields");
+    auto restoredMemory = std::make_unique<NekoGui::Routing>(1);
+    restoredMemory->FromJson(savedRoute);
+    const QJsonObject absentFields{{"def_outbound", "proxy"}, {"future", QJsonObject{{"keep", 7}}}};
+    GreenRhythm::RouteState::installSaved(restoredMemory, absentFields, "routes_box/Restored");
+    check(restoredMemory->proxy_domain.isEmpty() && restoredMemory->custom == "{\"rules\": []}"
+          && restoredMemory->direct_domain.isEmpty() && restoredMemory->local_dns_server.isEmpty()
+          && restoredMemory->local_dns_domains.isEmpty() && restoredMemory->local_dns_hosts.isEmpty(),
+          "restore starts from empty Routing schema and never retains absent old rules or scoped DNS");
+    check(restoredMemory->fn == "routes_box/Restored", "replacement retains the committed scheme path");
+    GreenRhythm::RouteState::installSaved(restoredMemory, {}, "routes_box/EmptyRestored");
+    check(restoredMemory->direct_domain.isEmpty() && restoredMemory->proxy_domain.isEmpty()
+          && restoredMemory->custom == "{\"rules\": []}", "valid empty snapshot also resets all prior route state");
+    GreenRhythm::RouteState::installSaved(restoredMemory, mergedClears, "routes_box/Cleared");
+    check(restoredMemory->custom.isEmpty() && restoredMemory->proxy_domain.isEmpty()
+          && restoredMemory->local_dns_server.isEmpty(), "explicit empty fields are also empty in active memory");
+    const auto existingPath = QStringLiteral("routes_box/ExistingMissingFields");
+    write(existingPath, QJsonDocument(absentFields).toJson());
+    auto afterRestart = GreenRhythm::RouteState::initialForPath(existingPath);
+    check(afterRestart->Load() && afterRestart->custom == "{\"rules\": []}"
+          && afterRestart->direct_domain.isEmpty() && afterRestart->proxy_domain.isEmpty(),
+          "startup of existing scheme does not reinsert omitted bundled rules");
+    auto freshScheme = GreenRhythm::RouteState::initialForPath("routes_box/NeverCreated");
+    check(freshScheme->direct_domain.contains("domain:ru") && freshScheme->custom.contains("Squad")
+          && freshScheme->dns_final_out == "proxy", "new scheme still starts with the current bundled preset");
+
+    testJsonStoreRoundTrip();
 
     auto plain = NekoGui::ProfileManager::NewProxyEntity("vless");
     check(plain->TrojanVLESSBean()->TryParseLink(fixture()), "plain REALITY link parses");

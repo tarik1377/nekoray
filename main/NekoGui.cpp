@@ -4,6 +4,7 @@
 #include "DefaultRoutes.hpp"
 
 #include <QFile>
+#include <QSaveFile>
 #include <QDir>
 #include <QApplication>
 #include <QFileInfo>
@@ -68,9 +69,14 @@ namespace NekoGui_ConfigItem {
     }
 
     QJsonObject JsonStore::ToJson(const QStringList &without) {
-        QJsonObject object;
+        QJsonObject object = unknown_fields;
+        for (const auto &name : without) object.remove(name);
+        // A field may become registered after loading. Its current value wins;
+        // empty known strings must not resurrect their old unknown value.
+        for (auto item = _map.constBegin(); item != _map.constEnd(); ++item) object.remove(item.key());
         for (const auto &_item: _map) {
             auto item = _item.get();
+            if (item == nullptr) continue;
             if (without.contains(item->name)) continue;
             switch (item->type) {
                 case itemType::string:
@@ -110,8 +116,10 @@ namespace NekoGui_ConfigItem {
     }
 
     void JsonStore::FromJson(QJsonObject object) {
+        unknown_fields = {};
         for (const auto &key: object.keys()) {
             if (_map.count(key) == 0) {
+                unknown_fields.insert(key, object.value(key));
                 continue;
             }
 
@@ -188,14 +196,18 @@ namespace NekoGui_ConfigItem {
         if (save_control_no_save) return false;
 
         auto save_content = ToJsonBytes();
-        auto changed = last_save_content != save_content;
+        const auto changed = last_save_content != save_content;
+        QSaveFile file(fn);
+        // Never fall back to truncating the only existing configuration file.
+        file.setDirectWriteFallback(false);
+        if (!file.open(QIODevice::WriteOnly) || file.write(save_content) != save_content.size() || !file.commit()) {
+            // Neither content, credentials nor the user-chosen filename enter
+            // the warning. Keep last_save_content unchanged so a retry remains
+            // a real change after permissions/locks are repaired.
+            qWarning("Configuration save failed; previous file retained.");
+            return false;
+        }
         last_save_content = save_content;
-
-        QFile file;
-        file.setFileName(fn);
-        file.open(QIODevice::ReadWrite | QIODevice::Truncate);
-        file.write(save_content);
-        file.close();
 
         return changed;
     }

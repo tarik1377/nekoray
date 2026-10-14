@@ -19,6 +19,7 @@ struct Result {
     bool success = false;
     bool rollbackFailed = false;
     bool routeChanged = false;
+    bool hasScheme = false; // distinguishes a valid empty scheme from a failed read
     QJsonObject scheme;
     QJsonObject settings;
     QString error;

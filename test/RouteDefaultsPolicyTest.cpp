@@ -88,7 +88,7 @@ int main(int argc, char **argv) {
     check(result.settings["future"].toObject()["keep"] == 7 && result.settings["vpn_impl"] == 1, "keep preserves other settings and explicit System");
     write(settings, originalSettings);
     result = Policy::apply(route, settings, safe, original);
-    check(result.success && result.routeChanged && result.scheme == safe.after
+    check(result.success && result.hasScheme && result.routeChanged && result.scheme == safe.after
           && Policy::canRestore(route, result.settings), "apply atomically commits preview and restorable backup");
     const auto applied = read(route);
     result = Policy::restore(route, settings);

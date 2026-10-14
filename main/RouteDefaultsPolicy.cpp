@@ -119,11 +119,12 @@ Result commit(const QString &routePath, const QString &settingsPath, const QByte
         if (result.routeChanged && !writeBytes(routePath, beforeRoute, &error)) {
             result.rollbackFailed = true;
             result.error += QStringLiteral("; не удалось вернуть маршруты: ") + error;
-            readRoute(routePath, &result.scheme);
+            result.hasScheme = readRoute(routePath, &result.scheme);
         }
         return result;
     }
     result.scheme = QJsonDocument::fromJson(afterRoute).object();
+    result.hasScheme = true;
     result.settings = settings;
     result.success = true;
     return result;
