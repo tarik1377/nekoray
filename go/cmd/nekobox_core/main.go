@@ -131,9 +131,9 @@ func runStandalone(args []string) int {
 	<-stop
 
 	fmt.Println("stopping")
+	cancel()
 	if err := instance.Close(); err != nil {
 		fmt.Fprintln(os.Stderr, "run: on shutdown:", err)
 	}
-	cancel()
 	return 0
 }
