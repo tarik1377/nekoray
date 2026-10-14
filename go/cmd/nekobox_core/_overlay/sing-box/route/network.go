@@ -17,6 +17,7 @@ import (
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/settings"
 	"github.com/sagernet/sing-box/common/taskmonitor"
+	"github.com/sagernet/sing-box/common/workvpn"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-tun"
@@ -58,6 +59,7 @@ type NetworkManager struct {
 	wifiState              adapter.WIFIState
 	wifiStateMutex         sync.RWMutex
 	started                bool
+	workVPN                *workvpn.Manager
 }
 
 func NewNetworkManager(ctx context.Context, logger logger.ContextLogger, options option.RouteOptions, dnsOptions option.DNSOptions) (*NetworkManager, error) {
@@ -97,6 +99,7 @@ func NewNetworkManager(ctx context.Context, logger logger.ContextLogger, options
 		inbound:           service.FromContext[adapter.InboundManager](ctx),
 		outbound:          service.FromContext[adapter.OutboundManager](ctx),
 		needWIFIState:     hasRule(options.Rules, isWIFIRule) || hasDNSRule(dnsOptions.Rules, isWIFIDNSRule),
+		workVPN:           service.FromContext[*workvpn.Manager](ctx),
 	}
 	if options.DefaultNetworkStrategy != nil {
 		if options.DefaultInterface != "" {
@@ -353,6 +356,11 @@ func (r *NetworkManager) AutoDetectInterfaceFunc() control.Func {
 		return control.BindToInterfaceFunc(r.interfaceFinder, func(network string, address string) (interfaceName string, interfaceIndex int, err error) {
 			remoteAddr := M.ParseSocksaddr(address).Addr
 			if remoteAddr.IsValid() {
+				if r.workVPN != nil {
+					if name, index, ok := r.workVPN.Interface(remoteAddr); ok {
+						return name, index, nil
+					}
+				}
 				iif, err := r.interfaceFinder.ByAddr(remoteAddr)
 				if err == nil {
 					return iif.Name, iif.Index, nil
@@ -457,6 +465,9 @@ func (r *NetworkManager) UpdateWIFIState() {
 }
 
 func (r *NetworkManager) ResetNetwork() {
+	if r.workVPN != nil {
+		r.workVPN.Reset()
+	}
 	if r.connectionManager != nil {
 		r.connectionManager.CloseAll()
 	}

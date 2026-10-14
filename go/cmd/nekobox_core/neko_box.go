@@ -52,6 +52,10 @@ func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
 	} else {
 		configJSON = transformed
 	}
+	configJSON, workVPNEnabled, err := extractWorkVPNOption(configJSON)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// Write the debug config only in debug mode — it contains secrets (inbound auth
 	// password, clash secret, outbound credentials) and was previously written to a
@@ -67,6 +71,12 @@ func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
 	if err != nil {
 		cancel()
 		return nil, nil, err
+	}
+	if workVPNEnabled {
+		if err := configureWorkVPN(ctx, &options); err != nil {
+			cancel()
+			return nil, nil, err
+		}
 	}
 
 	instance, err := box.New(box.Options{

@@ -28,6 +28,7 @@ func TestPrivateDestinationInterface(t *testing.T) {
 	}
 	for _, iface := range []privateRouteInterface{
 		{name: "neko-tun", index: 17, up: true},
+		{name: "v2RayTun", index: 17, up: true},
 		{name: "Renamed adapter", description: "sing-tun Tunnel", index: 17, up: true},
 		{name: "Work VPN", index: 7, up: false},
 		{name: "Work VPN", index: 0, up: true},

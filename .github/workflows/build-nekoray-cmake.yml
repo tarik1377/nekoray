@@ -104,6 +104,7 @@ jobs:
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" ./...
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/common/tls -run TestRealityMLDSA65
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/route -run TestPrivateDestinationInterface
+            go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/common/workvpn github.com/sagernet/sing-box/dns github.com/sagernet/sing-box/route/rule -run TestWorkVPN
           )
           # Свой модуль, поэтому в перечисление выше он не попадал. Здесь
           # лежит проверка на обход каталога при распаковке обновления:
