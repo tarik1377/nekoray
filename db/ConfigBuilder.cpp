@@ -782,7 +782,7 @@ namespace NekoGui {
             status->routingRulesDns += GreenRhythm::LocalDns::hostsResolveRule(localHosts, dataStore->routing->direct_dns_strategy);
         }
         if (!localDnsDomains.isEmpty()) {
-            status->routingRulesDns += GreenRhythm::LocalDns::resolveRule(localDnsDomains, dataStore->routing->direct_dns_strategy);
+            status->routingRulesDns += GreenRhythm::LocalDns::resolveRule(localDnsDomains, dataStore->routing->direct_dns_strategy, localHosts.keys());
         }
 
         // sing-box routing rule object
@@ -1006,9 +1006,16 @@ namespace NekoGui {
             routingRules = shaped;
         }
 
+        bool autoDetectInterface = dataStore->spmode_vpn;
+#ifdef Q_OS_WIN
+        // A proxy-only core must also avoid entering another proxy TUN when
+        // dialing its server or downloading rule sets. The core preserves the
+        // OS routes to local/work networks when selecting the actual interface.
+        autoDetectInterface = true;
+#endif
         auto routeObj = QJsonObject{
             {"rules", routingRules},
-            {"auto_detect_interface", dataStore->spmode_vpn}, // TODO force enable?
+            {"auto_detect_interface", autoDetectInterface},
             {
                 "geoip",
                 QJsonObject{

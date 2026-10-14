@@ -80,6 +80,11 @@ int main(int argc, char **argv) {
     check(GreenRhythm::LocalDns::hostsResolveRule(hosts).value("domain").toArray().size() == 2,
           "internal addresses resolve before destination IP routing");
     check(GreenRhythm::LocalDns::hostsResolveRule({}).isEmpty(), "empty host map adds no resolve action");
+    const auto scoped = GreenRhythm::LocalDns::resolveRule({"corp.example"}, "ipv4_only", hosts.keys());
+    check(scoped.value("type") == "logical" && scoped.value("mode") == "and"
+          && scoped.value("rules").toArray().last().toObject().value("invert").toBool()
+          && scoped.value("rules").toArray().last().toObject().value("domain").toArray().size() == 2,
+          "fixed internal hosts are not resolved a second time by scoped VPN DNS");
     std::printf("Local VPN DNS: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

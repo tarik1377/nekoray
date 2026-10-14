@@ -1,5 +1,7 @@
 # Release
-file(STRINGS nekoray_version.txt NKR_VERSION)
+if (NOT DEFINED NKR_VERSION)
+    file(STRINGS nekoray_version.txt NKR_VERSION)
+endif ()
 add_compile_definitions(NKR_VERSION=\"${NKR_VERSION}\")
 
 # Debug

@@ -823,7 +823,7 @@ target_include_directories(local_dns_test PRIVATE ${CMAKE_SOURCE_DIR})
 
 add_executable(import_integration_test EXCLUDE_FROM_ALL
         test/ImportIntegrationTest.cpp
-        main/NekoGui.cpp main/NekoGui_Utils.cpp main/VideoRoutes.cpp main/LocalDns.cpp
+        main/NekoGui.cpp main/NekoGui_Utils.cpp main/VideoRoutes.cpp main/DefaultRoutes.cpp main/LocalDns.cpp
         main/HTTPRequestHelper.cpp main/DeviceCredentials.cpp main/RelayTrace.cpp
         main/RelayComponent.cpp main/RelayComponentParse.cpp main/RelayActivation.cpp main/RelayActivationParse.cpp
         db/Database.cpp db/ProfileFilter.cpp db/ConfigBuilder.cpp
@@ -836,7 +836,7 @@ target_link_libraries(import_integration_test PRIVATE Qt${QT_VERSION_MAJOR}::Wid
         Qt${QT_VERSION_MAJOR}::Svg ${NKR_EXTERNAL_TARGETS} ${PLATFORM_LIBRARIES})
 
 add_executable(sidebar_actions_test EXCLUDE_FROM_ALL test/SidebarActionsTest.cpp
-        ui/MainShell.cpp ui/Icons.cpp ui/ServerCardDelegate.cpp res/neko.qrc)
+        ui/MainShell.cpp ui/Icons.cpp ui/ServerCardDelegate.cpp main/AppFont.cpp res/neko.qrc)
 set_target_properties(sidebar_actions_test PROPERTIES AUTOMOC ON AUTORCC ON)
 target_include_directories(sidebar_actions_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(sidebar_actions_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg)
@@ -866,6 +866,8 @@ target_include_directories(program_watch_lifetime_test PRIVATE ${CMAKE_SOURCE_DI
 target_link_libraries(program_watch_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
 set(GR_TEST_TARGETS
+        import_integration_test
+        sidebar_actions_test
         system_routes_patch_test
         default_routes_test
         http_outage_test
@@ -910,6 +912,10 @@ if (NOT NKR_NO_GRPC)
     target_include_directories(update_actions_test PRIVATE ${CMAKE_SOURCE_DIR})
     target_link_libraries(update_actions_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets myproto)
     list(APPEND GR_TEST_TARGETS update_actions_test)
+    add_executable(update_progress_test EXCLUDE_FROM_ALL test/UpdateProgressTest.cpp)
+    target_include_directories(update_progress_test PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(update_progress_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+    list(APPEND GR_TEST_TARGETS update_progress_test)
     list(APPEND GR_TEST_TARGETS traffic_update_queue_test)
 endif ()
 add_custom_target(build-tests DEPENDS ${GR_TEST_TARGETS})

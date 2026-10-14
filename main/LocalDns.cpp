@@ -67,9 +67,17 @@ void addToDns(QJsonObject &dns, const QStringList &domains, const QString &serve
     dns.insert("rules", rules);
 }
 
-QJsonObject resolveRule(const QStringList &domains, const QString &strategy) {
+QJsonObject resolveRule(const QStringList &domains, const QString &strategy, const QStringList &fixedHosts) {
     if (domains.isEmpty()) return {};
     QJsonObject rule{{"domain_suffix", values(domains)}, {"action", "resolve"}, {"server", tag}};
+    if (!fixedHosts.isEmpty()) {
+        rule.remove("domain_suffix");
+        rule.insert("type", "logical");
+        rule.insert("mode", "and");
+        rule.insert("rules", QJsonArray{
+            QJsonObject{{"domain_suffix", values(domains)}},
+            QJsonObject{{"domain", values(fixedHosts)}, {"invert", true}}});
+    }
     if (!strategy.isEmpty()) rule.insert("strategy", strategy);
     return rule;
 }

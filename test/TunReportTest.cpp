@@ -1,10 +1,8 @@
 /**
  * Отчёт о туннеле не смеет врать про стек.
  *
- * ПОЧЕМУ ЭТОТ НАБОР ЕСТЬ. Выбранный человеком стек и стек, который реально
- * применит ядро, — разные вещи: normalizeTunStack в Go превращает «gvisor» и
- * пустое значение в «mixed», потому что чистый gvisor рвёт соединения на части
- * машин с Windows. «system» при этом уважается.
+ * normalizeTunStack сохраняет явный выбор и задаёт System только при его
+ * отсутствии. Диагностика обязана показывать такое же правило.
  *
  * Диагностика показывает оба значения, и второе она вычисляет СВОЕЙ копией того
  * же правила — на C++, в другом файле, на другом языке. Копия и оригинал могут
@@ -84,24 +82,26 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // Что ядро подменяет: тело normalizeTunStack.
+    // Only an absent value is normalized; explicit selections survive.
     const int at = go.indexOf(QStringLiteral("func normalizeTunStack"));
     is(QStringLiteral("normalizeTunStack найдена в ядре"), at >= 0);
     const QString fn = functionBody(go, at);
 
-    const bool goMapsGvisor = fn.contains(QStringLiteral("\"gvisor\"")) && fn.contains(QStringLiteral("\"mixed\""));
-    is(QStringLiteral("ядро подменяет gvisor на mixed"), goMapsGvisor);
+    is(QStringLiteral("ядро сохраняет явный выбор стека"),
+       fn.contains(QStringLiteral("return stack"))
+       && !fn.contains(QStringLiteral("\"gvisor\"")) && !fn.contains(QStringLiteral("\"mixed\"")));
+    is(QStringLiteral("пустой выбор получает System"),
+       fn.contains(QStringLiteral("stack == \"\"")) && fn.contains(QStringLiteral("return \"system\"")));
 
-    // Ядро НЕ трогает system: на этом держится ответ «system работать должен».
-    is(QStringLiteral("ядро не подменяет system"), !fn.contains(QStringLiteral("\"system\"")));
-
-    // Та же подмена обязана быть в отчёте.
+    // The report must use the same default without overriding explicit choices.
     const int ub = ui.indexOf(QStringLiteral("MainWindow::tun_diagnostics_block"));
     is(QStringLiteral("блок отчёта найден в окне"), ub >= 0);
     const QString block = functionBody(ui, ub);
 
-    is(QStringLiteral("отчёт знает про подмену gvisor на mixed"),
-       block.contains(QStringLiteral("\"gvisor\"")) && block.contains(QStringLiteral("\"mixed\"")));
+    is(QStringLiteral("отчёт сохраняет выбор, пустой получает System"),
+       block.contains(QStringLiteral("chosen.isEmpty()"))
+       && block.contains(QStringLiteral("QStringLiteral(\"system\")"))
+       && !block.contains(QStringLiteral("QStringLiteral(\"mixed\")")));
 
     // Оба значения, а не одно: ради этого набор и написан.
     is(QStringLiteral("отчёт печатает и выбранное, и применённое"),
