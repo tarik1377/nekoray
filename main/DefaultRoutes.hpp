@@ -14,4 +14,11 @@ FileResult migrateFile(const QString &path, QString *loadedBlockDomains = nullpt
                        QString *error = nullptr);
 bool markComplete(const QString &settingsPath, QString *error = nullptr);
 
+// Repair only the complete inherited RU DNS tuple. DNS objects, custom server
+// choices, scoped DNS/hosts and all routing fields are preserved.
+QJsonObject repairDns(const QJsonObject &scheme);
+FileResult repairDnsFile(const QString &path, QString *loadedDirectDns = nullptr,
+                         QString *loadedFinalOutbound = nullptr, QString *error = nullptr);
+bool markDnsComplete(const QString &settingsPath, QString *error = nullptr);
+
 } // namespace GreenRhythm::DefaultRoutes

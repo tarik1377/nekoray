@@ -16,7 +16,7 @@ namespace NekoGui {
         // DNS
         QString remote_dns = "https://1.1.1.1/dns-query";
         QString remote_dns_strategy = "ipv4_only";
-        QString direct_dns = "77.88.8.8";
+        QString direct_dns = "https://1.1.1.1/dns-query";
         QString direct_dns_strategy = "ipv4_only";
         QString local_dns_domains;
         QString local_dns_server;
@@ -56,6 +56,8 @@ namespace NekoGui {
         static bool MigrateVideosAll(int *changed = nullptr);
 
         static bool MigrateDefaultAdsAll(int *changed = nullptr);
+
+        static bool MigrateDefaultDnsAll(int *changed = nullptr);
     };
 
     class ExtraCore : public JsonStore {
@@ -206,6 +208,7 @@ namespace NekoGui {
         bool vpn_internal_tun = true;
         int vpn_implementation = 1; // Preset::SingBox::VpnImplementation: System
         bool routing_ads_removed = false;
+        bool routing_dns_repaired = false;
         int vpn_mtu = 1500;
         bool vpn_ipv6 = false;
         bool vpn_hide_console = true;

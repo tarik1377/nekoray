@@ -92,6 +92,10 @@ Ordinary configured System/Local DNS retains its existing Windows behaviour;
 this feature does not promise that a separately configured OS DNS policy will
 avoid corporate servers. The guarantee is that this feature adds no corporate
 probe for successful ordinary names and does not redirect general IP traffic.
+The app's RU preset uses direct DoH for explicitly direct domains and proxy DoH
+for unmatched names. Only the exact inherited RU DNS defaults are migrated;
+this mechanism does not override a user's custom DNS policy. An unreachable
+or disconnected work VPN is still an error, regardless of the public DNS path.
 Unidentified VPN drivers and complex NRPT security policies require a separate
 supported integration. Real TUN startup and reconnect under traffic must be
 checked separately without disturbing active user sessions.

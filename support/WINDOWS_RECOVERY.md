@@ -22,6 +22,18 @@ updater recognises it and will not offer the older v1.9.2 as an upgrade.
 * Windows configurations discover work VPN routes and scoped/negative DNS
   fallback automatically. No corporate service names or addresses are bundled.
   See [work VPN policy and limits](../patches/windows-work-vpn.md).
+* The RU preset uses `https://1.1.1.1/dns-query` on the direct DNS path and on
+  the proxy DNS path. Explicit direct domains retain direct DNS; unmatched
+  names use the proxy DNS path. A blocked local UDP resolver can no longer
+  prevent otherwise reachable VPN destinations from resolving.
+* Existing RU schemes receive that DNS change only when they match the complete
+  inherited tuple: direct `77.88.8.8`, remote Cloudflare DoH, both IPv4-only
+  strategies, simple/routed DNS, proxy traffic final, proxy or bypass DNS final,
+  and the `domain:ru`, `domain:su`, `geoip:ru` signature. Custom DNS choices,
+  DNS objects, scoped DNS/hosts, routes and unknown fields are retained. Atomic
+  scheme commits synchronize active memory before the one-shot
+  `routing_dns_repaired` settings marker is committed. Failed writes retry on
+  the next startup. The earlier QUIC migration no longer changes the DNS final.
 * The exact inherited `geosite:category-ads-all` selector is removed from saved
   schemes. Other selectors and settings are retained.
 * Logs, routes and purchase are accessible from the sidebar. The updater shows
@@ -40,6 +52,9 @@ Test the native TLS verifier, work VPN manager, DNS wrapper, route matcher and
 core integration, including their targeted race tests. Updater tests include
 exclusive Windows file locks, replacement failures, rollback, restart failure
 and retry. Do not treat a mocked or constructor-only TUN as a live packet test.
+`default_routes_test` also exercises the DNS tuple restrictions, preservation
+of scoped/custom settings, active-state mismatches, locked scheme/marker files
+and retries after atomic write failures.
 
 The existing `TestLiveRuleSetReloadsWithoutRestart` exposed an upstream
 `LocalRuleSet` reload race. The overlay now snapshots rule slices under the
@@ -63,3 +78,5 @@ settings. See [the offline tool](SYSTEM_ROUTES.md). A restored connection and
 corporate names need a separate live test when the user can switch clients.
 Another active TUN can deny VPN DNS sockets; this repair does not override its
 firewall or install a corporate certificate authority.
+DNS defaults do not repair a disconnected corporate VPN. Confirm its tunnels,
+routes and DNS reachability before treating corporate resource access as fixed.

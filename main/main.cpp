@@ -405,7 +405,7 @@ int main(int argc, char* argv[]) {
 
     // load routing
     // Preset 1 is the RU preset — QUIC blocked with the public resolvers exempted first,
-    // domestic domains and game/anti-cheat traffic direct, local DNS for direct traffic.
+    // domestic domains and game/anti-cheat traffic direct, with DoH on each DNS path.
     // This used to build preset 0 (an empty rule set), so none of that reached a fresh
     // install; the preset was only ever applied by hand from the routing dialog.
     NekoGui::dataStore->routing = std::make_unique<NekoGui::Routing>(1);
@@ -426,6 +426,21 @@ int main(int argc, char* argv[]) {
             qWarning() << "default ads routing migration will retry on next start" << error;
         }
         if (changed > 0) qInfo() << "default ads selector removed, schemes:" << changed;
+    }
+
+    // The old RU DNS defaults sent unmatched VPN names to local UDP DNS. Repair
+    // only that exact inherited tuple, before restoring a connection. Commit
+    // the settings marker last; partial failures remain retryable on startup.
+    if (!NekoGui::dataStore->routing_dns_repaired) {
+        int changed = 0;
+        QString error;
+        if (NekoGui::Routing::MigrateDefaultDnsAll(&changed)
+            && GreenRhythm::DefaultRoutes::markDnsComplete(NekoGui::dataStore->fn, &error)) {
+            NekoGui::dataStore->routing_dns_repaired = true;
+        } else {
+            qWarning() << "default DNS routing repair will retry on next start" << error;
+        }
+        if (changed > 0) qInfo() << "default DNS routing repaired, schemes:" << changed;
     }
 
     // Before constructing the window/core: the first restored connection must

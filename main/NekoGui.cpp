@@ -268,6 +268,7 @@ namespace NekoGui {
         _add(new configItem("conn_stat", &connection_statistics, itemType::boolean));
         _add(new configItem("vpn_impl", &vpn_implementation, itemType::integer));
         _add(new configItem("routing_ads_removed", &routing_ads_removed, itemType::boolean));
+        _add(new configItem("routing_dns_repaired", &routing_dns_repaired, itemType::boolean));
         _add(new configItem("vpn_mtu", &vpn_mtu, itemType::integer));
         _add(new configItem("vpn_ipv6", &vpn_ipv6, itemType::boolean));
         _add(new configItem("vpn_hide_console", &vpn_hide_console, itemType::boolean));
@@ -333,15 +334,15 @@ namespace NekoGui {
     Routing::Routing(int preset) : JsonStore() {
         if (preset == 1) {
             def_outbound = "proxy";
-            direct_dns = "77.88.8.8";
+            direct_dns = "https://1.1.1.1/dns-query";
             direct_dns_strategy = "ipv4_only";
             remote_dns = "https://1.1.1.1/dns-query";
             remote_dns_strategy = "ipv4_only";
             dns_routing = true;
-            // Direct/bypass traffic must resolve names locally. With "proxy" here every
-            // unmatched DNS query is tunnelled abroad and back, adding seconds of latency
-            // to the very domains we deliberately route direct (RU sites, games, launchers).
-            dns_final_out = "bypass";
+            // Explicit direct domains use DoH on the direct outbound. Unmatched
+            // names follow the proxy, so blocked/spoofed local UDP DNS cannot
+            // prevent VPN destinations from connecting before routing starts.
+            dns_final_out = "proxy";
             sniffing_mode = 1;
             block_domain = "domain:appcenter.ms";
             block_ip = "";
@@ -541,19 +542,12 @@ namespace NekoGui {
     // Deliberately conservative, because this edits a file the customer may have curated:
     //  - the QUIC rules are PREPENDED (order matters, first match wins) and only when the
     //    scheme has no udp/443 or protocol:quic rule of its own;
-    //  - dns_final_out moves only from the exact old default "proxy", so anyone who chose
-    //    something else keeps it;
     //  - a custom rule set we cannot parse is left completely alone — a hand-written
     //    config is worth more than this migration;
     //  - nothing is ever removed, and the domain/IP lists are not touched at all.
     bool Routing::MigrateOne(Routing *r) {
         if (r == nullptr) return false;
         bool changed = false;
-
-        if (r->dns_final_out == "proxy") {
-            r->dns_final_out = "bypass";
-            changed = true;
-        }
 
         const QString original = r->custom.trimmed();
         auto obj = QString2QJsonObject(original);
@@ -766,6 +760,26 @@ namespace NekoGui {
             if (result == GreenRhythm::DefaultRoutes::FileResult::Failed) {
                 complete = false;
                 qWarning() << "default ads routing migration failed:" << name << error;
+            } else if (result == GreenRhythm::DefaultRoutes::FileResult::Updated) {
+                updated++;
+            }
+        }
+        if (changed) *changed = updated;
+        return complete;
+    }
+
+    bool Routing::MigrateDefaultDnsAll(int *changed) {
+        int updated = 0;
+        bool complete = true;
+        for (const auto &name : List()) {
+            const bool active = name == dataStore->active_routing && dataStore->routing;
+            QString error;
+            const auto result = GreenRhythm::DefaultRoutes::repairDnsFile(
+                ROUTES_PREFIX + name, active ? &dataStore->routing->direct_dns : nullptr,
+                active ? &dataStore->routing->dns_final_out : nullptr, &error);
+            if (result == GreenRhythm::DefaultRoutes::FileResult::Failed) {
+                complete = false;
+                qWarning() << "default DNS routing repair failed:" << name << error;
             } else if (result == GreenRhythm::DefaultRoutes::FileResult::Updated) {
                 updated++;
             }
