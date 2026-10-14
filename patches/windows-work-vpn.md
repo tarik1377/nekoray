@@ -1,11 +1,14 @@
 # Windows work VPN discovery
 
-Core-only, opt-in integration for sing-box v1.13.18. Add the top-level boolean
+Core integration for sing-box v1.13.18. The Windows app enables it for its main
+proxy and generated external TUN configurations, including proxy-only mode.
+An exported generic configuration does not include this Windows-only option.
+For other standalone callers, add the top-level boolean
 `"windows_work_vpn": true` to each relevant core configuration (main proxy and
 standalone external TUN). Also set `route.auto_detect_interface: true` and leave
 `route.default_interface` unset. The option defaults to off. The core consumes
 it before sing-box parsing and registers a separate discovery manager per box.
-No GUI, LocalDns, DataStore or legacy-transformer changes are needed here.
+The persistent routing scheme needs no corporate domain or address list.
 
 The core adds one `windows_work_vpn` route condition and a reserved direct
 outbound `greenrhythm-work-vpn`. The rule follows leading sniff/DNS interception/
@@ -90,8 +93,8 @@ this feature does not promise that a separately configured OS DNS policy will
 avoid corporate servers. The guarantee is that this feature adds no corporate
 probe for successful ordinary names and does not redirect general IP traffic.
 Unidentified VPN drivers and complex NRPT security policies require a separate
-supported integration. Real TUN startup, reconnect under traffic, and GUI option
-integration must be checked separately without disturbing active user sessions.
+supported integration. Real TUN startup and reconnect under traffic must be
+checked separately without disturbing active user sessions.
 
 Primary API references: [route table](https://learn.microsoft.com/en-us/windows/win32/api/netioapi/nf-netioapi-getipforwardtable2),
 [effective NRPT](https://learn.microsoft.com/en-us/powershell/module/dnsclient/get-dnsclientnrptpolicy),

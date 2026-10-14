@@ -1035,6 +1035,9 @@ namespace NekoGui {
             routeObj.remove("auto_detect_interface");
         }
         status->result->coreConfig.insert("route", routeObj);
+#ifdef Q_OS_WIN
+        if (!status->forExport) status->result->coreConfig.insert("windows_work_vpn", true);
+#endif
 
         // experimental
         QJsonObject experimentalObj;
@@ -1133,18 +1136,31 @@ namespace NekoGui {
                           .replace("%FAKE_DNS_INBOUND%", dataStore->fake_dns ? "tun-in" : "empty")
                           .replace("%PORT%", Int2String(dataStore->inbound_socks_port));
         const bool diagnosticLog = qEnvironmentVariableIsSet("GREENRHYTHM_TUN_DIAGNOSTICS");
+#ifdef Q_OS_WIN
+        const bool preserveWorkVPN = true;
+#else
+        const bool preserveWorkVPN = false;
+#endif
 #ifdef Q_OS_MACOS
         const bool preserveTunRoutes = true;
 #else
         const bool preserveTunRoutes = false;
 #endif
-        if (diagnosticLog || preserveTunRoutes) {
+        if (diagnosticLog || preserveTunRoutes || preserveWorkVPN) {
             // The helper is elevated and does not inherit our environment.
             // Set verbosity in its generated config, without persisting a preference.
             QJsonParseError error;
             auto document = QJsonDocument::fromJson(config.toUtf8(), &error);
             if (error.error == QJsonParseError::NoError && document.isObject()) {
                 auto object = document.object();
+                if (preserveWorkVPN) {
+                    auto route = object.value("route").toObject();
+                    if (route.value("default_interface").toString().isEmpty()) {
+                        route["auto_detect_interface"] = true;
+                        object["route"] = route;
+                        object["windows_work_vpn"] = true;
+                    }
+                }
                 if (diagnosticLog) {
                     auto log = object.value("log").toObject();
                     log["level"] = QStringLiteral("debug");

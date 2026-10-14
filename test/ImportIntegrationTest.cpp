@@ -131,6 +131,11 @@ int main(int argc, char **argv) {
             const auto built = NekoGui::BuildConfig(imported.first(), false, false);
             write(output + "/build-error.txt", built->error.toUtf8());
             check(built->error.isEmpty(), "actual app config builds for user subscription");
+#ifdef Q_OS_WIN
+            check(built->coreConfig.value("windows_work_vpn").toBool()
+                  && built->coreConfig.value("route").toObject().value("auto_detect_interface").toBool(),
+                  "Windows proxy config enables automatic work VPN discovery without domain exceptions");
+#endif
             check(built->extRs.empty(), "user REALITY subscription connects without an external core");
             write(output + "/built-core.json", QJsonDocument(built->coreConfig).toJson());
             write(output + "/imported-profile.json", imported.first()->ToJsonBytes());
@@ -149,6 +154,17 @@ int main(int argc, char **argv) {
             }
             check(system->error.isEmpty() && actualSystem, "app generates a real System TUN configuration");
             write(output + "/built-system.json", QJsonDocument(system->coreConfig).toJson());
+            const auto externalTunPath = NekoGui::WriteVPNSingBoxConfig();
+            const auto externalTun = QJsonDocument::fromJson(read(externalTunPath)).object();
+#ifdef Q_OS_WIN
+            check(externalTun.value("windows_work_vpn").toBool()
+                  && externalTun.value("route").toObject().value("auto_detect_interface").toBool(),
+                  "external Windows TUN enables the same work VPN discovery");
+#endif
+            check(!externalTunPath.isEmpty()
+                  && externalTun.value("inbounds").toArray().first().toObject().value("stack") == "system",
+                  "external TUN also preserves the System selection");
+            write(output + "/built-external-tun.json", QJsonDocument(externalTun).toJson());
         }
     }
     std::cout << checks << " checks, " << failures << " failures\n";

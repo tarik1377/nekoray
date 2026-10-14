@@ -828,8 +828,8 @@ add_executable(import_integration_test EXCLUDE_FROM_ALL
         main/RelayComponent.cpp main/RelayComponentParse.cpp main/RelayActivation.cpp main/RelayActivationParse.cpp
         db/Database.cpp db/ProfileFilter.cpp db/ConfigBuilder.cpp
         fmt/AbstractBean.cpp fmt/Bean2CoreObj_box.cpp fmt/Bean2External.cpp fmt/Bean2Link.cpp fmt/Link2Bean.cpp
-        sub/GroupUpdater.cpp 3rdparty/base64.cpp ${PLATFORM_SOURCES})
-set_target_properties(import_integration_test PROPERTIES AUTOMOC ON)
+        sub/GroupUpdater.cpp 3rdparty/base64.cpp res/neko.qrc ${PLATFORM_SOURCES})
+set_target_properties(import_integration_test PROPERTIES AUTOMOC ON AUTORCC ON)
 target_precompile_headers(import_integration_test PRIVATE main/pch.hpp)
 target_include_directories(import_integration_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(import_integration_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network
