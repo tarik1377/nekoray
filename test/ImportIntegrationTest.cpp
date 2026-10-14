@@ -131,12 +131,24 @@ int main(int argc, char **argv) {
             const auto built = NekoGui::BuildConfig(imported.first(), false, false);
             write(output + "/build-error.txt", built->error.toUtf8());
             check(built->error.isEmpty(), "actual app config builds for user subscription");
+            check(built->extRs.empty(), "user REALITY subscription connects without an external core");
             write(output + "/built-core.json", QJsonDocument(built->coreConfig).toJson());
             write(output + "/imported-profile.json", imported.first()->ToJsonBytes());
             int i = 0;
             for (const auto &external : built->extRs) {
                 write(output + QStringLiteral("/built-external-%1.json").arg(i++), external->config_export.toUtf8());
             }
+            NekoGui::dataStore->spmode_vpn = true;
+            NekoGui::dataStore->vpn_internal_tun = true;
+            NekoGui::dataStore->vpn_implementation = 1;
+            const auto system = NekoGui::BuildConfig(imported.first(), false, false);
+            bool actualSystem = false;
+            for (const auto &value : system->coreConfig.value("inbounds").toArray()) {
+                const auto inbound = value.toObject();
+                if (inbound.value("type") == "tun") actualSystem = inbound.value("stack") == "system";
+            }
+            check(system->error.isEmpty() && actualSystem, "app generates a real System TUN configuration");
+            write(output + "/built-system.json", QJsonDocument(system->coreConfig).toJson());
         }
     }
     std::cout << checks << " checks, " << failures << " failures\n";
