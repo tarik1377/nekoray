@@ -943,6 +943,27 @@ set(GR_TEST_TARGETS
         autorun_task_test
 )
 
+if (WIN32)
+    # Compile the actual controller with a fake OS backend. No registry writes
+    # or running client are needed to reproduce selected=true / OS disabled.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ui/mainwindow.cpp)
+    file(READ "${CMAKE_SOURCE_DIR}/ui/mainwindow.cpp" GR_PROXY_ACTION_SOURCE)
+    string(FIND "${GR_PROXY_ACTION_SOURCE}" "void MainWindow::neko_set_spmode_system_proxy(" GR_PROXY_ACTION_BEGIN)
+    string(FIND "${GR_PROXY_ACTION_SOURCE}" "void MainWindow::neko_set_spmode_vpn(" GR_PROXY_ACTION_END)
+    if (GR_PROXY_ACTION_BEGIN LESS 0 OR GR_PROXY_ACTION_END LESS GR_PROXY_ACTION_BEGIN)
+        message(FATAL_ERROR "System proxy method cannot be extracted for its controller test")
+    endif ()
+    math(EXPR GR_PROXY_ACTION_LENGTH "${GR_PROXY_ACTION_END} - ${GR_PROXY_ACTION_BEGIN}")
+    string(SUBSTRING "${GR_PROXY_ACTION_SOURCE}" ${GR_PROXY_ACTION_BEGIN} ${GR_PROXY_ACTION_LENGTH} GR_PROXY_ACTION_METHOD)
+    file(WRITE "${CMAKE_BINARY_DIR}/system-proxy-method.inc" "${GR_PROXY_ACTION_METHOD}")
+    add_executable(system_proxy_apply_test EXCLUDE_FROM_ALL test/SystemProxyApplyTest.cpp)
+    set_source_files_properties(test/SystemProxyApplyTest.cpp PROPERTIES OBJECT_DEPENDS "${CMAKE_BINARY_DIR}/system-proxy-method.inc")
+    target_compile_definitions(system_proxy_apply_test PRIVATE GR_SYSTEM_PROXY_METHOD="${CMAKE_BINARY_DIR}/system-proxy-method.inc")
+    target_include_directories(system_proxy_apply_test PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(system_proxy_apply_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+    list(APPEND GR_TEST_TARGETS system_proxy_apply_test)
+endif ()
+
 if (NOT NKR_NO_GRPC)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ui/mainwindow_grpc.cpp)
     file(READ "${CMAKE_SOURCE_DIR}/ui/mainwindow_grpc.cpp" GR_UPDATE_ACTION_SOURCE)

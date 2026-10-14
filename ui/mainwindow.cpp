@@ -1435,7 +1435,15 @@ void MainWindow::on_menu_exit_triggered() {
     return;
 
 void MainWindow::neko_set_spmode_system_proxy(bool enable, bool save) {
-    if (enable != NekoGui::dataStore->spmode_system_proxy) {
+    bool applyRequested = enable != NekoGui::dataStore->spmode_system_proxy;
+#ifdef Q_OS_WIN
+    // The selected mode is a preference, not proof of WinINET's current
+    // state: another client can disable or replace the proxy. An explicit
+    // enable (including "Connect browsers") must apply our current endpoint
+    // again. This does not introduce periodic ownership fights.
+    applyRequested = applyRequested || enable;
+#endif
+    if (applyRequested) {
         if (enable) {
             auto socks_port = NekoGui::dataStore->inbound_socks_port;
             auto http_port = NekoGui::dataStore->inbound_socks_port;
