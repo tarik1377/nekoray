@@ -13,9 +13,36 @@ publication date are informational and unsigned.
 
 ## Signing a release
 
-Keep the Ed25519 PKCS8 PEM private key outside repositories, download servers,
-and CI. Restrict access and keep an offline backup. The repository contains only
-public keys. Build the final archive first, then copy it to the signing machine:
+Normal owner releases are signed automatically. The `publish` job in
+`build-nekoray-cmake.yml` hashes the final Windows ZIP and available Mac DMGs,
+signs them with `tools/sign-release.mjs`, and uploads `<archive>.manifest.json`
+beside each package. A missing or untrusted key fails publication.
+
+The existing Ed25519 key is an encrypted secret in the `desktop-release`
+GitHub environment, restricted to the `main` branch with administrator bypass
+disabled. `main` updates are restricted to repository administrators. The
+signing step requires both the original actor and triggering actor to be the
+owner, `workflow_dispatch`, `main`, and `publish=yes`. Non-publishing packaging
+runs use the separate `build-only` environment without signing secrets. The
+key is passed only to the signer, kept in process memory, and never written to
+repository files, artifacts, or the download server. Keep the offline backup.
+
+After the build run has finished successfully, `sync-website-release.yml`
+automatically refreshes the website. Waiting for completion matters: the
+website rejects a release while its publishing run is still in progress.
+The SSH key is restricted by `authorized_keys` to one forced refresh command;
+it cannot run a shell, forward ports, or read the server's configuration.
+The server invokes its existing authenticated release pipeline, which checks
+the GitHub owner provenance, package hash, size, and signature. No signing key
+is installed on the website. Its scheduled mirror remains a retry fallback.
+
+`Sync signed release to website` also has an owner-only verification action.
+It downloads an existing release, checks the CI-generated signatures against
+the website, and refreshes the catalog without modifying any release packages.
+
+For offline recovery, keep the PKCS8 PEM key outside repositories and download
+servers. The repository contains only public keys. Build the final archive
+first, then copy it to the signing machine:
 
 ```sh
 cd go/release_auth
@@ -66,3 +93,4 @@ updating. Losing the private key requires a separately trusted bootstrap.
 
 CI runs these suites and builds the core with its normal dependency overlay.
 Tests use disposable keys; those keys are never accepted by production verification.
+The Node signer also runs `node --test tools/sign-release.test.mjs` in CI.
