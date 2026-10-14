@@ -247,16 +247,11 @@ int main(int argc, char **argv) {
         is(QStringLiteral("оно идёт ДО блокировок"), icmpAt >= 0 && blockAt > icmpAt);
     }
 
-    // ---- ПРАВКА ПРЕСЕТА БЕЗ СВОЕГО ФЛАГА НЕ ДОХОДИТ НИ ДО КОГО ----
+    // ---- ОБНОВЛЕНИЕ ПРЕСЕТА ЖДЁТ ВЫБОРА ЧЕЛОВЕКА ----
     //
-    // Сохранённая схема заслоняет пресет навсегда, а проход по схемам ходит ровно
-    // один раз за флаг. Это ловушка с историей: из-за неё блокировка QUIC не
-    // досталась никому, кто уже открывал клиент, и понадобился второй флаг для
-    // порядка правил. Расширенный шаблон пути — третий такой случай.
-    //
-    // Флаг обязан быть заведён В ТРЁХ местах сразу, и половина связки хуже, чем
-    // ничего: объявлен, но не записан — проход побежит при каждом запуске;
-    // записан, но не прочитан — не побежит никогда. Отношение и проверяется.
+    // Старые флаги сохраняются для совместимости. Они больше не запускают
+    // правку игровых правил при открытии клиента: новые стандарты должны
+    // дождаться просмотра и явного применения либо выбора «Оставить мои».
     const QString store = slurp(QStringLiteral("main/NekoGui_DataStore.hpp"));
     const QString win   = slurp(QStringLiteral("ui/mainwindow.cpp"));
     const QString flag  = QStringLiteral("routing_launcher_migrated");
@@ -265,7 +260,21 @@ int main(int argc, char **argv) {
     is(QStringLiteral("флаг ремонта объявлен"), store.contains(flag));
     is(QStringLiteral("флаг ремонта сохраняется в файл настроек"),
        gui.contains(QStringLiteral("configItem(\"") + flag));
-    is(QStringLiteral("флаг ремонта читается при запуске"), win.contains(flag));
+    const QString startup = slurp(QStringLiteral("main/main.cpp"));
+    const QString routesDialog = slurp(QStringLiteral("ui/dialog_manage_routes.cpp"));
+    const QString reviewFlag = QStringLiteral("routing_defaults_review_revision");
+    is(QStringLiteral("версия рассмотренных стандартов объявлена и сохраняется"),
+       store.contains(reviewFlag) && gui.contains(QStringLiteral("configItem(\"") + reviewFlag));
+    is(QStringLiteral("запуск сообщает о стандартах, ожидающих просмотра"),
+       !startup.isEmpty() && startup.contains(QStringLiteral("RouteDefaultsPolicy::needsReview"))
+       && win.contains(QStringLiteral("RouteDefaultsPolicy::needsReview")));
+    is(QStringLiteral("при запуске нет скрытой миграции QUIC и игровых правил"),
+       !win.contains(QStringLiteral("Routing::MigrateAll("))
+       && !win.contains(QStringLiteral("Routing::MigrateGamesAll(")));
+    const int reviewed = routesDialog.indexOf(QStringLiteral("review.exec() != QDialog::Accepted"));
+    const int applyPolicy = routesDialog.indexOf(QStringLiteral("Policy::apply("));
+    is(QStringLiteral("применение стандартов следует только после принятого предпросмотра"),
+       reviewed >= 0 && applyPolicy > reviewed);
 
     // ---- ОБРАТНОЕ НАПРАВЛЕНИЕ И ИГРЫ ЧЕРЕЗ ТУННЕЛЬ ----
     //
