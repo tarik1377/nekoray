@@ -90,6 +90,7 @@ jobs:
         if: matrix.cross_os == 'windows'
         shell: bash
         run: |
+          node --test tools/sign-release.test.mjs
           (cd go/release_auth && go test ./...)
           (cd go/grpc_server && go test ./...)
           # С ТОЙ ЖЕ ПРАВКОЙ SING-BOX, ЧТО И СБОРКА (patches/README.md, _overlay).
@@ -681,6 +682,10 @@ jobs:
 
   publish:
     name: Pack & Publish
+    # Only owner-approved main releases can access signing secrets.
+    # Ordinary packaging builds use an environment without secrets.
+    environment:
+      name: ${{ github.event.inputs.publish == 'yes' && github.ref == 'refs/heads/main' && github.actor == github.repository_owner && github.triggering_actor == github.repository_owner && 'desktop-release' || 'build-only' }}
     # always() обязателен: без него job пропускается, как только ЛЮБОЙ из needs
     # не удался, — то есть падение мака унесло бы с собой выпуск под Windows,
     # ровно то, чего мы не допускаем. Условия ниже перечисляют, что ДЕЙСТВИТЕЛЬНО
@@ -721,10 +726,10 @@ jobs:
       - build-macos
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Download Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: download-artifact
 
@@ -800,8 +805,19 @@ jobs:
             echo "::warning::сборок под macOS в этом прогоне нет — выпуск выйдет без них"
           fi
 
+      - name: Sign desktop release manifests
+        if: >-
+          github.event.inputs.publish == 'yes'
+          && github.ref == 'refs/heads/main'
+          && github.actor == github.repository_owner
+          && github.triggering_actor == github.repository_owner
+        env:
+          GREENRHYTHM_RELEASE_PRIVATE_KEY: ${{ secrets.GREENRHYTHM_RELEASE_PRIVATE_KEY }}
+          RELEASE_TAG: ${{ github.event.inputs.tag }}
+        run: node tools/sign-release.mjs --directory deployment --tag "$RELEASE_TAG"
+
       - name: Upload Release Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: GreenRhythm-Release-${{ github.sha }}
           path: deployment
@@ -820,7 +836,7 @@ jobs:
       - name: Publish is the owner's call
         if: >-
           github.event.inputs.publish == 'yes'
-          && (github.ref != 'refs/heads/main' || github.triggering_actor != github.repository_owner)
+          && (github.ref != 'refs/heads/main' || github.actor != github.repository_owner || github.triggering_actor != github.repository_owner)
         shell: bash
         env:
           OWNER: ${{ github.repository_owner }}
@@ -834,8 +850,9 @@ jobs:
         if: >-
           github.event.inputs.publish == 'yes'
           && github.ref == 'refs/heads/main'
+          && github.actor == github.repository_owner
           && github.triggering_actor == github.repository_owner
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ github.event.inputs.tag }}
           # ТЕГ СТАВИТСЯ НА ТОТ КОММИТ, ИЗ КОТОРОГО СОБРАН БИНАРЬ.
@@ -853,5 +870,6 @@ jobs:
             deployment/*.zip
             deployment/*.sha256
             deployment/*.dmg
+            deployment/*.manifest.json
           draft: false
           prerelease: false
