@@ -146,6 +146,7 @@ set(PROJECT_SOURCES
         main/NekoGui.cpp
         main/VideoRoutes.cpp
         main/DefaultRoutes.cpp
+        main/RouteDefaultsPolicy.cpp
         main/LocalDns.cpp
         main/NekoGui_Utils.cpp
         main/HTTPRequestHelper.cpp
@@ -810,6 +811,19 @@ add_executable(default_routes_test EXCLUDE_FROM_ALL test/DefaultRoutesTest.cpp m
 target_include_directories(default_routes_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(default_routes_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 
+# Route-defaults consent/backup transactions and their real compact review UI.
+add_executable(route_defaults_policy_test EXCLUDE_FROM_ALL test/RouteDefaultsPolicyTest.cpp
+        main/RouteDefaultsPolicy.cpp main/DefaultRoutes.cpp main/VideoRoutes.cpp)
+target_include_directories(route_defaults_policy_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(route_defaults_policy_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+
+add_executable(route_defaults_review_test EXCLUDE_FROM_ALL test/RouteDefaultsReviewTest.cpp
+        ui/dialog_manage_routes.ui main/RouteDefaultsPolicy.cpp main/DefaultRoutes.cpp main/VideoRoutes.cpp)
+set_target_properties(route_defaults_review_test PROPERTIES AUTOUIC ON
+        AUTOUIC_SEARCH_PATHS "${CMAKE_SOURCE_DIR}/ui")
+target_include_directories(route_defaults_review_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(route_defaults_review_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+
 add_executable(system_routes_patch EXCLUDE_FROM_ALL support/SystemRoutesPatch.cpp main/DefaultRoutes.cpp)
 target_include_directories(system_routes_patch PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(system_routes_patch PRIVATE Qt${QT_VERSION_MAJOR}::Core)
@@ -882,6 +896,8 @@ set(GR_TEST_TARGETS
         sidebar_actions_test
         system_routes_patch_test
         default_routes_test
+        route_defaults_policy_test
+        route_defaults_review_test
         http_outage_test
         video_routes_test
         local_dns_test

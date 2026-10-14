@@ -19,6 +19,7 @@
 #include "main/NekoGui.hpp"
 #include "main/VideoRoutes.hpp"
 #include "main/DefaultRoutes.hpp"
+#include "main/RouteDefaultsPolicy.hpp"
 #include "main/TunHelper.hpp"
 
 #include "ui/mainwindow_interface.h"
@@ -428,35 +429,10 @@ int main(int argc, char* argv[]) {
         if (changed > 0) qInfo() << "default ads selector removed, schemes:" << changed;
     }
 
-    // The old RU DNS defaults sent unmatched VPN names to local UDP DNS. Repair
-    // only that exact inherited tuple, before restoring a connection. Commit
-    // the settings marker last; partial failures remain retryable on startup.
-    if (!NekoGui::dataStore->routing_dns_repaired) {
-        int changed = 0;
-        QString error;
-        if (NekoGui::Routing::MigrateDefaultDnsAll(&changed)
-            && GreenRhythm::DefaultRoutes::markDnsComplete(NekoGui::dataStore->fn, &error)) {
-            NekoGui::dataStore->routing_dns_repaired = true;
-        } else {
-            qWarning() << "default DNS routing repair will retry on next start" << error;
-        }
-        if (changed > 0) qInfo() << "default DNS routing repaired, schemes:" << changed;
-    }
-
-    // Before constructing the window/core: the first restored connection must
-    // already use the media rules. Revisions also reach users of earlier fixes.
-    if (NekoGui::dataStore->routing_video_revision < GreenRhythm::VideoRoutes::MigrationRevision) {
-        int changed = 0;
-        QString error;
-        if (NekoGui::Routing::MigrateVideosAll(&changed)
-            && GreenRhythm::VideoRoutes::markComplete(NekoGui::dataStore->fn, &error)) {
-            NekoGui::dataStore->routing_video_migrated = true;
-            NekoGui::dataStore->routing_video_revision = GreenRhythm::VideoRoutes::MigrationRevision;
-        } else {
-            qWarning() << "video routing migration will retry on next start" << error;
-        }
-        if (changed > 0) qInfo() << "video routing updated, schemes:" << changed;
-    }
+    // Existing DNS/media/QUIC/game preferences are reviewed by the user. Opening
+    // the app and updating a release never applies a new bundled route policy.
+    if (GreenRhythm::RouteDefaultsPolicy::needsReview(NekoGui::dataStore->routing_defaults_review_revision))
+        qInfo() << "bundled routing defaults await review in Routes, revision:" << GreenRhythm::RouteDefaultsPolicy::Revision;
 
     // Translate
     QString locale;

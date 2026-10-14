@@ -3,6 +3,7 @@
 #include "main/Interference.hpp"
 #include "main/TunHelper.hpp"
 #include "main/TunLifecycle.hpp"
+#include "main/RouteDefaultsPolicy.hpp"
 
 #include <QDateTime>
 #include <QDir>
@@ -1001,39 +1002,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         NekoGui::dataStore->Save();
     }
 
-    // One-shot: bring existing routing schemes up to the shipped preset's QUIC guard.
-    // Additive — see Routing::MigrateOne for the limits.
-    if (!NekoGui::dataStore->routing_quic_migrated) {
-        const int migrated = NekoGui::Routing::MigrateAll();
-        NekoGui::dataStore->routing_quic_migrated = true;
-        NekoGui::dataStore->Save();
-        if (migrated > 0)
-            MW_show_log(tr("Маршрутизация обновлена: блокировка QUIC (схем: %1).").arg(migrated));
-    }
-
-    // Второй одноразовый ремонт, свой флаг: правило «мимо туннеля» поднимается выше
-    // блокировки udp/443. Ниже неё оно не работало вовсе — см. MigrateGameBypass.
-    if (!NekoGui::dataStore->routing_games_migrated) {
-        const int migrated = NekoGui::Routing::MigrateGamesAll();
-        NekoGui::dataStore->routing_games_migrated = true;
-        NekoGui::dataStore->Save();
-        if (migrated > 0)
-            MW_show_log(tr("Маршрутизация обновлена: игры и звонки теперь идут мимо туннеля раньше блокировок (схем: %1).").arg(migrated));
-    }
-
-    // Третий одноразовый ремонт, и снова свой флаг. Проход тот же самый: он
-    // дописывает в схему недостающие значения из пресета. Новым стало значение —
-    // шаблон пути расширен до «-Shipping.exe», потому что прежний ловил только
-    // сам файл игры и пропускал лаунчер, который Unreal кладёт рядом с ней.
-    // Игра шла мимо туннеля, лаунчер — через него, и разъехавшиеся адреса давали
-    // вечную загрузку при полностью исправной сети.
-    if (!NekoGui::dataStore->routing_launcher_migrated) {
-        const int migrated = NekoGui::Routing::MigrateGamesAll();
-        NekoGui::dataStore->routing_launcher_migrated = true;
-        NekoGui::dataStore->Save();
-        if (migrated > 0)
-            MW_show_log(tr("Маршрутизация обновлена: лаунчеры игр теперь идут тем же путём, что и сама игра (схем: %1).").arg(migrated));
-    }
+    if (GreenRhythm::RouteDefaultsPolicy::needsReview(NekoGui::dataStore->routing_defaults_review_revision))
+        MW_show_log(tr("В «Маршрутах» можно просмотреть стандартные правила версии %1. Текущие правила сохранены.")
+            .arg(GreenRhythm::RouteDefaultsPolicy::Revision));
 
     TM_auto_update_subsctiption = new QTimer;
     TM_auto_update_subsctiption_Reset_Minute = [&](int m) {

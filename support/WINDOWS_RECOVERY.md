@@ -26,14 +26,16 @@ updater recognises it and will not offer the older v1.9.2 as an upgrade.
   the proxy DNS path. Explicit direct domains retain direct DNS; unmatched
   names use the proxy DNS path. A blocked local UDP resolver can no longer
   prevent otherwise reachable VPN destinations from resolving.
-* Existing RU schemes receive that DNS change only when they match the complete
-  inherited tuple: direct `77.88.8.8`, remote Cloudflare DoH, both IPv4-only
-  strategies, simple/routed DNS, proxy traffic final, proxy or bypass DNS final,
-  and the `domain:ru`, `domain:su`, `geoip:ru` signature. Custom DNS choices,
-  DNS objects, scoped DNS/hosts, routes and unknown fields are retained. Atomic
-  scheme commits synchronize active memory before the one-shot
-  `routing_dns_repaired` settings marker is committed. Failed writes retry on
-  the next startup. The earlier QUIC migration no longer changes the DNS final.
+* Existing schemes keep their routing preferences across updates. Routes shows
+  two choices: apply the reviewed standard routes or keep the current rules.
+  The safe update repairs only the complete inherited RU DNS tuple and adds
+  missing compatible guards/media defaults; custom DNS, scoped DNS/hosts and
+  explicit process choices survive. A separately acknowledged full reset uses
+  the bundled preset for this scheme's route/public DNS fields. Both modes show
+  change counts and create a byte-exact route backup. See [route review and
+  recovery](ROUTE_DEFAULTS.md). Opening the app does not run the former automatic
+  DNS/media/QUIC/game migrations. The requested inherited ads removal remains
+  its separate one-shot repair; explicit TUN stack choices are unchanged.
 * The exact inherited `geosite:category-ads-all` selector is removed from saved
   schemes. Other selectors and settings are retained.
 * Logs, routes and purchase are accessible from the sidebar. The updater shows
@@ -63,6 +65,10 @@ and retry. Do not treat a mocked or constructor-only TUN as a live packet test.
 `default_routes_test` also exercises the DNS tuple restrictions, preservation
 of scoped/custom settings, active-state mismatches, locked scheme/marker files
 and retries after atomic write failures.
+`route_defaults_policy_test` covers consent revisions, custom process/DNS
+preservation, backup restoration, stale previews, locked route/settings files
+and rollback. `route_defaults_review_test` runs the shared review widget and
+the generated route dialog offscreen, including full-reset acknowledgement.
 
 The existing `TestLiveRuleSetReloadsWithoutRestart` exposed an upstream
 `LocalRuleSet` reload race. The overlay now snapshots rule slices under the

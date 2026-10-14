@@ -183,6 +183,10 @@ namespace NekoGui {
         bool routing_video_migrated = false;
         // Revision 2 reaches users who already received the first video fix.
         int routing_video_revision = 0;
+        // Bundled route changes are reviewed in Routes, never installed silently.
+        int routing_defaults_review_revision = 0;
+        QString routing_defaults_choice;
+        QString routing_defaults_backup;
 
         // Security
         bool skip_cert = false;
