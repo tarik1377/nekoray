@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -86,12 +88,45 @@ func TestUpdateReportsBootstrapFailure(t *testing.T) {
 	body := "fixture body"
 	network := outageNetwork(t, &http.Client{Transport: outageTransport(func(r *http.Request) (*http.Response, error) { return outageResponse(r, 200, body), nil })})
 	(&updateState{}).store(outageCandidate(body))
-	network.prepareUpdater = func(string) error { return errors.New("fixture helper blocked") }
-	result := outageDownload(t, network)
-	if result.Error == "" {
-		t.Fatal("helper failure accepted")
+	helperError := errors.New("fixture helper blocked")
+	helperCalls := 0
+	network.prepareUpdater = func(archive string) error {
+		helperCalls++
+		if archive != network.archivePath {
+			t.Fatalf("helper received unexpected archive: %q", archive)
+		}
+		return helperError
 	}
-	if !ExistForTest(network.archivePath) {
-		t.Fatal("verified package not retained")
+	result := outageDownload(t, network)
+	wantStage := "ready"
+	if runtime.GOOS == "windows" {
+		wantStage = "error"
+		if helperCalls != 1 || !strings.Contains(result.Error, helperError.Error()) {
+			t.Fatalf("Windows helper failure was not propagated: calls=%d error=%q", helperCalls, result.Error)
+		}
+	} else {
+		// Only Windows bootstraps updater.exe. A verified Unix download must
+		// neither invoke that helper nor fail because of its injected error.
+		if helperCalls != 0 || result.Error != "" {
+			t.Fatalf("non-Windows download invoked a Windows helper: calls=%d error=%q", helperCalls, result.Error)
+		}
+	}
+	got, err := os.ReadFile(network.archivePath)
+	if err != nil || string(got) != body {
+		t.Fatalf("verified package not retained intact: %q %v", got, err)
+	}
+	if ExistForTest(network.archivePath + ".partial") {
+		t.Fatal("partial download remains after helper preparation")
+	}
+	statusBytes, err := os.ReadFile(network.archivePath + ".progress.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status updateProgress
+	if err := json.Unmarshal(statusBytes, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Stage != wantStage || status.Error != result.Error || status.Bytes != int64(len(body)) || status.Total != int64(len(body)) {
+		t.Fatalf("incorrect platform-specific completion status: %+v", status)
 	}
 }
