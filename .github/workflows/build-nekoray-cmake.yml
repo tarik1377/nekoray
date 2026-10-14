@@ -68,7 +68,7 @@ jobs:
         if: matrix.cross_os != 'public_res'
         uses: actions/setup-go@v4
         with:
-          go-version: "^1.24"
+          go-version-file: ".go-version"
 
       - name: Clone libneko dependency
         if: matrix.cross_os != 'public_res'
@@ -166,7 +166,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v4
         with:
-          go-version: "^1.24"
+          go-version-file: ".go-version"
 
       - name: Clone libneko dependency
         run: |

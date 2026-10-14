@@ -109,18 +109,48 @@ int main(int argc, char **argv) {
     NekoGui_sub::groupUpdater->Update(url, group->id, true);
     check(group->Profiles().size() == count, "HTTP failure preserves profiles");
 
+    auto originalRouting = std::move(NekoGui::dataStore->routing);
+    NekoGui::dataStore->routing = std::make_unique<NekoGui::Routing>(1);
+    check(NekoGui::dataStore->routing->dns_final_out == "proxy", "new RU preset resolves unmatched VPN names through the VPN DNS");
+    NekoGui::Routing::MigrateOne(NekoGui::dataStore->routing.get());
+    check(NekoGui::dataStore->routing->dns_final_out == "proxy", "legacy QUIC migration retains the DNS final choice");
+    const auto defaultConfig = NekoGui::BuildConfig(NekoGui::profileManager->GetProfile(firstId), false, false);
+    const auto defaultServers = defaultConfig->coreConfig.value("dns").toObject().value("servers").toArray();
+    check(!defaultServers.isEmpty() && defaultServers.first().toObject().value("tag") == "dns-remote", "actual config chooses remote DNS as its unmatched default");
+    bool directDoH = false, remoteDetour = false;
+    for (const auto &entry : defaultServers) {
+        const auto server = entry.toObject();
+        if (server.value("tag") == "dns-direct") directDoH = server.value("address") == "https://1.1.1.1/dns-query" && server.value("detour") == "direct";
+        if (server.value("tag") == "dns-remote") remoteDetour = server.value("detour") == "proxy";
+    }
+    check(directDoH && remoteDetour, "direct DNS uses HTTPS while VPN DNS keeps its VPN detour");
+    NekoGui::dataStore->routing = std::move(originalRouting);
+
     const auto args = app.arguments();
-    const auto liveIndex = args.indexOf("--live-url-file");
+    const auto storedIndex = args.indexOf("--stored-profile-file");
+    const auto liveIndex = storedIndex >= 0 ? storedIndex : args.indexOf("--live-url-file");
     if (liveIndex >= 0 && liveIndex + 2 < args.size()) {
         NekoGui::dataStore->sub_clear = false;
-        const auto liveUrl = QString::fromUtf8(read(args[liveIndex + 1])).trimmed();
         const auto output = args[liveIndex + 2];
         auto live = NekoGui::ProfileManager::NewGroup();
         live->name = "runtime-test";
         NekoGui::profileManager->AddGroup(live);
-        NekoGui_sub::groupUpdater->Update(liveUrl, live->id, true);
+        if (storedIndex >= 0) {
+            const auto saved = QJsonDocument::fromJson(read(args[liveIndex + 1])).object();
+            auto stored = NekoGui::ProfileManager::NewProxyEntity(saved.value("type").toString());
+            stored->fn = args[liveIndex + 1];
+            const bool loaded = stored->Load();
+            check(loaded, "stored runtime profile loads through the actual profile reader");
+            if (loaded) {
+                stored->id = -1;
+                check(NekoGui::profileManager->AddProfile(stored, live->id), "stored profile copied into the isolated test group");
+            }
+        } else {
+            const auto liveUrl = QString::fromUtf8(read(args[liveIndex + 1])).trimmed();
+            NekoGui_sub::groupUpdater->Update(liveUrl, live->id, true);
+        }
         const auto imported = live->Profiles();
-        check(imported.size() == 1, "user subscription imports through real Qt HTTP/parser/store");
+        check(imported.size() == 1, "runtime test has exactly one actual user profile");
         if (!imported.isEmpty()) {
             const auto runtime = QJsonDocument::fromJson(read(output + "/runtime-settings.json")).object();
             NekoGui::dataStore->FromJson(runtime.value("datastore").toObject());

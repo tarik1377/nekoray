@@ -4,7 +4,7 @@ The repair is based on the exact v1.9.2 source, with its existing Qt and geodata
 dependencies. The GUI, core and updater must be delivered together. The new GUI
 expects the verified updater bootstrap produced by the new core.
 
-Use `-DNKR_VERSION=v1.9.2.1` for a local repair build, and the same version in the
+Use `-DNKR_VERSION=v1.9.2.2` for a local repair build, and the same version in the
 Go core linker flag. A numeric fourth component is deliberate: the existing
 updater recognises it and will not offer the older v1.9.2 as an upgrade.
 `nekoray_version.txt` remains the default when no CMake version is supplied.
@@ -41,11 +41,19 @@ updater recognises it and will not offer the older v1.9.2 as an upgrade.
 
 ## Validation
 
-The full Windows Qt suite contains 33 test programs. The live import test accepts
+The full Windows Qt suite contains 36 test programs. The live import test accepts
 a URL file and a private export directory: keep these outside the public tree.
 It downloads through the actual Qt HTTP/parser/store path and builds native
 REALITY, internal System and external System TUN configurations. Config building
-does not start an adapter or change a proxy setting.
+does not start an adapter or change a proxy setting. `--stored-profile-file`
+accepts a private copy of the currently saved profile, so diagnostics also cover
+the user's actual configuration without downloading or replacing their profiles.
+
+The follow-up repair bounds Start/Stop RPCs, queues connection requests during
+stopping, and recovers only the application's own core. Loopback tests reproduce
+the old indefinite Stop and verify deadlines, cancellation and core replacement.
+Build Go binaries with the exact `.go-version` toolchain; see
+[Windows socket runtime and Vision repairs](../patches/windows-runtime.md).
 
 Go tests use `_overlay/prepare.sh` and the release tags from `libs/build_go.sh`.
 Test the native TLS verifier, work VPN manager, DNS wrapper, route matcher and
