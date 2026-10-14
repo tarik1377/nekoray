@@ -14,11 +14,12 @@ type updateNetwork struct {
 	checkTimeout, headerTimeout, idleTimeout time.Duration
 	archivePath                              string
 	verify                                   func(*releaseauth.Manifest, string) error
+	prepareUpdater                           func(string) error
 }
 
 func defaultUpdateNetwork(direct, fallback *http.Client) updateNetwork {
 	return updateNetwork{direct: direct, fallback: fallback, checkTimeout: 10 * time.Second, headerTimeout: 15 * time.Second,
-		idleTimeout: 90 * time.Second, archivePath: "../greenrhythm.zip", verify: releaseauth.Verify}
+		idleTimeout: 90 * time.Second, archivePath: "../greenrhythm.zip", verify: releaseauth.Verify, prepareUpdater: prepareWindowsUpdater}
 }
 func fetchManifestAttempt(ctx context.Context, client *http.Client, platform string, network updateNetwork) (*releaseManifest, error) {
 	attempt, cancel := context.WithTimeout(ctx, network.checkTimeout)

@@ -2,6 +2,7 @@
 #include "main/Interference.hpp"
 #include "main/TunLifecycle.hpp"
 #include "ui/UpdateNotice.hpp"
+#include "ui/UpdateProgress.hpp"
 #include "mainwindow.h"
 
 #include "db/Database.hpp"
@@ -22,6 +23,7 @@
 #include <QFileInfo>
 #include <QApplication>
 #include <QPointer>
+#include <QProcess>
 
 // ext core
 
@@ -740,8 +742,7 @@ void MainWindow::CheckUpdate(bool quiet) {
             const auto poll = QPointer<QTimer>(new QTimer(dlg));
             QObject::connect(poll, &QTimer::timeout, dlg, [dlg, zipPath] {
                 if (!dlg) return;
-                QFileInfo file(zipPath);
-                if (file.exists()) dlg->setLabelText(QObject::tr("Загрузка обновления… %1 МБ").arg(file.size()/1048576.0, 0, 'f', 1));
+                GreenRhythm::Update::refreshProgress(dlg, zipPath);
             });
             poll->start(250); dlg->show();
             runOnNewThread([window, dlg, poll, post] {
@@ -755,19 +756,32 @@ void MainWindow::CheckUpdate(bool quiet) {
                     if (!window) return;
                     // A failed RPC returns an empty protobuf reply as well.
                     // Its empty error field is not proof that a file was downloaded.
-                    if (!downloaded) {
-                        MessageBoxWarning(QObject::tr("Update"),
-                            QObject::tr("Не удалось загрузить обновление. Программа продолжает работать; повторите попытку позже."));
-                        return;
-                    }
-                    if (!response2.error().empty()) {
-                        MessageBoxWarning(QObject::tr("Update"), QString::fromStdString(response2.error()));
+                    if (!downloaded || !response2.error().empty()) {
+                        const auto reason = downloaded ? QString::fromStdString(response2.error())
+                            : QObject::tr("Не удалось связаться с ядром для загрузки обновления.");
+                        QMessageBox failure(QMessageBox::Warning, QObject::tr("Обновление"),
+                            QObject::tr("Обновление не установлено. Программа продолжает работать.\n\n%1").arg(reason),
+                            QMessageBox::Retry | QMessageBox::Close, window);
+                        failure.setButtonText(QMessageBox::Retry, QObject::tr("Повторить"));
+                        if (failure.exec() == QMessageBox::Retry && window) window->CheckUpdate(false);
                         return;
                     }
                     const auto answer = QMessageBox::question(window, QObject::tr("Update"),
-                        QObject::tr("Обновление загружено. Перезапустить для установки?"));
+                        QObject::tr("Пакет загружен и проверен. Для установки программа закроется.\n"
+                                    "Окно установки покажет этапы 3/4 и 4/4 и запустит GreenRhythm.\n\nУстановить сейчас?"));
                     if (answer == QMessageBox::Yes && window) {
-                        window->exit_reason = 1;
+                        auto updater = QApplication::applicationDirPath() + "/updater";
+#ifdef Q_OS_WIN
+                        updater = QApplication::applicationDirPath() + "/updater.next.exe";
+#endif
+                        // Start the verified helper while this window is still alive.
+                        // A missing/blocked executable must never close a working GUI.
+                        if (!QProcess::startDetached(updater, {}, QApplication::applicationDirPath())) {
+                            MessageBoxWarning(QObject::tr("Обновление"),
+                                QObject::tr("Не удалось запустить установку. Программа и пакет сохранены; повторите обновление."));
+                            return;
+                        }
+                        window->exit_reason = 0;
                         window->on_menu_exit_triggered();
                     }
                 });

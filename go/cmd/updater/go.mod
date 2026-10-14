@@ -1,6 +1,6 @@
 module updater
 
-go 1.18
+go 1.20
 
 require greenrhythm_release v0.0.0
 

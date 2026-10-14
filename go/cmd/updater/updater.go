@@ -1,7 +1,8 @@
 package main
 
 import (
-	"log"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -9,206 +10,139 @@ import (
 	"time"
 )
 
-// waitForPreviousInstance ждёт, пока прежняя копия отпустит свои файлы.
-//
-// ЗАЧЕМ. Программа запускает обновлятор и лишь ПОТОМ начинает выходить, а её
-// ядро и xray живут ещё какое-то время. Обновлятор в этот момент уже переносит
-// файлы и получает от системы отказ: «rename ... xray.exe: Access is denied».
-// Человек видел окно «закройте работающую копию и запустите обновление снова» —
-// при том что закрывать было нечего: копия закрывалась сама, просто медленнее
-// нас. Совет вдобавок невыполним, обновлятор запускает сама программа.
-//
-// Проверяем не список процессов, а сам файл: открыть его на запись можно ровно
-// тогда, когда его отпустили.
-//
-// Имена собираются по платформе. Прежде в списке стояли только .exe, то есть
-// вне Windows цикл был пуст и функция возвращалась немедленно — при
-// комментарии, обещавшем работу на всех платформах. На POSIX блокировка файла
-// не обязательна, и ожидание там менее надёжно; но пустой список не надёжен
-// вовсе.
-func waitForPreviousInstance(deadline time.Duration) {
-	locked := []string{"./xray", "./greenrhythm_core", "./greenrhythm"}
+type installOptions struct {
+	verify func(string) error
+	start  func(string) error
+	rename func(string, string) error
+	wait   time.Duration
+	report func(string)
+}
+
+func Updater() error {
+	packagePath := FindExist([]string{"greenrhythm.zip", "greenrhythm.tar.gz"})
+	if len(os.Args) == 2 {
+		packagePath = os.Args[1]
+	}
+	if packagePath == "" {
+		return errors.New("пакет обновления не найден — загрузите его через программу")
+	}
+	return installUpdate(packagePath, ".", installOptions{verify: verifyArchive, start: startApplication,
+		rename: os.Rename, wait: 30 * time.Second, report: reportProgress})
+}
+
+// Retain originals until the GUI starts. User settings, profiles and routes are
+// never replaced by files bundled in an application update.
+func installUpdate(archive, install string, options installOptions) error {
+	unlock, err := lockInstallation(install)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	report := options.report
+	if report == nil {
+		report = func(string) {}
+	}
+	report("Проверка подписи и целостности пакета…")
+	if err := options.verify(archive); err != nil {
+		return err
+	}
+	staging, err := os.MkdirTemp(install, ".greenrhythm-update-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(staging)
+	report("Распаковка и проверка файлов…")
+	switch {
+	case strings.HasSuffix(archive, ".zip"):
+		err = extractZip(archive, staging)
+	case strings.HasSuffix(archive, ".tar.gz"):
+		err = extractTarGz(archive, staging)
+	default:
+		return errors.New("формат пакета обновления не поддерживается")
+	}
+	if err != nil {
+		return err
+	}
+	payload := FindExist([]string{filepath.Join(staging, "GreenRhythm"), filepath.Join(staging, "greenrhythm"), filepath.Join(staging, "nekoray")})
+	if payload == "" {
+		return errors.New("в пакете нет папки GreenRhythm")
+	}
+	suffix := ""
 	if runtime.GOOS == "windows" {
-		for i := range locked {
-			locked[i] += ".exe"
+		suffix = ".exe"
+	}
+	required := []string{"greenrhythm", "greenrhythm_core"}
+	if runtimeWindows() {
+		required = append(required, "updater", "xray")
+	}
+	for _, name := range required {
+		info, e := os.Stat(filepath.Join(payload, name+suffix))
+		if e != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("в пакете отсутствует обязательный файл %s%s", name, suffix)
 		}
 	}
-	start := time.Now()
-	for time.Since(start) < deadline {
+	tx, err := newInstallTransaction(payload, install, options.rename)
+	if err != nil {
+		return err
+	}
+	report("Ожидание завершения прежней программы…")
+	if err = waitForFiles(tx.files, install, options.wait); err != nil {
+		tx.discard()
+		return err
+	}
+	report("3/4 · Установка обновления — рабочие файлы сохранены для отката…")
+	if err = tx.apply(); err != nil {
+		report("Восстановление прежней установки…")
+		return errors.Join(err, tx.rollback())
+	}
+	report("4/4 · Запуск GreenRhythm…")
+	if err = options.start(install); err != nil {
+		report("Запуск не удался. Восстановление прежней установки…")
+		rollbackErr := tx.rollback()
+		if rollbackErr == nil {
+			return fmt.Errorf("новая программа не запустилась; прежняя установка восстановлена: %w", err)
+		}
+		return errors.Join(err, rollbackErr)
+	}
+	tx.discard()
+	for _, p := range []string{archive, archive + ".sha256", archive + ".manifest.json"} {
+		_ = os.Remove(p)
+	}
+	report("Обновление установлено. GreenRhythm запущен.")
+	return nil
+}
+
+func waitForFiles(files []string, install string, deadline time.Duration) error {
+	end := time.Now().Add(deadline)
+	for {
 		busy := ""
-		for _, p := range locked {
-			if !Exist(p) {
+		for _, rel := range files {
+			name := filepath.Join(install, rel)
+			if !Exist(name) {
 				continue
 			}
-			f, err := os.OpenFile(p, os.O_WRONLY, 0)
+			f, err := os.OpenFile(name, os.O_WRONLY, 0)
 			if err != nil {
-				busy = p
+				busy = rel
 				break
 			}
 			_ = f.Close()
 		}
 		if busy == "" {
-			return
+			return nil
 		}
-		log.Println("waiting for", busy, "to be released")
-		time.Sleep(500 * time.Millisecond)
+		if !time.Now().Before(end) {
+			return fmt.Errorf("файл %s занят или недоступен; прежняя установка сохранена. Закройте GreenRhythm и повторите установку", busy)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	// Не дождались — пробуем всё равно: отказ тогда будет назван честно, а ждать
-	// дольше значит держать человека перед окном, которое ничего не делает.
-	log.Println("previous instance still holds files, trying anyway")
 }
-func Updater() {
-	pre_cleanup := func() {
-		if runtime.GOOS == "linux" {
-			os.RemoveAll("./usr")
-		}
-		os.RemoveAll("./greenrhythm_update")
-	}
-
-	// find update package (try new name first, fallback to old)
-	var updatePackagePath string
-	if len(os.Args) == 2 && Exist(os.Args[1]) {
-		updatePackagePath = os.Args[1]
-	} else if Exist("./greenrhythm.zip") {
-		updatePackagePath = "./greenrhythm.zip"
-	} else if Exist("./greenrhythm.tar.gz") {
-		updatePackagePath = "./greenrhythm.tar.gz"
-	} else {
-		MessageBoxPlain("GreenRhythm Updater", "No update package found.")
-		log.Fatalln("no update package found")
-	}
-	log.Println("updating from", updatePackagePath)
-
-	// Проверяем ДО распаковки: распаковщик пишет на диск, и разбирать потом,
-	// что он успел разложить, дороже, чем не начинать.
-	if err := verifyArchive(updatePackagePath); err != nil {
-		os.Remove(updatePackagePath)
-		os.Remove(updatePackagePath + ".sha256")
-		os.Remove(updatePackagePath + ".manifest.json")
-		MessageBoxPlain("GreenRhythm Updater", err.Error())
-		log.Fatalln(err.Error())
-	}
-
-	// extract update package
-	extractDir := "./greenrhythm_update"
-	if strings.HasSuffix(updatePackagePath, ".zip") {
-		pre_cleanup()
-		if err := extractZip(updatePackagePath, extractDir); err != nil {
-			log.Fatalln(err.Error())
-		}
-	} else if strings.HasSuffix(updatePackagePath, ".tar.gz") {
-		pre_cleanup()
-		if err := extractTarGz(updatePackagePath, extractDir); err != nil {
-			log.Fatalln(err.Error())
-		}
-	}
-
-	// remove old crash dumps
-	removeAll("./*.dmp")
-
-	// find the update folder inside extracted archive
-	updateDir := FindExist([]string{
-		extractDir + "/GreenRhythm",
-		extractDir + "/greenrhythm",
-		extractDir + "/nekoray",
-	})
-	if updateDir == "" {
-		// try any single folder inside extract dir
-		entries, _ := os.ReadDir(extractDir)
-		for _, e := range entries {
-			if e.IsDir() {
-				updateDir = extractDir + "/" + e.Name()
-				break
-			}
-		}
-	}
-	if updateDir == "" {
-		MessageBoxPlain("GreenRhythm Updater", "Update failed: no update folder found inside archive.")
-		log.Fatalln("no update folder found")
-	}
-
-	// Ждём, пока прежняя копия отпустит файлы, и только потом переносим.
-	waitForPreviousInstance(30 * time.Second)
-
-	log.Println("applying update from", updateDir)
-
-	// Consent-based config migration: keep server profiles always; optionally reset
-	// routing to the new bundled default. Runs while both old config and new defaults
-	// coexist and before anything destructive (Mv) happens.
-	runMigration(updateDir, "./")
-
-	err := Mv(updateDir, "./")
-	if err != nil {
-		MessageBoxPlain("GreenRhythm Updater", "Не удалось применить обновление: файлы всё ещё заняты.\n\nЗакройте программу полностью — значок в трее, «Выход», — и запустите updater.exe из папки установки.\n\n"+err.Error())
-		log.Fatalln(err.Error())
-	}
-
-	// cleanup
-	os.RemoveAll(extractDir)
-	os.Remove("./greenrhythm.zip")
-	os.Remove("./greenrhythm.zip.sha256")
-	os.Remove("./greenrhythm.zip.manifest.json")
-	os.Remove("./greenrhythm.tar.gz")
-	os.Remove("./greenrhythm.tar.gz.sha256")
-	os.Remove("./greenrhythm.tar.gz.manifest.json")
-
-	// clean up old binaries from previous versions
-	os.Remove("./nekoray.exe")
-	os.Remove("./nekoray.png")
-	os.Remove("./nekoray_core.exe")
-	os.Remove("./nekobox.exe")
-	os.Remove("./nekobox_core.exe")
-	os.Remove("./nekobox.png")
-
-	log.Println("update complete")
-}
-
-func Exist(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
+func Exist(path string) bool { _, err := os.Stat(path); return err == nil }
 func FindExist(paths []string) string {
-	for _, path := range paths {
-		if Exist(path) {
-			return path
+	for _, p := range paths {
+		if Exist(p) {
+			return p
 		}
 	}
 	return ""
-}
-
-func Mv(src, dst string) error {
-	s, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	if s.IsDir() {
-		es, err := os.ReadDir(src)
-		if err != nil {
-			return err
-		}
-		for _, e := range es {
-			err = Mv(filepath.Join(src, e.Name()), filepath.Join(dst, e.Name()))
-			if err != nil {
-				return err
-			}
-		}
-	} else {
-		err = os.MkdirAll(filepath.Dir(dst), 0755)
-		if err != nil {
-			return err
-		}
-		err = os.Rename(src, dst)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func removeAll(glob string) {
-	files, _ := filepath.Glob(glob)
-	for _, f := range files {
-		os.Remove(f)
-	}
 }

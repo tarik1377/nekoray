@@ -1,7 +1,7 @@
 package main
 
 import (
-	"io/ioutil"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -11,52 +11,92 @@ import (
 	"time"
 )
 
+func runtimeWindows() bool { return runtime.GOOS == "windows" }
 func main() {
-	// update & launcher
 	exe, err := os.Executable()
 	if err != nil {
-		panic(err.Error())
+		log.Fatal(err)
 	}
-
-	wd := filepath.Dir(exe)
-	os.Chdir(wd)
-	exe = filepath.Base(os.Args[0])
-	log.Println("exe:", exe, "exe dir:", wd)
-
-	if strings.HasPrefix(strings.ToLower(exe), "updater") {
-		if runtime.GOOS == "windows" {
-			if strings.HasPrefix(strings.ToLower(exe), "updater.old") {
-				// 2. "updater.old" update files
-				time.Sleep(time.Second)
-				Updater()
-				// 3. start
-				exec.Command("./greenrhythm.exe").Start()
-			} else {
-				// 1. main prog quit and run "updater.exe"
-				Copy("./updater.exe", "./updater.old")
-				exec.Command("./updater.old", os.Args[1:]...).Start()
-			}
-		} else {
-			// 1. update files
-			Updater()
-			// 2. start
-			if os.Getenv("NKR_FROM_LAUNCHER") == "1" {
-				Launcher()
-			} else {
-				exec.Command("./greenrhythm").Start()
-			}
-		}
-		return
-	} else if strings.HasPrefix(strings.ToLower(exe), "launcher") {
+	if strings.HasPrefix(strings.ToLower(filepath.Base(os.Args[0])), "launcher") {
 		Launcher()
 		return
 	}
-	log.Fatalf("wrong name")
+	if runtimeWindows() && !strings.HasPrefix(strings.ToLower(filepath.Base(exe)), "greenrhythm-updater-") {
+		// A unique helper outside the installation leaves updater.exe replaceable.
+		// The old fixed updater.old could be locked; Copy/Start errors were ignored.
+		helper, err := copyUpdater(exe)
+		if err == nil {
+			args := append([]string{"--install-dir", filepath.Dir(exe)}, os.Args[1:]...)
+			cmd := exec.Command(helper, args...)
+			cmd.Dir = filepath.Dir(exe)
+			err = cmd.Start()
+		}
+		if err != nil {
+			MessageBoxPlain("Обновление GreenRhythm", "Не удалось запустить установку. Программа и пакет сохранены.\n\n"+err.Error())
+		}
+		return
+	}
+	install := filepath.Dir(exe)
+	if len(os.Args) >= 3 && os.Args[1] == "--install-dir" {
+		install = os.Args[2]
+		os.Args = append(os.Args[:1], os.Args[3:]...)
+	}
+	if err = os.Chdir(install); err != nil {
+		MessageBoxPlain("Обновление GreenRhythm", err.Error())
+		return
+	}
+	runUpdateUI(Updater)
+}
+func copyUpdater(exe string) (string, error) {
+	data, err := os.ReadFile(exe)
+	if err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp("", "greenrhythm-updater-*.exe")
+	if err != nil {
+		return "", err
+	}
+	name := f.Name()
+	_, err = f.Write(data)
+	closeErr := f.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		os.Remove(name)
+		return "", err
+	}
+	return name, nil
+}
+func startApplication(install string) error {
+	name := "greenrhythm"
+	if runtimeWindows() {
+		name += ".exe"
+	}
+	absolute, err := filepath.Abs(filepath.Join(install, name))
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(absolute)
+	cmd.Dir = install
+	if runtime.GOOS == "linux" && os.Getenv("NKR_FROM_LAUNCHER") == "1" {
+		cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+filepath.Join(install, "usr/lib"), "QT_PLUGIN_PATH="+filepath.Join(install, "usr/plugins"))
+	}
+	return startAndObserve(cmd, 2*time.Second)
 }
 
-func Copy(src string, dst string) {
-	// Read all content of src to data
-	data, _ := ioutil.ReadFile(src)
-	// Write data to dst
-	ioutil.WriteFile(dst, data, 0644)
+// Detect loader errors and immediate crashes before discarding the originals.
+// Remaining alive is a startup check, not a guarantee of VPN connectivity.
+func startAndObserve(cmd *exec.Cmd, grace time.Duration) error {
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("не удалось запустить GreenRhythm: %w", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		return fmt.Errorf("GreenRhythm завершился сразу после запуска: %v", err)
+	case <-time.After(grace):
+		return nil
+	}
 }

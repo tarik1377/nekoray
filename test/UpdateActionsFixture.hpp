@@ -2,6 +2,7 @@
 #include <QCoreApplication>
 #include "3rdparty/QThreadCreateThread.hpp"
 #include "ui/UpdateNotice.hpp"
+#include "ui/UpdateProgress.hpp"
 #include "go/grpc_server/gen/libcore.pb.h"
 #include <QApplication>
 #include <QFileInfo>
@@ -18,6 +19,17 @@
 
 inline int fixtureWarnings = 0, fixtureInfos = 0;
 inline QString fixtureLastWarning;
+inline bool fixtureStartOK = true;
+inline int fixtureStarts = 0;
+struct FixtureProcess {
+    static bool startDetached(const QString &, const QStringList &, const QString &) {
+        ++fixtureStarts;
+        return fixtureStartOK;
+    }
+};
+// The extracted CheckUpdate method uses this process double; it cannot launch
+// an updater or quit the application during the action tests.
+#define QProcess FixtureProcess
 inline int MessageBoxWarning(const QString &, const QString &text) { ++fixtureWarnings; fixtureLastWarning = text; return 0; }
 inline int MessageBoxInfo(const QString &, const QString &) { ++fixtureInfos; return 0; }
 inline std::atomic<int> fixtureWorkers{0};

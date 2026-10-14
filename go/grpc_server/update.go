@@ -270,6 +270,19 @@ func (s *BaseServer) updateWithNetwork(ctx context.Context, in *gen.UpdateReq, n
 		ret.IsPreRelease = false
 		return ret, nil
 	} else { // Download update
+		progress := &updateProgress{path: network.archivePath + ".progress.json"}
+		if verifiedUpdate != nil {
+			progress.Total = verifiedUpdate.SizeBytes
+		}
+		progress.save("download")
+		defer func() {
+			if ret.Error != "" {
+				progress.Error = ret.Error
+				progress.save("error")
+			} else {
+				progress.save("ready")
+			}
+		}()
 		if update_download_url == "" || update_expected_sha == "" || verifiedUpdate == nil {
 			// Оба условия — одно и то же состояние: проверка не проходила или не
 			// прошла. Скачивать при этом нечего и не с чем сверять.
@@ -326,12 +339,14 @@ func (s *BaseServer) updateWithNetwork(ctx context.Context, in *gen.UpdateReq, n
 		// Кладётся как greenrhythm.zip — этого имени ждёт распаковщик, и другого
 		// формата он не понимает.
 		zipPath := network.archivePath
-		f, err := os.OpenFile(zipPath, os.O_TRUNC|os.O_CREATE|os.O_RDWR, 0644)
+		partialPath := zipPath + ".partial"
+		f, err := os.OpenFile(partialPath, os.O_TRUNC|os.O_CREATE|os.O_RDWR, 0644)
 		if err != nil {
 			ret.Error = err.Error()
 			return ret, nil
 		}
 		defer f.Close()
+		defer os.Remove(partialPath)
 
 		// Сумма считается на лету: файл под шестьдесят мегабайт, и читать его
 		// вторым проходом ради того же числа незачем.
@@ -340,11 +355,11 @@ func (s *BaseServer) updateWithNetwork(ctx context.Context, in *gen.UpdateReq, n
 		// а зависший ответ. Порог с запасом: на самом плохом мобильном интернете
 		// байты идут чаще.
 		guard, stopGuard := newIdleGuard(resp.Body, network.idleTimeout, cancelDownload)
-		downloadedBytes, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(guard, verifiedUpdate.SizeBytes+1))
+		downloadedBytes, err := io.Copy(io.MultiWriter(f, h, progress), io.LimitReader(guard, verifiedUpdate.SizeBytes+1))
 		stopGuard()
 		if err != nil {
 			f.Close()
-			os.Remove(zipPath)
+			os.Remove(partialPath)
 			if guard.timedOut() {
 				// Иначе человек увидел бы «context canceled» и решил, что
 				// отменил обновление сам.
@@ -354,7 +369,15 @@ func (s *BaseServer) updateWithNetwork(ctx context.Context, in *gen.UpdateReq, n
 			}
 			return ret, nil
 		}
-		f.Sync()
+		progress.save("verify")
+		if err := f.Sync(); err != nil {
+			ret.Error = "не удалось сохранить пакет: " + err.Error()
+			return ret, nil
+		}
+		if err := f.Close(); err != nil {
+			ret.Error = err.Error()
+			return ret, nil
+		}
 
 		/*
 		 * ПРОВЕРКА СУММЫ ОБЯЗАТЕЛЬНА, А НЕ «ЕСЛИ НАШЛАСЬ».
@@ -373,13 +396,17 @@ func (s *BaseServer) updateWithNetwork(ctx context.Context, in *gen.UpdateReq, n
 			// Не оставляем повреждённый пакет даже после проверки в downloader:
 			// updater независимо проверит подпись, размер и сумму до распаковки.
 			f.Close()
-			os.Remove(zipPath)
+			os.Remove(partialPath)
 			ret.Error = "контрольная сумма пакета не сошлась — обновление отменено"
 			return ret, nil
 		}
 		manifestBytes, err := json.Marshal(verifiedUpdate)
 		if err != nil {
 			ret.Error = err.Error()
+			return ret, nil
+		}
+		if err := os.Rename(partialPath, zipPath); err != nil {
+			ret.Error = "не удалось подготовить пакет: " + err.Error()
 			return ret, nil
 		}
 		if err := os.WriteFile(zipPath+".manifest.json", manifestBytes, 0644); err != nil {
@@ -397,6 +424,13 @@ func (s *BaseServer) updateWithNetwork(ctx context.Context, in *gen.UpdateReq, n
 			os.Remove(zipPath)
 			ret.Error = "не удалось записать контрольную сумму рядом с пакетом: " + err.Error()
 			return ret, nil
+		}
+		if runtime.GOOS == "windows" {
+			progress.save("prepare")
+			if err := network.prepareUpdater(zipPath); err != nil {
+				ret.Error = "не удалось подготовить установку: " + err.Error()
+				return ret, nil
+			}
 		}
 	}
 
