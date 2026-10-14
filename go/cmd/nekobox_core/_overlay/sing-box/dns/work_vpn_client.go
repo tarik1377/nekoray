@@ -92,10 +92,20 @@ func (c *workVPNClient) Exchange(ctx context.Context, transport adapter.DNSTrans
 	}
 	ordinary := c.ordinaryTransport(transport)
 	response, err := c.DNSClient.Exchange(ctx, ordinary, message, options, check)
-	negative := err == nil && negativeResponse(response) && (question.Qtype == mDNS.TypeA || question.Qtype == mDNS.TypeAAAA)
+	negative := err == nil && negativeResponse(response)
+	addressQuery := question.Qtype == mDNS.TypeA || question.Qtype == mDNS.TypeAAAA
+	if negative && !addressQuery {
+		// HTTPS/SVCB (and other record types) may be queried before A/AAAA.
+		// A missing record is not a missing public name: consult the ordinary
+		// address resolver first, without adding a corporate probe for names
+		// that already have a successful ordinary A/AAAA answer.
+		ips, lookupErr := c.DNSClient.Lookup(ctx, ordinary, FqdnToDomain(question.Name), adapter.DNSQueryOptions{}, nil)
+		var rcode RcodeError
+		negative = len(ips) == 0 && (lookupErr == nil || errors.As(lookupErr, &rcode) && rcode == RcodeNameError)
+	}
 	// NODATA in one family is not a missing name if the normal resolver returns
 	// a positive answer in the other family. NXDOMAIN already covers the name.
-	if negative && response.Rcode == mDNS.RcodeSuccess {
+	if negative && addressQuery && response.Rcode == mDNS.RcodeSuccess {
 		other := message.Copy()
 		if question.Qtype == mDNS.TypeA {
 			other.Question[0].Qtype = mDNS.TypeAAAA

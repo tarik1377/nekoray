@@ -38,6 +38,15 @@ mandatory guards before the corporate routing rule.
   the other address family through ordinary DNS to avoid probing IPv4-only or
   IPv6-only public names. A fallback answer is accepted only if all its address
   records are in specific VPN routes. No corporate domains/IPs are compiled in.
+* Non-address queries (including browser HTTPS/SVCB) receive the same split-DNS
+  protection. After an ordinary negative, first check ordinary A/AAAA; a public
+  address or ordinary error prevents any added corporate query. Otherwise the
+  selected VPN resolver must positively classify that exact name through A/AAAA
+  in specific VPN routes before its other records are accepted. Preserve its
+  NODATA response, and turn a contradictory type-specific NXDOMAIN into NODATA
+  after positive address classification, so it cannot poison the browser's
+  whole-name cache. Unclassified names and failed/refused VPN replies leave the
+  ordinary response intact.
 * Fake-IP names are classified through the real configured final DNS, retaining
   fake-IP responses for public names. If final is itself fake-IP, the first real
   configured transport is used; configure a real final DNS for unambiguous policy.
@@ -83,6 +92,12 @@ do not start any TUN. The loopback startup test has no TUN/auto-route.
 
 The mechanism needs specific routes and a reachable VPN DNS. Another TUN's
 firewall can deny these DNS sockets; discovery does not bypass that protection.
+These rules apply to queries entering the core's DNS router. A browser using its
+own encrypted DNS can bypass that router and its split-DNS decisions; browser
+DNS settings and caches therefore require a separate check. DNS recovery also
+does not establish TLS trust: private certificate authorities must already be
+trusted by the browser. This feature never installs a CA or disables certificate
+verification.
 Without an OS namespace, public DNS must first report the name absent. A public
 wildcard/sinkhole/positive answer deliberately prevents corporate fallback, and
 the initial unknown query therefore reaches the ordinary DNS. Servers answering

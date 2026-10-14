@@ -195,3 +195,117 @@ func TestWorkVPNFallbackUnavailablePreservesOrdinaryError(t *testing.T) {
 		t.Fatal("normal negative error lost")
 	}
 }
+
+type testRecordDNSClient struct {
+	*testOrdinaryDNSClient
+	recordRcode    int
+	addresses      []netip.Addr
+	addressError   error
+	recordFailure  error
+	recordPositive bool
+}
+
+func (c *testRecordDNSClient) Exchange(_ context.Context, _ adapter.DNSTransport, q *mDNS.Msg, _ adapter.DNSQueryOptions, _ func([]netip.Addr) bool) (*mDNS.Msg, error) {
+	c.calls++
+	if c.recordFailure != nil {
+		return nil, c.recordFailure
+	}
+	if c.recordPositive {
+		response := new(mDNS.Msg)
+		response.SetReply(q)
+		value := mDNS.SVCB{Hdr: mDNS.RR_Header{Name: q.Question[0].Name, Rrtype: q.Question[0].Qtype, Class: mDNS.ClassINET, Ttl: 60}, Priority: 1, Target: "."}
+		if q.Question[0].Qtype == mDNS.TypeHTTPS {
+			response.Answer = []mDNS.RR{&mDNS.HTTPS{SVCB: value}}
+		} else {
+			response.Answer = []mDNS.RR{&value}
+		}
+		return response, nil
+	}
+	return FixedResponseStatus(q, c.recordRcode), nil
+}
+func (c *testRecordDNSClient) Lookup(context.Context, adapter.DNSTransport, string, adapter.DNSQueryOptions, func([]netip.Addr) bool) ([]netip.Addr, error) {
+	c.calls++
+	return c.addresses, c.addressError
+}
+
+type testRecordVPNResolver struct{ testVPNResolver }
+
+func (m *testRecordVPNResolver) TryExchange(_ context.Context, q *mDNS.Msg) (*mDNS.Msg, bool) {
+	m.queries++
+	return FixedResponseStatus(q, mDNS.RcodeSuccess), m.handled
+}
+
+func TestWorkVPNBrowserRecordsUseCorporateNODATA(t *testing.T) {
+	for _, qtype := range []uint16{mDNS.TypeHTTPS, mDNS.TypeSVCB} {
+		t.Run(mDNS.TypeToString[qtype], func(t *testing.T) {
+			for _, ordinaryRcode := range []int{mDNS.RcodeNameError, mDNS.RcodeSuccess} {
+				base := &testRecordDNSClient{testOrdinaryDNSClient: new(testOrdinaryDNSClient), recordRcode: ordinaryRcode,
+					addressError: RcodeError(mDNS.RcodeNameError)}
+				manager := &testRecordVPNResolver{testVPNResolver{handled: true}}
+				client := &workVPNClient{DNSClient: base, manager: manager}
+				q := new(mDNS.Msg)
+				q.SetQuestion("previously-unlisted-work-host.example.", qtype)
+				r, err := client.Exchange(context.Background(), nil, q, adapter.DNSQueryOptions{}, nil)
+				if err != nil || r.Rcode != mDNS.RcodeSuccess || len(r.Answer) != 0 || manager.queries != 1 || r.Question[0].Qtype != qtype {
+					t.Fatal("browser record retained public NXDOMAIN instead of corporate NODATA")
+				}
+			}
+		})
+	}
+}
+
+func TestWorkVPNBrowserRecordsPreserveOrdinaryPolicy(t *testing.T) {
+	for _, qtype := range []uint16{mDNS.TypeHTTPS, mDNS.TypeSVCB} {
+		t.Run(mDNS.TypeToString[qtype]+"/positive-service-record", func(t *testing.T) {
+			base := &testRecordDNSClient{testOrdinaryDNSClient: new(testOrdinaryDNSClient), recordPositive: true,
+				addressError: RcodeError(mDNS.RcodeNameError)}
+			manager := &testRecordVPNResolver{testVPNResolver{handled: true}}
+			client := &workVPNClient{DNSClient: base, manager: manager}
+			q := new(mDNS.Msg)
+			q.SetQuestion("public-record.example.", qtype)
+			r, err := client.Exchange(context.Background(), nil, q, adapter.DNSQueryOptions{}, nil)
+			if err != nil || len(r.Answer) != 1 || manager.queries != 0 || base.calls != 1 {
+				t.Fatal("positive ordinary service record triggered address/corporate classification")
+			}
+		})
+		for _, tc := range []struct {
+			name                        string
+			ips                         []netip.Addr
+			addressError, recordFailure error
+			rcode                       int
+		}{
+			{"public-address", []netip.Addr{netip.MustParseAddr("198.51.100.7")}, nil, nil, mDNS.RcodeNameError},
+			{"private-LAN-address", []netip.Addr{netip.MustParseAddr("192.168.50.7")}, nil, nil, mDNS.RcodeSuccess},
+			{"address-timeout", nil, context.DeadlineExceeded, nil, mDNS.RcodeNameError},
+			{"record-timeout", nil, RcodeError(mDNS.RcodeNameError), context.DeadlineExceeded, 0},
+			{"record-refused", nil, RcodeError(mDNS.RcodeNameError), nil, mDNS.RcodeRefused},
+			{"response-rejected", nil, RcodeError(mDNS.RcodeNameError), ErrResponseRejected, 0},
+		} {
+			t.Run(mDNS.TypeToString[qtype]+"/"+tc.name, func(t *testing.T) {
+				base := &testRecordDNSClient{testOrdinaryDNSClient: new(testOrdinaryDNSClient), recordRcode: tc.rcode,
+					addresses: tc.ips, addressError: tc.addressError, recordFailure: tc.recordFailure}
+				manager := &testRecordVPNResolver{testVPNResolver{handled: true}}
+				client := &workVPNClient{DNSClient: base, manager: manager}
+				q := new(mDNS.Msg)
+				q.SetQuestion("ordinary-host.example.", qtype)
+				r, err := client.Exchange(context.Background(), nil, q, adapter.DNSQueryOptions{}, nil)
+				if manager.queries != 0 || tc.recordFailure != nil && !errors.Is(err, tc.recordFailure) || tc.recordFailure == nil && (err != nil || r.Rcode != tc.rcode) {
+					t.Fatal("ordinary record policy changed or reached corporate DNS")
+				}
+			})
+		}
+	}
+}
+
+func TestWorkVPNBrowserRecordsUnavailablePreservesNXDOMAIN(t *testing.T) {
+	base := &testRecordDNSClient{testOrdinaryDNSClient: new(testOrdinaryDNSClient), recordRcode: mDNS.RcodeNameError,
+		addressError: RcodeError(mDNS.RcodeNameError)}
+	manager := &testRecordVPNResolver{}
+	client := &workVPNClient{DNSClient: base, manager: manager}
+	q := new(mDNS.Msg)
+	q.SetQuestion("not-a-work-host.example.", mDNS.TypeHTTPS)
+	r, err := client.Exchange(context.Background(), nil, q, adapter.DNSQueryOptions{}, nil)
+	if err != nil || r.Rcode != mDNS.RcodeNameError || manager.queries != 1 {
+		t.Fatal("unavailable work fallback blackholed an ordinary name")
+	}
+}

@@ -190,6 +190,105 @@ func TestWorkVPNUnrelatedDNSAndErrorsFallBack(t *testing.T) {
 	}
 }
 
+func TestWorkVPNBrowserRecordClassification(t *testing.T) {
+	for _, qtype := range []uint16{dns.TypeHTTPS, dns.TypeSVCB} {
+		for _, recordRcode := range []int{dns.RcodeSuccess, dns.RcodeNameError} {
+			t.Run(dns.TypeToString[qtype]+"/"+dns.RcodeToString[recordRcode], func(t *testing.T) {
+				m := syntheticManager()
+				m.exchange = func(_ context.Context, _ resolver, q *dns.Msg) (*dns.Msg, error) {
+					if q.Question[0].Qtype == dns.TypeA {
+						return response(q, "10.60.4.5"), nil
+					}
+					result := response(q)
+					result.Rcode = recordRcode
+					return result, nil
+				}
+				q := new(dns.Msg)
+				q.SetQuestion("unlisted-host.example.", qtype)
+				r, handled := m.TryExchange(context.Background(), q)
+				if !handled || r.Rcode != dns.RcodeSuccess || len(r.Answer) != 0 || r.Question[0] != q.Question[0] {
+					t.Fatal("positive corporate A did not recover modern-record NODATA")
+				}
+				if _, err := r.Pack(); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+}
+
+func TestWorkVPNBrowserRecordPreservesActualAnswer(t *testing.T) {
+	for _, qtype := range []uint16{dns.TypeHTTPS, dns.TypeSVCB} {
+		m := syntheticManager()
+		m.exchange = func(_ context.Context, _ resolver, q *dns.Msg) (*dns.Msg, error) {
+			if q.Question[0].Qtype == dns.TypeA {
+				return response(q, "10.60.4.5"), nil
+			}
+			r := response(q)
+			value := dns.SVCB{Hdr: dns.RR_Header{Name: q.Question[0].Name, Rrtype: qtype, Class: dns.ClassINET, Ttl: 60}, Priority: 1, Target: "."}
+			if qtype == dns.TypeHTTPS {
+				r.Answer = []dns.RR{&dns.HTTPS{SVCB: value}}
+			} else {
+				r.Answer = []dns.RR{&value}
+			}
+			return r, nil
+		}
+		q := new(dns.Msg)
+		q.SetQuestion("record-present.example.", qtype)
+		r, handled := m.TryExchange(context.Background(), q)
+		if !handled || r.Rcode != dns.RcodeSuccess || len(r.Answer) != 1 || r.Answer[0].Header().Rrtype != qtype {
+			t.Fatal("actual corporate service-binding record was discarded")
+		}
+	}
+}
+
+func TestWorkVPNBrowserRecordIPv6OnlyClassification(t *testing.T) {
+	m := syntheticManager()
+	m.exchange = func(_ context.Context, _ resolver, q *dns.Msg) (*dns.Msg, error) {
+		if q.Question[0].Qtype == dns.TypeAAAA {
+			return response(q, "2001:db8:42::5"), nil
+		}
+		return response(q), nil
+	}
+	q := new(dns.Msg)
+	q.SetQuestion("ipv6-only-work-host.example.", dns.TypeHTTPS)
+	r, handled := m.TryExchange(context.Background(), q)
+	if !handled || r.Rcode != dns.RcodeSuccess || len(r.Answer) != 0 {
+		t.Fatal("IPv6-only VPN route did not classify service-binding name")
+	}
+}
+
+func TestWorkVPNBrowserRecordRejectsUnroutedAndFailedClassifications(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		ips     []string
+		failure bool
+	}{
+		{"public", []string{"198.51.100.7"}, false},
+		{"private-LAN", []string{"192.168.50.7"}, false},
+		{"mixed", []string{"10.60.4.5", "198.51.100.7"}, false},
+		{"no-address", nil, false}, {"timeout", nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := syntheticManager()
+			m.exchange = func(_ context.Context, _ resolver, q *dns.Msg) (*dns.Msg, error) {
+				if q.Question[0].Qtype == dns.TypeA || q.Question[0].Qtype == dns.TypeAAAA {
+					if tc.failure {
+						return nil, context.DeadlineExceeded
+					}
+					return response(q, tc.ips...), nil
+				}
+				return response(q), nil
+			}
+			q := new(dns.Msg)
+			q.SetQuestion("not-classified.example.", dns.TypeHTTPS)
+			if _, handled := m.TryExchange(context.Background(), q); handled {
+				t.Fatal("unrelated or failed address classification handled modern record")
+			}
+		})
+	}
+}
+
 func TestWorkVPNSuffixesAndBoundedCancellation(t *testing.T) {
 	m := syntheticManager()
 	m.read = func() (Snapshot, error) {

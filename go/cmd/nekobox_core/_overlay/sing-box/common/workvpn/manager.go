@@ -140,6 +140,29 @@ func (m *Manager) query(ctx context.Context, s Snapshot, r resolver, question *d
 		return nil
 	}
 	if question.Question[0].Qtype != dns.TypeA && question.Question[0].Qtype != dns.TypeAAAA {
+		// A successful VPN-routed address answer proves that this resolver
+		// knows the same work host even when HTTPS/SVCB is requested first.
+		// Never accept unrelated, mixed or default-route-only addresses.
+		if response.Rcode != dns.RcodeSuccess && response.Rcode != dns.RcodeNameError {
+			return nil
+		}
+		for _, addressType := range []uint16{dns.TypeA, dns.TypeAAAA} {
+			addressQuestion := new(dns.Msg)
+			addressQuestion.SetQuestion(question.Question[0].Name, addressType)
+			classification, addressErr := m.exchange(ctx, r, addressQuestion)
+			if addressErr != nil || classification == nil || len(classification.Question) != 1 ||
+				!strings.EqualFold(classification.Question[0].Name, addressQuestion.Question[0].Name) ||
+				classification.Question[0].Qtype != addressType || !routedResponse(s, m.excluded, classification) {
+				continue
+			}
+			if response.Rcode == dns.RcodeSuccess {
+				return response
+			}
+			// NXDOMAIN applies to the whole name, not just the queried type.
+			// With a proven work-host A/AAAA, a type-specific negative must be
+			// NODATA, otherwise a browser can poison its A/AAAA name cache.
+			return noDataResponse(question, classification)
+		}
 		return nil
 	}
 	if routedResponse(s, m.excluded, response) {
@@ -161,11 +184,15 @@ func (m *Manager) query(ctx context.Context, s Snapshot, r resolver, question *d
 	if err != nil || !routedResponse(s, m.excluded, classification) {
 		return nil
 	}
+	return noDataResponse(question, classification)
+}
+
+func noDataResponse(question, classification *dns.Msg) *dns.Msg {
 	empty := new(dns.Msg)
 	empty.SetReply(question)
 	empty.RecursionAvailable = true
-	// Use the opposite family's TTL as this NODATA's short cache lifetime.
-	empty.Ns = []dns.RR{&dns.SOA{Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: answerTTL(classification)}, Ns: ".", Mbox: ".", Minttl: answerTTL(classification)}}
+	// Use the positively classified address family's short cache lifetime.
+	empty.Ns = []dns.RR{&dns.SOA{Hdr: dns.RR_Header{Name: question.Question[0].Name, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: answerTTL(classification)}, Ns: ".", Mbox: ".", Minttl: answerTTL(classification)}}
 	return empty
 }
 
@@ -198,15 +225,6 @@ func (m *Manager) TryExchange(ctx context.Context, question *dns.Msg) (*dns.Msg,
 	q.Name = strings.ToLower(dns.Fqdn(q.Name))
 	s, generation := m.current()
 	servers, scope := s.resolversForName(m.excluded, q.Name)
-	if q.Qtype != dns.TypeA && q.Qtype != dns.TypeAAAA {
-		filtered := servers[:0]
-		for _, server := range servers {
-			if server.ownsName(q.Name) {
-				filtered = append(filtered, server)
-			}
-		}
-		servers = filtered
-	}
 	if len(servers) == 0 {
 		return nil, false
 	}
