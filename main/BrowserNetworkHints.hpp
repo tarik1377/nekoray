@@ -5,25 +5,40 @@
 #include <QObject>
 #include <QSslError>
 #include <QUrl>
+#include <QVariant>
 #include <memory>
 
 namespace GreenRhythm {
 
+enum class BrowserDnsHintSource { LocalState, MachinePolicy, UserPolicy };
 struct BrowserDnsHint {
     QString browser;
     QString mode;
     bool customResolver = false;
+    BrowserDnsHintSource source = BrowserDnsHintSource::LocalState;
+};
+
+struct BrowserDnsPolicyValue {
+    bool present = false;
+    QVariant value;
 };
 
 enum class SystemProxyHint { Disabled, GreenRhythm, Other, Automatic, Unavailable };
+SystemProxyHint parseSystemProxyHint(quint32 flags, const QString &server, quint16 greenRhythmPort,
+                                    bool querySucceeded = true);
 struct BrowserNetworkHints {
     QList<BrowserDnsHint> browsers;
     SystemProxyHint systemProxy = SystemProxyHint::Unavailable;
 };
 
-// Reads only DNS-over-HTTPS settings from Local State. Never opens profile,
-// cookie, session or login databases; resolver templates are not returned.
+// Reads only DNS-over-HTTPS settings from Local State and mandatory Windows
+// policy keys. Never opens profile, cookie, session or login databases;
+// resolver templates are not returned. Browser policy reload is not verified.
 BrowserDnsHint parseBrowserDnsHint(const QString &browser, const QByteArray &localState);
+// Highest present policy wins. An invalid policy reports an unknown mode;
+// it cannot prove that a lower policy or saved preference is active at runtime.
+BrowserDnsHint applyBrowserDnsPolicies(BrowserDnsHint saved, const BrowserDnsPolicyValue &machine,
+                                     const BrowserDnsPolicyValue &user);
 BrowserNetworkHints readBrowserNetworkHints(quint16 greenRhythmPort);
 QString browserNetworkHintsText(const BrowserNetworkHints &hints);
 bool parseWebCheckUrl(const QString &text, QUrl *url, QString *reason);

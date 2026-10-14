@@ -1,4 +1,11 @@
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include "sys/windows/WindowsProxyApi.hpp"
+#endif
 #include "BrowserNetworkHints.hpp"
+#include "WindowsProxyController.hpp"
 
 #include <QDir>
 #include <QElapsedTimer>
@@ -50,6 +57,17 @@ WebCheckKind errorKind(QNetworkReply::NetworkError error, bool tlsError) {
 }
 } // namespace
 
+SystemProxyHint parseSystemProxyHint(quint32 flags, const QString &server, quint16 greenRhythmPort,
+                                    bool querySucceeded) {
+    using namespace WindowsProxy;
+    constexpr auto known = Direct | Manual | Pac | AutoDetect;
+    if (!querySucceeded || !flags || (flags & ~known)) return SystemProxyHint::Unavailable;
+    if (flags & (Pac | AutoDetect)) return SystemProxyHint::Automatic;
+    if (flags & Manual) return isOurProxyServer(server, greenRhythmPort)
+        ? SystemProxyHint::GreenRhythm : SystemProxyHint::Other;
+    return SystemProxyHint::Disabled;
+}
+
 BrowserDnsHint parseBrowserDnsHint(const QString &browser, const QByteArray &localState) {
     BrowserDnsHint hint{browser, {}, false};
     if (localState.size() > 8 * 1024 * 1024) return hint;
@@ -61,27 +79,58 @@ BrowserDnsHint parseBrowserDnsHint(const QString &browser, const QByteArray &loc
     return hint;
 }
 
+BrowserDnsHint applyBrowserDnsPolicies(BrowserDnsHint saved, const BrowserDnsPolicyValue &machine,
+                                     const BrowserDnsPolicyValue &user) {
+    const auto *policy = machine.present ? &machine : user.present ? &user : nullptr;
+    if (!policy) return saved;
+    saved.source = machine.present ? BrowserDnsHintSource::MachinePolicy : BrowserDnsHintSource::UserPolicy;
+    saved.mode.clear();
+    // Policy templates are not read. Saved resolver details cannot establish
+    // the resolver used with a mandatory policy.
+    saved.customResolver = false;
+    if (policy->value.userType() == QMetaType::QString) {
+        const auto mode = policy->value.toString();
+        if (mode == QStringLiteral("secure") || mode == QStringLiteral("automatic") || mode == QStringLiteral("off")) saved.mode = mode;
+    }
+    return saved;
+}
+
 BrowserNetworkHints readBrowserNetworkHints(quint16 greenRhythmPort) {
     BrowserNetworkHints hints;
 #ifdef Q_OS_WIN
     const auto localPath = qEnvironmentVariable("LOCALAPPDATA");
     const QDir local(localPath);
     if (!localPath.isEmpty()) {
-        const QList<QPair<QString, QString>> browserPaths{
-            {QStringLiteral("Яндекс Браузер"), QStringLiteral("Yandex/YandexBrowser/User Data/Local State")},
-            {QStringLiteral("Chrome"), QStringLiteral("Google/Chrome/User Data/Local State")},
-            {QStringLiteral("Edge"), QStringLiteral("Microsoft/Edge/User Data/Local State")}};
+        struct BrowserPath { QString name, localState, policy; };
+        const QList<BrowserPath> browserPaths{
+            {QStringLiteral("Яндекс Браузер"), QStringLiteral("Yandex/YandexBrowser/User Data/Local State"), QStringLiteral("SOFTWARE\\Policies\\YandexBrowser")},
+            {QStringLiteral("Chrome"), QStringLiteral("Google/Chrome/User Data/Local State"), QStringLiteral("SOFTWARE\\Policies\\Google\\Chrome")},
+            {QStringLiteral("Edge"), QStringLiteral("Microsoft/Edge/User Data/Local State"), QStringLiteral("SOFTWARE\\Policies\\Microsoft\\Edge")}};
         for (const auto &browser : browserPaths) {
-            QFile file(local.filePath(browser.second));
-            if (!file.open(QIODevice::ReadOnly) || file.size() > 8 * 1024 * 1024) continue;
-            hints.browsers.append(parseBrowserDnsHint(browser.first, file.read(8 * 1024 * 1024 + 1)));
+            const auto readPolicy = [&](const QString &hive) {
+                QSettings policy(hive + QLatin1Char('\\') + browser.policy, QSettings::NativeFormat);
+                const auto key = QStringLiteral("DnsOverHttpsMode");
+                const bool present = policy.contains(key);
+                const auto value = present ? policy.value(key) : QVariant{};
+                // A registry read failure is unknown, not proof of absence.
+                return BrowserDnsPolicyValue{present || policy.status() != QSettings::NoError, value};
+            };
+            const auto machine = readPolicy(QStringLiteral("HKEY_LOCAL_MACHINE"));
+            const auto user = readPolicy(QStringLiteral("HKEY_CURRENT_USER"));
+            QFile file(local.filePath(browser.localState));
+            const bool readable = file.open(QIODevice::ReadOnly) && file.size() <= 8 * 1024 * 1024;
+            if (!readable && !machine.present && !user.present) continue;
+            const auto saved = parseBrowserDnsHint(browser.name, readable ? file.read(8 * 1024 * 1024 + 1) : QByteArray{});
+            hints.browsers.append(applyBrowserDnsPolicies(saved, machine, user));
         }
     }
-    QSettings settings(QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"), QSettings::NativeFormat);
-    if (!settings.value(QStringLiteral("AutoConfigURL")).toString().isEmpty()) hints.systemProxy = SystemProxyHint::Automatic;
-    else if (!settings.value(QStringLiteral("ProxyEnable"), false).toBool()) hints.systemProxy = SystemProxyHint::Disabled;
-    else hints.systemProxy = isOurProxyServer(settings.value(QStringLiteral("ProxyServer")).toString(), greenRhythmPort)
-        ? SystemProxyHint::GreenRhythm : SystemProxyHint::Other;
+    // Query active LAN flags, never infer an active PAC from its saved URL.
+    // The verified backend may preserve that URL while selecting Manual.
+    WindowsProxy::WinInetApi proxyApi;
+    WindowsProxy::State proxyState;
+    QString queryError;
+    const bool proxyReadable = proxyApi.query(proxyState, queryError);
+    hints.systemProxy = parseSystemProxyHint(proxyState.flags, proxyState.server, greenRhythmPort, proxyReadable);
 #else
     Q_UNUSED(greenRhythmPort)
 #endif
@@ -91,8 +140,21 @@ BrowserNetworkHints readBrowserNetworkHints(quint16 greenRhythmPort) {
 QString browserNetworkHintsText(const BrowserNetworkHints &hints) {
     QStringList text;
     for (const auto &browser : hints.browsers) {
+        if (browser.source != BrowserDnsHintSource::LocalState) {
+            const auto origin = browser.source == BrowserDnsHintSource::MachinePolicy
+                ? QObject::tr("политика компьютера") : QObject::tr("политика пользователя");
+            if (browser.mode == QStringLiteral("off"))
+                text.append(QObject::tr("%1: %2 задаёт отключение защищённого DNS. Перечитывание политики браузером не проверялось.").arg(browser.browser, origin));
+            else if (browser.mode == QStringLiteral("secure"))
+                text.append(QObject::tr("%1: %2 задаёт отдельный защищённый DNS; он может не знать имена ресурсов рабочего VPN. Перечитывание политики браузером не проверялось.").arg(browser.browser, origin));
+            else if (browser.mode == QStringLiteral("automatic"))
+                text.append(QObject::tr("%1: %2 задаёт автоматический защищённый DNS. Перечитывание политики браузером не проверялось.").arg(browser.browser, origin));
+            else
+                text.append(QObject::tr("%1: %2 содержит нераспознанное значение защищённого DNS. Действующий режим браузера не установлен.").arg(browser.browser, origin));
+            continue;
+        }
         if (browser.mode == QStringLiteral("secure"))
-            text.append(QObject::tr("%1: включён отдельный защищённый DNS. Он может не знать имена ресурсов рабочего VPN.").arg(browser.browser));
+            text.append(QObject::tr("%1: в сохранённых настройках выбран отдельный защищённый DNS. Он может не знать имена ресурсов рабочего VPN; действующий режим браузера не проверялся.").arg(browser.browser));
         else if (browser.mode == QStringLiteral("automatic"))
             text.append(QObject::tr("%1: защищённый DNS работает автоматически; фактический выбор зависит от браузера.").arg(browser.browser));
     }
@@ -100,8 +162,8 @@ QString browserNetworkHintsText(const BrowserNetworkHints &hints) {
     case SystemProxyHint::Disabled: text.append(QObject::tr("Системный прокси выключен. Браузер использует туннель и собственные настройки DNS.")); break;
     case SystemProxyHint::GreenRhythm: text.append(QObject::tr("Системный прокси направлен в GreenRhythm.")); break;
     case SystemProxyHint::Other: text.append(QObject::tr("Системный прокси направлен в другое приложение. Подключение браузеров заменит этот выбор.")); break;
-    case SystemProxyHint::Automatic: text.append(QObject::tr("Системный прокси задан автоматическим сценарием. Его выбор может отличаться для разных сайтов.")); break;
-    case SystemProxyHint::Unavailable: text.append(QObject::tr("Настройки браузерного DNS и системного прокси Windows здесь недоступны.")); break;
+    case SystemProxyHint::Automatic: text.append(QObject::tr("Системный прокси выбирается автоматически: сценарием или автоопределением. Его выбор может отличаться для разных сайтов.")); break;
+    case SystemProxyHint::Unavailable: text.append(QObject::tr("Состояние системного прокси определить не удалось.")); break;
     }
     return text.join(QStringLiteral("\n"));
 }
