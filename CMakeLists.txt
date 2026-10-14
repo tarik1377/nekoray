@@ -150,6 +150,8 @@ set(PROJECT_SOURCES
         main/LocalDns.cpp
         main/NekoGui_Utils.cpp
         main/HTTPRequestHelper.cpp
+        main/BrowserNetworkHints.cpp
+        main/BrowserNetworkHints.hpp
         main/RelayTrace.cpp
         main/RelayTrace.hpp
         main/DeviceCredentials.cpp
@@ -277,6 +279,8 @@ set(PROJECT_SOURCES
         dpi/DpiModule.hpp
 
         ui/dialog_whatbroke.cpp
+        ui/dialog_web_diagnostics.cpp
+        ui/dialog_web_diagnostics.h
         ui/ServerCardDelegate.cpp
         ui/MainShell.cpp
         ui/Icons.cpp
@@ -798,6 +802,14 @@ target_link_libraries(macos_mode_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 # собирает и гоняет всё; CI зовёт то же самое.
 enable_testing()
 
+add_executable(browser_network_hints_test EXCLUDE_FROM_ALL
+        test/BrowserNetworkHintsTest.cpp main/BrowserNetworkHints.cpp main/BrowserNetworkHints.hpp
+        ui/dialog_web_diagnostics.cpp ui/dialog_web_diagnostics.h
+        ui/MainShell.cpp ui/Icons.cpp ui/ServerCardDelegate.cpp res/neko.qrc)
+set_target_properties(browser_network_hints_test PROPERTIES AUTOMOC ON AUTORCC ON)
+target_include_directories(browser_network_hints_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(browser_network_hints_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::Svg)
+
 add_executable(http_outage_test EXCLUDE_FROM_ALL test/HttpOutageTest.cpp main/HTTPRequestHelper.cpp main/HTTPRequestHelper.hpp)
 set_target_properties(http_outage_test PROPERTIES AUTOMOC ON)
 target_include_directories(http_outage_test PRIVATE ${CMAKE_SOURCE_DIR})
@@ -893,6 +905,7 @@ target_include_directories(program_watch_lifetime_test PRIVATE ${CMAKE_SOURCE_DI
 target_link_libraries(program_watch_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
 set(GR_TEST_TARGETS
+        browser_network_hints_test
         connection_lifecycle_test
         rollback_action_test
         core_process_lifecycle_test

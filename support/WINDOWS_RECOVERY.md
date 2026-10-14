@@ -4,7 +4,7 @@ The repair is based on the exact v1.9.2 source, with its existing Qt and geodata
 dependencies. The GUI, core and updater must be delivered together. The new GUI
 expects the verified updater bootstrap produced by the new core.
 
-Use `-DNKR_VERSION=v1.9.2.2` for a local repair build, and the same version in the
+Use `-DNKR_VERSION=v1.9.2.3` for a local repair build, and the same version in the
 Go core linker flag. A numeric fourth component is deliberate: the existing
 updater recognises it and will not offer the older v1.9.2 as an upgrade.
 `nekoray_version.txt` remains the default when no CMake version is supplied.
@@ -40,10 +40,20 @@ updater recognises it and will not offer the older v1.9.2 as an upgrade.
   schemes. Other selectors and settings are retained.
 * Logs, routes and purchase are accessible from the sidebar. The updater shows
   download/install stages, checks errors and rolls back failed replacements.
+* Browser help compares a site's system and GreenRhythm proxy paths with bounded
+  requests and strict certificate checks. It reports secure-DNS conflicts and
+  distinguishes an HTTP response from a successful account login. The explicit
+  browser-connect button enables the application's system proxy mode. See
+  [browser diagnostics](BROWSER_CONNECTIVITY.md).
+* A compact settings action restores a verified previous Windows runtime while
+  retaining current user files. A failed startup restores the current runtime
+  and its previous-version snapshot. See [rollback and compatibility limits](../docs/windows-version-rollback.md).
+* Explorer reports the same numeric product version as the application, core
+  and package, including the fourth component used for repair builds.
 
 ## Validation
 
-The full Windows Qt suite contains 36 test programs. The live import test accepts
+The full Windows Qt suite contains 40 test programs. The live import test accepts
 a URL file and a private export directory: keep these outside the public tree.
 It downloads through the actual Qt HTTP/parser/store path and builds native
 REALITY, internal System and external System TUN configurations. Config building

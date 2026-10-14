@@ -20,6 +20,7 @@
 #include "ui/SubscriptionSchedule.hpp"
 #include "ui/LanAddress.hpp"
 #include "ui/UpdateNotice.hpp"
+#include "ui/dialog_web_diagnostics.h"
 
 #include <QNetworkInterface>
 
@@ -389,6 +390,29 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         });
         connect(shell, &GreenRhythm::MainShell::systemProxyToggled, this,
                 [this](bool on) { neko_set_spmode_system_proxy(on); });
+        connect(shell, &GreenRhythm::MainShell::browserHelpRequested, this, [this] {
+            auto *dialog = new DialogWebDiagnostics(this);
+            dialog->setAttribute(Qt::WA_DeleteOnClose);
+            const auto *auth = NekoGui::dataStore->inbound_auth;
+            dialog->setProxyEndpoint(NekoGui::dataStore->inbound_socks_port,
+                                     auth->NeedAuth() ? auth->username : QString(),
+                                     auth->NeedAuth() ? auth->password : QString(),
+                                     NekoGui::dataStore->started_id >= 0);
+            connect(dialog, &DialogWebDiagnostics::connectBrowsersRequested, this, [this, dialog] {
+                // Recheck at click time: the profile can stop while this dialog is open.
+                if (NekoGui::dataStore->started_id < 0) {
+                    MessageBoxWarning(software_name, tr("Сначала подключите сервер GreenRhythm."));
+                    return;
+                }
+                neko_set_spmode_system_proxy(true);
+                dialog->setProxyEndpoint(NekoGui::dataStore->inbound_socks_port,
+                                        NekoGui::dataStore->inbound_auth->NeedAuth()
+                                            ? NekoGui::dataStore->inbound_auth->username : QString(),
+                                        NekoGui::dataStore->inbound_auth->NeedAuth()
+                                            ? NekoGui::dataStore->inbound_auth->password : QString(), true);
+            });
+            dialog->show();
+        });
         connect(shell, &GreenRhythm::MainShell::gamesViaTunnelToggled, this, [this](bool on) {
             NekoGui::dataStore->games_via_tunnel = on;
             show_log_impl(on ? tr("Игры пойдут через туннель. Пинг будет выше, адрес — зарубежный; "
