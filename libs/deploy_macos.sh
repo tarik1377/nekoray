@@ -149,7 +149,8 @@ step "наборы правил"
 # Тоже без глушения: без них правила «российское — напрямую» и блокировка
 # рекламы не действуют до первой докачки, а докачка идёт через сам туннель.
 cp "$DEPLOYMENT/public_res/geosite-category-ads-all.srs" "$BIN/config/"
-cp "$DEPLOYMENT/public_res/geoip-ru.srs" "$BIN/config/"
+# Use the same reviewed, validated snapshot and data license as Windows.
+python3 "$SRC_ROOT/tools/geodata_bootstrap.py" "$BIN/config" --runtime-root "$BIN"
 
 #### Qt ####
 step "библиотеки Qt"

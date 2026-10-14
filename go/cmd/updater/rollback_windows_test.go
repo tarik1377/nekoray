@@ -112,6 +112,7 @@ func TestRestoreFailureWithLockedEmergencyBackupRetainsRecoveryBytes(t *testing.
 }
 func TestExplicitLocalBootstrapChecksRealPEAndToolchainWithoutCopyingConfig(t *testing.T) {
 	_, source, record, _ := rollbackFixture(t)
+	seedGeoDataAssets(t, source, record)
 	fixtureSource := filepath.Join(t.TempDir(), "main.go")
 	if err := os.WriteFile(fixtureSource, []byte("package main\nimport \"fmt\"\nfunc main(){fmt.Println(\"sing-box: fixture GreenRhythm: v1.9.2.2\")}\n"), 0600); err != nil {
 		t.Fatal(err)
@@ -155,8 +156,14 @@ func TestExplicitLocalBootstrapChecksRealPEAndToolchainWithoutCopyingConfig(t *t
 	if err != nil || saved.Provenance != "explicit-verified-local" {
 		t.Fatal(saved, err)
 	}
-	if Exist(filepath.Join(target, previousDirectory, "files/config")) {
+	if Exist(filepath.Join(target, previousDirectory, "files/config/profiles/future.json")) || Exist(filepath.Join(target, previousDirectory, "files/config/private.json")) || Exist(filepath.Join(target, previousDirectory, "files/config/geoip-ru.srs")) {
 		t.Fatal("private configuration copied")
+	}
+	for _, name := range reservedGeoDataNames {
+		bytes, err := os.ReadFile(filepath.Join(target, previousDirectory, "files", filepath.FromSlash(name)))
+		if err != nil || string(bytes) != "old-"+name {
+			t.Fatalf("verified reserved asset omitted from local receipt/snapshot: %s %q %v", name, bytes, err)
+		}
 	}
 	receipt.GoToolchain = "go1.26.1"
 	data, _ = json.Marshal(receipt)

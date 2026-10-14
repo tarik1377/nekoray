@@ -21,6 +21,17 @@ type installTransaction struct {
 	removeOnly               map[string]bool
 }
 
+// These three package-owned assets are not settings. Keep this exact list
+// shared with receipts/snapshots; arbitrary config JSON, cached updates and
+// legacy/custom country rule-sets must never enter a runtime rollback.
+func reservedGeoDataAsset(rel string) bool {
+	switch strings.ToLower(filepath.ToSlash(rel)) {
+	case "config/geoip-ru-bootstrap.srs", "config/geoip-ru-bootstrap.json", "config/license-cc-by-sa-4.0.txt":
+		return true
+	}
+	return false
+}
+
 func newInstallTransaction(payload, install string, rename func(string, string) error) (*installTransaction, error) {
 	backups, err := filepath.Glob(filepath.Join(install, ".greenrhythm-backup-*"))
 	if err != nil {
@@ -42,7 +53,7 @@ func newInstallTransaction(payload, install string, rename func(string, string) 
 			return err
 		}
 		parts := strings.Split(filepath.ToSlash(rel), "/")
-		if strings.EqualFold(parts[0], "config") && (entry.IsDir() && len(parts) > 1 || !entry.IsDir() && (len(parts) != 2 || !strings.HasSuffix(strings.ToLower(rel), ".srs"))) {
+		if strings.EqualFold(parts[0], "config") && (entry.IsDir() && len(parts) > 1 || !entry.IsDir() && (len(parts) != 2 || (!strings.HasSuffix(strings.ToLower(rel), ".srs") && !reservedGeoDataAsset(rel)))) {
 			if entry.IsDir() {
 				return filepath.SkipDir
 			}

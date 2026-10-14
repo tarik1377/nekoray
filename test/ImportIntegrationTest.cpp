@@ -12,6 +12,7 @@
 #include "fmt/includes.h"
 #include "main/HTTPRequestHelper.hpp"
 #include "main/RouteState.hpp"
+#include "main/RuRoutingPolicy.hpp"
 #include "sub/GroupUpdater.hpp"
 
 #include <QApplication>
@@ -247,6 +248,80 @@ int main(int argc, char **argv) {
         if (server.value("tag") == "dns-remote") remoteDetour = server.value("detour") == "proxy";
     }
     check(directDoH && remoteDetour, "direct DNS uses HTTPS while VPN DNS keeps its VPN detour");
+
+    const auto runtimeRules = [](const std::shared_ptr<NekoGui::BuildConfigResult> &built) {
+        return built->coreConfig.value("route").toObject().value("rules").toArray();
+    };
+    const auto ruleIndex = [](const QJsonArray &rules, const QJsonObject &expected) {
+        for (int i = 0; i < rules.size(); ++i) if (rules[i].toObject() == expected) return i;
+        return -1;
+    };
+    const auto ruIndex = [](const QJsonArray &rules) {
+        for (int i = 0; i < rules.size(); ++i) {
+            const auto rule = rules[i].toObject();
+            if (rule.value("outbound") == "bypass" && rule.value("geoip").toArray().contains("ru")) return i;
+        }
+        return -1;
+    };
+    const auto buildCurrent = [&]() { return NekoGui::BuildConfig(NekoGui::profileManager->GetProfile(firstId), false, false); };
+    const auto standardProcessProxy = GreenRhythm::RuRoutingPolicy::standardProcessProxyRule();
+    const auto originalChoice = NekoGui::dataStore->routing_defaults_choice;
+    NekoGui::dataStore->routing_defaults_choice.clear();
+    const auto defaultRules = runtimeRules(buildCurrent());
+    check(ruIndex(defaultRules) >= 0 && ruleIndex(defaultRules, standardProcessProxy) > ruIndex(defaultRules),
+          "actual RU preset sends Russian destinations before the shipped Codex and Telegram proxy fallback");
+    const auto factoryCustom = NekoGui::dataStore->routing->custom;
+    for (const auto &choice : {QStringLiteral("keep"), QStringLiteral("restored")}) {
+        NekoGui::dataStore->routing_defaults_choice = choice;
+        const auto keptRules = runtimeRules(buildCurrent());
+        check(ruleIndex(keptRules, standardProcessProxy) >= 0
+              && ruleIndex(keptRules, standardProcessProxy) < ruIndex(keptRules),
+              "actual builder honors keep and restored route choices without reordering factory-looking rules");
+    }
+    NekoGui::dataStore->routing_defaults_choice.clear();
+    auto customDocument = QJsonDocument::fromJson(factoryCustom.toUtf8()).object();
+    auto customRules = customDocument.value("rules").toArray();
+    auto qualified = standardProcessProxy;
+    qualified.insert("network", "tcp");
+    for (int i = 0; i < customRules.size(); ++i)
+        if (customRules[i].toObject() == standardProcessProxy) customRules.replace(i, qualified);
+    const QJsonObject explicitBlock{{"ip_cidr", QJsonArray{"192.0.2.0/24"}}, {"outbound", "block"}};
+    customRules.append(explicitBlock);
+    customDocument.insert("rules", customRules);
+    NekoGui::dataStore->routing->custom = QString::fromUtf8(QJsonDocument(customDocument).toJson(QJsonDocument::Compact));
+    const auto qualifiedRules = runtimeRules(buildCurrent());
+    check(ruleIndex(qualifiedRules, qualified) >= 0 && ruleIndex(qualifiedRules, qualified) < ruIndex(qualifiedRules),
+          "actual builder preserves edited custom process VPN exceptions ahead of Russian addresses");
+    check(ruleIndex(qualifiedRules, explicitBlock) >= 0 && ruleIndex(qualifiedRules, explicitBlock) < ruIndex(qualifiedRules),
+          "actual builder preserves custom block exceptions ahead of Russian addresses");
+    NekoGui::dataStore->routing->custom = factoryCustom;
+    const auto previousTun = NekoGui::dataStore->vpn_internal_tun;
+    const auto previousVpn = NekoGui::dataStore->spmode_vpn;
+    const auto previousProxyProcesses = NekoGui::dataStore->vpn_rule_process_proxy;
+    NekoGui::dataStore->vpn_internal_tun = true;
+    NekoGui::dataStore->spmode_vpn = true;
+    NekoGui::dataStore->vpn_rule_process_proxy = "Telegram.exe\nCodex.exe";
+    const QJsonObject explicitProcesses{{"outbound", "proxy"}, {"process_name", QJsonArray{"Telegram.exe", "Codex.exe"}}};
+    const auto selectedRules = runtimeRules(buildCurrent());
+    check(ruleIndex(selectedRules, explicitProcesses) >= 0 && ruleIndex(selectedRules, explicitProcesses) < ruIndex(selectedRules),
+          "actual user process VPN list retains priority over the RU default");
+    NekoGui::dataStore->vpn_rule_process_proxy = previousProxyProcesses;
+    NekoGui::dataStore->vpn_internal_tun = previousTun;
+    NekoGui::dataStore->spmode_vpn = previousVpn;
+    NekoGui::dataStore->routing_defaults_choice = originalChoice;
+
+    check(NekoGui::dataStore->geodata_auto_update
+          && defaultConfig->coreConfig.value("geodata_update").toObject().value("enabled").toBool(),
+          "new installations enable managed GeoIP updates in the actual runtime config");
+    NekoGui::dataStore->geodata_auto_update = false;
+    check(NekoGui::dataStore->ToJson().value("geodata_auto_update") == false
+          && buildCurrent()->coreConfig.value("geodata_update").toObject().value("enabled") == false,
+          "explicit disabled GeoIP updates survive settings serialization and config generation");
+    NekoGui::dataStore->geodata_auto_update = true;
+    check(!NekoGui::BuildConfig(NekoGui::profileManager->GetProfile(firstId), false, true)->coreConfig.contains("geodata_update"),
+          "exported config contains no app-only GeoIP updater option");
+    check(!NekoGui::BuildConfig(NekoGui::profileManager->GetProfile(firstId), true, false)->coreConfig.contains("geodata_update"),
+          "latency test config cannot start automatic GeoIP downloads");
     NekoGui::dataStore->routing = std::move(originalRouting);
 
     const auto args = app.arguments();

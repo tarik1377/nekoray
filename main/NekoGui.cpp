@@ -301,6 +301,7 @@ namespace NekoGui {
         _add(new configItem("sub_insecure", &sub_insecure, itemType::boolean));
         _add(new configItem("sub_auto_update", &sub_auto_update, itemType::integer));
         _add(new configItem("sub_auto_update_migrated", &sub_auto_update_migrated, itemType::boolean));
+        _add(new configItem("geodata_auto_update", &geodata_auto_update, itemType::boolean));
         _add(new configItem("conn_stat_migrated", &conn_stat_migrated, itemType::boolean));
         _add(new configItem("routing_quic_migrated", &routing_quic_migrated, itemType::boolean));
         _add(new configItem("routing_games_migrated", &routing_games_migrated, itemType::boolean));

@@ -514,6 +514,13 @@ add_executable(route_order_test EXCLUDE_FROM_ALL
 target_link_libraries(route_order_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 target_include_directories(route_order_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
+add_executable(geodata_status_test EXCLUDE_FROM_ALL test/GeoDataStatusTest.cpp)
+target_include_directories(geodata_status_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(geodata_status_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+add_executable(ru_routing_policy_test EXCLUDE_FROM_ALL test/RuRoutingPolicyTest.cpp)
+target_include_directories(ru_routing_policy_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(ru_routing_policy_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+
 add_executable(tun_report_test EXCLUDE_FROM_ALL
         test/TunReportTest.cpp
 )
@@ -930,6 +937,8 @@ set(GR_TEST_TARGETS
         tun_lifecycle_test
         tun_helper_test
         route_order_test
+        geodata_status_test
+        ru_routing_policy_test
         program_trouble_test
         program_watch_lifetime_test
         port_health_test

@@ -108,6 +108,12 @@ int main(int argc, char **argv) {
     is(QStringLiteral("цепочка начинается с перехвата имён"), dnsFirst >= 0);
     is(QStringLiteral("поимённый список человека приклеивается ПОСЛЕ перехвата"),
        dnsFirst >= 0 && userNext > dnsFirst);
+    const int addressRules = src.indexOf(QStringLiteral("QJSONARRAY_ADD(routingRules, status->routingRules)"));
+    const int applicationFallback = src.indexOf(QStringLiteral("QJSONARRAY_ADD(routingRules, schemeRules.fallback)"));
+    is(QStringLiteral("стандартная VPN-группа приложений следует ПОСЛЕ правил адресов"),
+       addressRules >= 0 && applicationFallback > addressRules);
+    is(QStringLiteral("сборщик использует проверенный отбор стандартной группы"),
+       src.contains(QStringLiteral("RuRoutingPolicy::splitStandardFallback(")));
 
     // ---- ВТОРОЕ ОТНОШЕНИЕ: обход по процессу выше блокировок ----
     //

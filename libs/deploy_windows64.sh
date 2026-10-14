@@ -47,7 +47,9 @@ cp $SRC_ROOT/res/config_template/groups/nekobox.json $DEST/config/groups/nekobox
 
 #### copy .srs rule-set files into config/ (sing-box CWD = config/) ####
 cp $DEST/../public_res/geosite-category-ads-all.srs $DEST/config/ 2>/dev/null || true
-cp $DEST/../public_res/geoip-ru.srs $DEST/config/ 2>/dev/null || true
+# Reserved bootstrap and license are required. The legacy local rule-set name
+# can belong to the user and must never be overwritten by the installer.
+python3 "$SRC_ROOT/tools/geodata_bootstrap.py" "$DEST/config" --runtime-root "$DEST"
 
 #### prepare deployment ####
 cp $BUILD/*.pdb $DEPLOYMENT 2>/dev/null || true

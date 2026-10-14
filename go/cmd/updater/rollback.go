@@ -88,6 +88,8 @@ func rollbackRuntimePath(rel string) bool {
 	}
 	if len(parts) == 2 {
 		switch strings.ToLower(parts[0]) {
+		case "config":
+			return reservedGeoDataAsset(rel)
 		case "generic", "iconengines", "imageformats", "networkinformation", "platforms", "styles", "tls":
 		default:
 			return false
@@ -367,7 +369,7 @@ func signedInstallationRecord(archive, payload string, files []string) (*install
 	record := &installationRecord{Schema: 1, ConfigSchema: 1, Platform: releaseauth.Platform(), Version: release.Version, Provenance: "signed-release", Release: &release}
 	for _, rel := range files {
 		rel = filepath.ToSlash(rel)
-		if strings.HasPrefix(strings.ToLower(rel), "config/") {
+		if strings.HasPrefix(strings.ToLower(rel), "config/") && !reservedGeoDataAsset(rel) {
 			continue
 		}
 		file, err := checkedRuntimeFile(payload, rel)
@@ -407,7 +409,7 @@ func registerVerifiedLocal(install, source, receiptPath string, current bool) er
 	}
 	record := &installationRecord{Schema: 1, ConfigSchema: 1, Platform: releaseauth.Platform(), Version: receipt.Version, Provenance: "explicit-verified-local", SourceCommit: receipt.SourceCommit, GoToolchain: receipt.GoToolchain}
 	for _, file := range receipt.Files {
-		if strings.HasPrefix(strings.ToLower(file.File), "config/") {
+		if strings.HasPrefix(strings.ToLower(file.File), "config/") && !reservedGeoDataAsset(file.File) {
 			continue
 		}
 		actual, err := checkedRuntimeFile(source, file.File)

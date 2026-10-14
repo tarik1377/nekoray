@@ -9,6 +9,7 @@
 #include "main/NekoGui.hpp"
 #include "ui/SubscriptionSchedule.hpp"
 #include "ui/RollbackAction.hpp"
+#include "ui/GeoDataStatus.hpp"
 
 #include <QFileDialog>
 #include <QInputDialog>
@@ -58,6 +59,44 @@ DialogBasicSettings::DialogBasicSettings(QWidget *parent)
     ui->setupUi(this);
     GreenRhythm::polishDialog(this);
     ADD_ASTERISK(this);
+
+    auto *geoGroup = new QGroupBox(tr("База адресов РФ · GeoIP"), this);
+    geoGroup->setObjectName(QStringLiteral("geoDataGroup"));
+    auto *geoLayout = new QVBoxLayout(geoGroup);
+    geoAutoUpdate = new QCheckBox(tr("Автоматически обновлять GeoIP"), geoGroup);
+    geoAutoUpdate->setObjectName(QStringLiteral("geoDataAutoUpdate"));
+    geoAutoUpdate->setChecked(NekoGui::dataStore->geodata_auto_update);
+    geoLayout->addWidget(geoAutoUpdate);
+    geoStatus = new QLabel(geoGroup);
+    geoStatus->setObjectName(QStringLiteral("geoDataStatus"));
+    geoStatus->setTextFormat(Qt::PlainText);
+    geoStatus->setWordWrap(true);
+    geoLayout->addWidget(geoStatus);
+    auto *geoHelp = new QLabel(tr("В схеме «Россия» адреса РФ идут напрямую по GeoIP. "
+        "Ваши явные исключения VPN и блокировки сохраняют приоритет. "
+        "Обновление базы не прерывает подключение."), geoGroup);
+    geoHelp->setWordWrap(true);
+    geoLayout->addWidget(geoHelp);
+    geoRefresh = new QPushButton(tr("Проверить обновление сейчас"), geoGroup);
+    geoRefresh->setObjectName(QStringLiteral("geoDataRefresh"));
+    geoLayout->addWidget(geoRefresh, 0, Qt::AlignLeft);
+    ui->sections->insertWidget(2, geoGroup);
+    connect(geoAutoUpdate, &QCheckBox::toggled, this, [this] { refreshGeoDataStatus(); });
+    connect(geoRefresh, &QPushButton::clicked, this, [this] {
+        if (!NekoGui::dataStore->core_running || NekoGui::dataStore->started_id < 0) return;
+        if (!GreenRhythm::GeoData::requestRefresh(QDir::currentPath())) {
+            MessageBoxWarning(tr("GeoIP"), tr("Не удалось сохранить запрос на обновление. Проверьте доступ к каталогу настроек."));
+            return;
+        }
+        geoRefresh->setProperty("retryAfter", QDateTime::currentDateTimeUtc().addSecs(30));
+        geoRefresh->setEnabled(false);
+        geoStatus->setText(tr("Запрос отправлен. Проверяем обновление GeoIP…"));
+        QTimer::singleShot(30000, this, [this] { refreshGeoDataStatus(); });
+    });
+    auto *geoTimer = new QTimer(this);
+    connect(geoTimer, &QTimer::timeout, this, &DialogBasicSettings::refreshGeoDataStatus);
+    geoTimer->start(3000);
+    refreshGeoDataStatus();
 
     // Common
 
@@ -220,7 +259,24 @@ DialogBasicSettings::~DialogBasicSettings() {
     delete ui;
 }
 
+void DialogBasicSettings::refreshGeoDataStatus() {
+    const bool connected = NekoGui::dataStore->core_running && NekoGui::dataStore->started_id >= 0;
+    const auto status = GreenRhythm::GeoData::readStatus(QDir::currentPath());
+    const bool waiting = geoRefresh->property("retryAfter").toDateTime() > QDateTime::currentDateTimeUtc();
+    const bool checking = status.value(QStringLiteral("state")).toString() == QStringLiteral("checking");
+    const bool unused = status.value(QStringLiteral("state")).toString() == QStringLiteral("unused");
+    geoRefresh->setEnabled(connected && !unused && !waiting && !checking);
+    geoStatus->setText(GreenRhythm::GeoData::describe(status, geoAutoUpdate->isChecked(), connected));
+}
+
 void DialogBasicSettings::accept() {
+    if (geoAutoUpdate->isChecked() != NekoGui::dataStore->geodata_auto_update) {
+        if (!GreenRhythm::GeoData::saveAutomatic(QDir::currentPath(), geoAutoUpdate->isChecked())) {
+            MessageBoxWarning(tr("GeoIP"), tr("Не удалось сохранить настройку автообновления GeoIP."));
+            return;
+        }
+        NekoGui::dataStore->geodata_auto_update = geoAutoUpdate->isChecked();
+    }
     // Common
 
     D_SAVE_STRING(inbound_address)
