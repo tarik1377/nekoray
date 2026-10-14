@@ -67,9 +67,62 @@ void addToDns(QJsonObject &dns, const QStringList &domains, const QString &serve
     dns.insert("rules", rules);
 }
 
-QJsonObject resolveRule(const QStringList &domains, const QString &strategy) {
+QJsonObject resolveRule(const QStringList &domains, const QString &strategy, const QStringList &fixedHosts) {
     if (domains.isEmpty()) return {};
     QJsonObject rule{{"domain_suffix", values(domains)}, {"action", "resolve"}, {"server", tag}};
+    if (!fixedHosts.isEmpty()) {
+        rule.remove("domain_suffix");
+        rule.insert("type", "logical");
+        rule.insert("mode", "and");
+        rule.insert("rules", QJsonArray{
+            QJsonObject{{"domain_suffix", values(domains)}},
+            QJsonObject{{"domain", values(fixedHosts)}, {"invert", true}}});
+    }
+    if (!strategy.isEmpty()) rule.insert("strategy", strategy);
+    return rule;
+}
+
+bool parseHosts(const QString &text, QJsonObject *hosts, QString *error) {
+    QJsonObject result;
+    for (const auto &raw : text.split('\n')) {
+        const auto line = raw.section('#', 0, 0).trimmed();
+        if (line.isEmpty()) continue;
+        const auto parts = line.split(QRegularExpression(QStringLiteral("\\s+")));
+        const QHostAddress address(parts.first());
+        if (parts.size() < 2 || address.isNull() || address.isMulticast()
+            || address == QHostAddress(QHostAddress::AnyIPv4)
+            || address == QHostAddress(QHostAddress::AnyIPv6)) {
+            if (error) *error = QStringLiteral("Укажи адрес внутреннего сайта в формате: IP имя-сервера.");
+            return false;
+        }
+        for (const auto &name : parts.mid(1)) {
+            QStringList domains;
+            if (name.startsWith('*') || !parseDomains(name, &domains, error) || domains.size() != 1) {
+                if (error) *error = QStringLiteral("Для внутреннего сайта нужно полное имя сервера без маски.");
+                return false;
+            }
+            auto addresses = result.value(domains.first()).toArray();
+            if (!addresses.contains(address.toString())) addresses.append(address.toString());
+            result.insert(domains.first(), addresses);
+        }
+    }
+    if (hosts) *hosts = result;
+    return true;
+}
+
+void addHostsToDns(QJsonObject &dns, const QJsonObject &hosts) {
+    if (hosts.isEmpty()) return;
+    auto servers = dns.value("servers").toArray();
+    servers.append(QJsonObject{{"type", "hosts"}, {"tag", "gr-local-hosts"}, {"predefined", hosts}});
+    auto rules = dns.value("rules").toArray();
+    rules.prepend(QJsonObject{{"domain", values(hosts.keys())}, {"server", "gr-local-hosts"}});
+    dns.insert("servers", servers);
+    dns.insert("rules", rules);
+}
+
+QJsonObject hostsResolveRule(const QJsonObject &hosts, const QString &strategy) {
+    if (hosts.isEmpty()) return {};
+    QJsonObject rule{{"domain", values(hosts.keys())}, {"action", "resolve"}, {"server", "gr-local-hosts"}};
     if (!strategy.isEmpty()) rule.insert("strategy", strategy);
     return rule;
 }

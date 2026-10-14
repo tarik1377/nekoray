@@ -145,9 +145,13 @@ set(PROJECT_SOURCES
         main/main.cpp
         main/NekoGui.cpp
         main/VideoRoutes.cpp
+        main/DefaultRoutes.cpp
+        main/RouteDefaultsPolicy.cpp
         main/LocalDns.cpp
         main/NekoGui_Utils.cpp
         main/HTTPRequestHelper.cpp
+        main/BrowserNetworkHints.cpp
+        main/BrowserNetworkHints.hpp
         main/RelayTrace.cpp
         main/RelayTrace.hpp
         main/DeviceCredentials.cpp
@@ -275,6 +279,8 @@ set(PROJECT_SOURCES
         dpi/DpiModule.hpp
 
         ui/dialog_whatbroke.cpp
+        ui/dialog_web_diagnostics.cpp
+        ui/dialog_web_diagnostics.h
         ui/ServerCardDelegate.cpp
         ui/MainShell.cpp
         ui/Icons.cpp
@@ -508,6 +514,13 @@ add_executable(route_order_test EXCLUDE_FROM_ALL
 target_link_libraries(route_order_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 target_include_directories(route_order_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
+add_executable(geodata_status_test EXCLUDE_FROM_ALL test/GeoDataStatusTest.cpp)
+target_include_directories(geodata_status_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(geodata_status_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+add_executable(ru_routing_policy_test EXCLUDE_FROM_ALL test/RuRoutingPolicyTest.cpp)
+target_include_directories(ru_routing_policy_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(ru_routing_policy_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+
 add_executable(tun_report_test EXCLUDE_FROM_ALL
         test/TunReportTest.cpp
 )
@@ -693,6 +706,17 @@ set_property(TARGET settings_page_test PROPERTY AUTOMOC ON)
 target_include_directories(settings_page_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(settings_page_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg)
 
+add_executable(maintenance_panel_test EXCLUDE_FROM_ALL
+        test/MaintenancePanelTest.cpp
+        ui/MainShell.cpp
+        ui/Icons.cpp
+        ui/ServerCardDelegate.cpp
+        res/neko.qrc)
+set_property(TARGET maintenance_panel_test PROPERTY AUTORCC ON)
+set_property(TARGET maintenance_panel_test PROPERTY AUTOMOC ON)
+target_include_directories(maintenance_panel_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(maintenance_panel_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg)
+
 # План запуска winws — золотым набором. Аргументы строятся один раз и уезжают
 # в кернел-драйвер: ошибка в порядке профилей или пустой список означают не
 # «не сработало», а «дурим весь трафик машины». Набор чистый: ни сети, ни
@@ -796,6 +820,17 @@ target_link_libraries(macos_mode_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 # собирает и гоняет всё; CI зовёт то же самое.
 enable_testing()
 
+add_executable(browser_network_hints_test EXCLUDE_FROM_ALL
+        test/BrowserNetworkHintsTest.cpp main/BrowserNetworkHints.cpp main/BrowserNetworkHints.hpp
+        ui/dialog_web_diagnostics.cpp ui/dialog_web_diagnostics.h
+        ui/MainShell.cpp ui/Icons.cpp ui/ServerCardDelegate.cpp res/neko.qrc)
+set_target_properties(browser_network_hints_test PROPERTIES AUTOMOC ON AUTORCC ON)
+target_include_directories(browser_network_hints_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(browser_network_hints_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::Svg)
+if (WIN32)
+    target_link_libraries(browser_network_hints_test PRIVATE wininet)
+endif ()
+
 add_executable(http_outage_test EXCLUDE_FROM_ALL test/HttpOutageTest.cpp main/HTTPRequestHelper.cpp main/HTTPRequestHelper.hpp)
 set_target_properties(http_outage_test PROPERTIES AUTOMOC ON)
 target_include_directories(http_outage_test PRIVATE ${CMAKE_SOURCE_DIR})
@@ -805,11 +840,59 @@ add_executable(video_routes_test EXCLUDE_FROM_ALL test/VideoRoutesTest.cpp main/
 target_include_directories(video_routes_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(video_routes_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 
+add_executable(default_routes_test EXCLUDE_FROM_ALL test/DefaultRoutesTest.cpp main/DefaultRoutes.cpp)
+target_include_directories(default_routes_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(default_routes_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+
+# Route-defaults consent/backup transactions and their real compact review UI.
+add_executable(route_defaults_policy_test EXCLUDE_FROM_ALL test/RouteDefaultsPolicyTest.cpp
+        main/RouteDefaultsPolicy.cpp main/DefaultRoutes.cpp main/VideoRoutes.cpp)
+target_include_directories(route_defaults_policy_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(route_defaults_policy_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+
+add_executable(route_defaults_review_test EXCLUDE_FROM_ALL test/RouteDefaultsReviewTest.cpp
+        ui/dialog_manage_routes.ui main/RouteDefaultsPolicy.cpp main/DefaultRoutes.cpp main/VideoRoutes.cpp)
+set_target_properties(route_defaults_review_test PROPERTIES AUTOUIC ON
+        AUTOUIC_SEARCH_PATHS "${CMAKE_SOURCE_DIR}/ui")
+target_include_directories(route_defaults_review_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(route_defaults_review_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+
+add_executable(system_routes_patch EXCLUDE_FROM_ALL support/SystemRoutesPatch.cpp main/DefaultRoutes.cpp)
+target_include_directories(system_routes_patch PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(system_routes_patch PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+
+add_executable(system_routes_patch_test EXCLUDE_FROM_ALL test/SystemRoutesPatchTest.cpp main/DefaultRoutes.cpp)
+target_include_directories(system_routes_patch_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(system_routes_patch_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+
 add_executable(local_dns_test EXCLUDE_FROM_ALL test/LocalDnsTest.cpp main/LocalDns.cpp)
 target_include_directories(local_dns_test PRIVATE ${CMAKE_SOURCE_DIR})
+
+add_executable(import_integration_test EXCLUDE_FROM_ALL
+        test/ImportIntegrationTest.cpp
+        main/NekoGui.cpp main/NekoGui_Utils.cpp main/VideoRoutes.cpp main/DefaultRoutes.cpp main/LocalDns.cpp
+        main/HTTPRequestHelper.cpp main/DeviceCredentials.cpp main/RelayTrace.cpp main/TunHelper.cpp
+        main/RelayComponent.cpp main/RelayComponentParse.cpp main/RelayActivation.cpp main/RelayActivationParse.cpp
+        db/Database.cpp db/ProfileFilter.cpp db/ConfigBuilder.cpp
+        fmt/AbstractBean.cpp fmt/Bean2CoreObj_box.cpp fmt/Bean2External.cpp fmt/Bean2Link.cpp fmt/Link2Bean.cpp
+        sub/GroupUpdater.cpp 3rdparty/base64.cpp res/neko.qrc ${PLATFORM_SOURCES})
+set_target_properties(import_integration_test PROPERTIES AUTOMOC ON AUTORCC ON)
+target_precompile_headers(import_integration_test PRIVATE main/pch.hpp)
+target_include_directories(import_integration_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(import_integration_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network
+        Qt${QT_VERSION_MAJOR}::Svg ${NKR_EXTERNAL_TARGETS} ${PLATFORM_LIBRARIES})
+
+add_executable(sidebar_actions_test EXCLUDE_FROM_ALL test/SidebarActionsTest.cpp
+        ui/MainShell.cpp ui/Icons.cpp ui/ServerCardDelegate.cpp main/AppFont.cpp res/neko.qrc)
+set_target_properties(sidebar_actions_test PROPERTIES AUTOMOC ON AUTORCC ON)
+target_include_directories(sidebar_actions_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(sidebar_actions_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg)
 target_link_libraries(local_dns_test PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network)
 
 if (NOT NKR_NO_GRPC)
+    add_executable(rpc_deadline_test EXCLUDE_FROM_ALL test/RpcDeadlineTest.cpp rpc/gRPC.cpp)
+    target_include_directories(rpc_deadline_test PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(rpc_deadline_test PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network myproto)
     add_executable(traffic_update_queue_test
             test/TrafficUpdateQueueTest.cpp
             db/traffic/TrafficLooper.cpp
@@ -823,6 +906,16 @@ if (NOT NKR_NO_GRPC)
     endif ()
 endif ()
 
+add_executable(connection_lifecycle_test EXCLUDE_FROM_ALL test/ConnectionLifecycleTest.cpp)
+target_include_directories(connection_lifecycle_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(connection_lifecycle_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+add_executable(rollback_action_test EXCLUDE_FROM_ALL test/RollbackActionTest.cpp)
+target_include_directories(rollback_action_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(rollback_action_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+add_executable(core_process_lifecycle_test EXCLUDE_FROM_ALL test/CoreProcessLifecycleTest.cpp sys/ExternalProcess.cpp main/RelayTrace.cpp)
+target_include_directories(core_process_lifecycle_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(core_process_lifecycle_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
+
 add_executable(program_watch_lifetime_test
         test/ProgramWatchLifetimeTest.cpp
         main/ProgramTrouble.cpp
@@ -833,6 +926,16 @@ target_include_directories(program_watch_lifetime_test PRIVATE ${CMAKE_SOURCE_DI
 target_link_libraries(program_watch_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
 set(GR_TEST_TARGETS
+        browser_network_hints_test
+        connection_lifecycle_test
+        rollback_action_test
+        core_process_lifecycle_test
+        import_integration_test
+        sidebar_actions_test
+        system_routes_patch_test
+        default_routes_test
+        route_defaults_policy_test
+        route_defaults_review_test
         http_outage_test
         video_routes_test
         local_dns_test
@@ -845,6 +948,8 @@ set(GR_TEST_TARGETS
         tun_lifecycle_test
         tun_helper_test
         route_order_test
+        geodata_status_test
+        ru_routing_policy_test
         program_trouble_test
         program_watch_lifetime_test
         port_health_test
@@ -852,6 +957,7 @@ set(GR_TEST_TARGETS
         power_button_test
         power_state_test
         settings_page_test
+        maintenance_panel_test
         network_repair_test
         dpi_plan_test
         interference_test
@@ -860,6 +966,33 @@ set(GR_TEST_TARGETS
         palette_test
         autorun_task_test
 )
+
+if (WIN32)
+    # Compile the actual controller with a fake OS backend. No registry writes
+    # or running client are needed to reproduce selected=true / OS disabled.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ui/mainwindow.cpp)
+    file(READ "${CMAKE_SOURCE_DIR}/ui/mainwindow.cpp" GR_PROXY_ACTION_SOURCE)
+    string(FIND "${GR_PROXY_ACTION_SOURCE}" "bool MainWindow::neko_set_spmode_system_proxy(" GR_PROXY_ACTION_BEGIN)
+    string(FIND "${GR_PROXY_ACTION_SOURCE}" "void MainWindow::neko_set_spmode_vpn(" GR_PROXY_ACTION_END)
+    if (GR_PROXY_ACTION_BEGIN LESS 0 OR GR_PROXY_ACTION_END LESS GR_PROXY_ACTION_BEGIN)
+        message(FATAL_ERROR "System proxy method cannot be extracted for its controller test")
+    endif ()
+    math(EXPR GR_PROXY_ACTION_LENGTH "${GR_PROXY_ACTION_END} - ${GR_PROXY_ACTION_BEGIN}")
+    string(SUBSTRING "${GR_PROXY_ACTION_SOURCE}" ${GR_PROXY_ACTION_BEGIN} ${GR_PROXY_ACTION_LENGTH} GR_PROXY_ACTION_METHOD)
+    file(WRITE "${CMAKE_BINARY_DIR}/system-proxy-method.inc" "${GR_PROXY_ACTION_METHOD}")
+    add_executable(system_proxy_apply_test EXCLUDE_FROM_ALL test/SystemProxyApplyTest.cpp)
+    set(GR_PROXY_BACKEND_HEADERS "${CMAKE_SOURCE_DIR}/main/WindowsProxyController.hpp;${CMAKE_SOURCE_DIR}/sys/windows/WindowsProxyApi.hpp")
+    set_source_files_properties(sys/windows/WindowsProxy.cpp PROPERTIES OBJECT_DEPENDS "${GR_PROXY_BACKEND_HEADERS}")
+    set_source_files_properties(test/SystemProxyApplyTest.cpp PROPERTIES OBJECT_DEPENDS "${CMAKE_BINARY_DIR}/system-proxy-method.inc;${GR_PROXY_BACKEND_HEADERS};${CMAKE_SOURCE_DIR}/test/WindowsProxyFixture.hpp")
+    target_compile_definitions(system_proxy_apply_test PRIVATE GR_SYSTEM_PROXY_METHOD="${CMAKE_BINARY_DIR}/system-proxy-method.inc")
+    target_include_directories(system_proxy_apply_test PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(system_proxy_apply_test PRIVATE Qt${QT_VERSION_MAJOR}::Core wininet)
+    add_executable(windows_proxy_backend_test EXCLUDE_FROM_ALL test/WindowsProxyBackendTest.cpp)
+    set_source_files_properties(test/WindowsProxyBackendTest.cpp PROPERTIES OBJECT_DEPENDS "${GR_PROXY_BACKEND_HEADERS};${CMAKE_SOURCE_DIR}/test/WindowsProxyFixture.hpp")
+    target_include_directories(windows_proxy_backend_test PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(windows_proxy_backend_test PRIVATE Qt${QT_VERSION_MAJOR}::Core wininet)
+    list(APPEND GR_TEST_TARGETS system_proxy_apply_test windows_proxy_backend_test)
+endif ()
 
 if (NOT NKR_NO_GRPC)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ui/mainwindow_grpc.cpp)
@@ -875,7 +1008,12 @@ if (NOT NKR_NO_GRPC)
     target_include_directories(update_actions_test PRIVATE ${CMAKE_SOURCE_DIR})
     target_link_libraries(update_actions_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets myproto)
     list(APPEND GR_TEST_TARGETS update_actions_test)
+    add_executable(update_progress_test EXCLUDE_FROM_ALL test/UpdateProgressTest.cpp)
+    target_include_directories(update_progress_test PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(update_progress_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+    list(APPEND GR_TEST_TARGETS update_progress_test)
     list(APPEND GR_TEST_TARGETS traffic_update_queue_test)
+    list(APPEND GR_TEST_TARGETS rpc_deadline_test)
 endif ()
 add_custom_target(build-tests DEPENDS ${GR_TEST_TARGETS})
 

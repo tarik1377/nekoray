@@ -28,6 +28,7 @@ func (f outageTransport) RoundTrip(r *http.Request) (*http.Response, error) { re
 func outageNetwork(t *testing.T, client *http.Client) updateNetwork {
 	t.Helper()
 	options := defaultUpdateNetwork(client, nil)
+	options.prepareUpdater = func(string) error { return nil }
 	options.verify = func(m *releaseauth.Manifest, platform string) error {
 		return releaseauth.VerifyWithKeys(m, platform, outageKeys())
 	}

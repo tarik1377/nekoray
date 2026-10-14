@@ -216,17 +216,11 @@ QString MainWindow::tun_diagnostics_block(const QString &adapter) const {
              .arg(NekoGui::dataStore->vpn_internal_tun ? "yes" : "no",
                   NekoGui::PlatformSupportsInternalTun() ? "yes" : "no");
 
-    /*
-     * СТЕК ПИШЕТСЯ ДВАЖДЫ, И ЭТО НЕ ИЗБЫТОЧНОСТЬ.
-     *
-     * Ядро переписывает выбор: normalizeTunStack превращает «gvisor» в
-     * «mixed» (чистый gvisor рвёт соединения на части машин с Windows), а
-     * «system» уважает. Отчёт с одним лишь выбранным значением расходится с
-     * журналом ядра, и на выяснение этого уходит лишний круг переписки.
-     */
+    // Match normalizeTunStack: only an absent selection defaults to System.
+    // Explicit System, Mixed and gVisor selections are preserved by the core.
     const auto chosen = Preset::SingBox::VpnImplementation.value(NekoGui::dataStore->vpn_implementation);
-    const auto effective = (chosen == QStringLiteral("gvisor") || chosen.isEmpty())
-                               ? QStringLiteral("mixed")
+    const auto effective = chosen.isEmpty()
+                               ? QStringLiteral("system")
                                : chosen;
     v << QStringLiteral("stack=%1%2 mtu=%3 strict-route=%4 ipv6=%5")
              .arg(chosen,

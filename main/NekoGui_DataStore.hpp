@@ -16,10 +16,11 @@ namespace NekoGui {
         // DNS
         QString remote_dns = "https://1.1.1.1/dns-query";
         QString remote_dns_strategy = "ipv4_only";
-        QString direct_dns = "77.88.8.8";
+        QString direct_dns = "https://1.1.1.1/dns-query";
         QString direct_dns_strategy = "ipv4_only";
         QString local_dns_domains;
         QString local_dns_server;
+        QString local_dns_hosts;
         bool dns_routing = true;
         bool use_dns_object = false;
         QString dns_object = "";
@@ -53,6 +54,10 @@ namespace NekoGui {
 
         // Both active and saved RU schemes; false keeps the one-shot flag retryable.
         static bool MigrateVideosAll(int *changed = nullptr);
+
+        static bool MigrateDefaultAdsAll(int *changed = nullptr);
+
+        static bool MigrateDefaultDnsAll(int *changed = nullptr);
     };
 
     class ExtraCore : public JsonStore {
@@ -159,6 +164,7 @@ namespace NekoGui {
         // One-shot flag: flip legacy configs still on the old disabled default (-30) to the
         // new enabled default exactly once, without ever re-overriding a user's own choice.
         bool sub_auto_update_migrated = false;
+        bool geodata_auto_update = true;
         // Same idea for conn_stat. Every existing config pins it to false — both because the
         // shipped template said so and because the settings checkbox was disabled, so no user
         // ever chose the value. Without this, flipping the in-code default changes nothing.
@@ -178,6 +184,10 @@ namespace NekoGui {
         bool routing_video_migrated = false;
         // Revision 2 reaches users who already received the first video fix.
         int routing_video_revision = 0;
+        // Bundled route changes are reviewed in Routes, never installed silently.
+        int routing_defaults_review_revision = 0;
+        QString routing_defaults_choice;
+        QString routing_defaults_backup;
 
         // Security
         bool skip_cert = false;
@@ -201,7 +211,9 @@ namespace NekoGui {
         // VPN
         bool fake_dns = false;
         bool vpn_internal_tun = true;
-        int vpn_implementation = 0;
+        int vpn_implementation = 1; // Preset::SingBox::VpnImplementation: System
+        bool routing_ads_removed = false;
+        bool routing_dns_repaired = false;
         int vpn_mtu = 1500;
         bool vpn_ipv6 = false;
         bool vpn_hide_console = true;

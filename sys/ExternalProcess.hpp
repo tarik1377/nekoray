@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <QProcess>
+#include <atomic>
 
 namespace NekoGui_sys {
     class ExternalProcess : public QProcess {
@@ -46,11 +47,14 @@ namespace NekoGui_sys {
         void Restart();
 
         int start_profile_when_core_is_up = -1;
+        quint64 generation() const { return process_generation.load(); }
 
     private:
         bool show_stderr = false;
         bool failed_to_start = false;
         bool restarting = false;
+        std::atomic<quint64> process_generation{0};
+        QByteArray readiness_tail;
     };
 
     // 手动管理

@@ -6,6 +6,7 @@
 #include <cstdio>
 
 #include GR_UPDATE_METHOD
+#undef QProcess
 
 static int checks = 0, failures = 0;
 static void check(const char *name, bool ok) { ++checks; failures += !ok; std::printf("%s: %s\n", ok ? "PASS" : "FAIL", name); }
@@ -22,8 +23,10 @@ struct Fixture {
     QTimer dialogs;
     int offered = 0, ready = 0;
     bool downloadDone = false;
+    bool retryDownload = false;
     Fixture() {
         fixtureWarnings = fixtureInfos = 0; fixtureLastWarning.clear();
+        fixtureStarts = 0; fixtureStartOK = true;
         NekoGui::dataStore = &store; NekoGui_rpc::defaultClient = &client;
         dialogs.setInterval(1);
         QObject::connect(&dialogs, &QTimer::timeout, &window, [this] {
@@ -32,6 +35,16 @@ struct Fixture {
             if (box->text().contains("Update found:")) {
                 ++offered;
                 for (auto *button : box->buttons()) if (box->buttonRole(button) == QMessageBox::AcceptRole && button->text() == "Update") { button->click(); return; }
+                box->reject();
+            } else if (box->text().contains("Обновление не установлено.")) {
+                ++fixtureWarnings;
+                fixtureLastWarning = box->text();
+                if (retryDownload) {
+                    retryDownload = false;
+                    client.downloaded.clear_error();
+                    box->button(QMessageBox::Retry)->click();
+                    return;
+                }
                 box->reject();
             } else {
                 ++ready;
@@ -91,7 +104,21 @@ int main(int argc, char **argv) {
         Fixture f; f.offer();
         f.window.CheckUpdate(); f.finishDownload();
         check("a verified successful download still offers installation", f.ready == 1 && f.client.downloads == 1);
-        check("only the successful download and explicit confirmation request an exit", f.window.exits == 1 && f.window.exit_reason == 1 && fixtureWarnings == 0);
+        check("a confirmed update starts its helper before requesting normal exit", fixtureStarts == 1 && f.window.exits == 1 && f.window.exit_reason == 0 && fixtureWarnings == 0);
+    }
+    {
+        Fixture f; f.offer(); fixtureStartOK = false;
+        f.window.CheckUpdate(); f.finishDownload();
+        check("a blocked updater cannot close the running application", fixtureStarts == 1 && f.window.exits == 0);
+        check("a blocked updater reports its failure", fixtureWarnings == 1 && fixtureLastWarning.contains("запустить"));
+    }
+    {
+        Fixture f; f.offer(); f.retryDownload = true;
+        f.client.downloaded.set_error("fixture interrupted download");
+        f.window.CheckUpdate(); f.finishDownload();
+        drain(); f.finishDownload();
+        check("the retry button performs another download after failure", f.offered == 2 && f.client.downloads == 2);
+        check("retry installs only after the successful response", fixtureWarnings == 1 && f.ready == 1 && fixtureStarts == 1 && f.window.exits == 1);
     }
     {
         Fixture f; f.offer(); f.window.CheckUpdate(true); drain();

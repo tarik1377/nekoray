@@ -64,7 +64,7 @@ QString QStringList2Command(const QStringList &list) {
 }
 
 QString GetQueryValue(const QUrlQuery &q, const QString &key, const QString &def) {
-    auto a = q.queryItemValue(key);
+    auto a = q.queryItemValue(key, QUrl::FullyDecoded);
     if (a.isEmpty()) {
         return def;
     }

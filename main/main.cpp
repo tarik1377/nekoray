@@ -18,6 +18,9 @@
 #include "3rdparty/RunGuard.hpp"
 #include "main/NekoGui.hpp"
 #include "main/VideoRoutes.hpp"
+#include "main/DefaultRoutes.hpp"
+#include "main/RouteDefaultsPolicy.hpp"
+#include "main/RouteState.hpp"
 #include "main/TunHelper.hpp"
 
 #include "ui/mainwindow_interface.h"
@@ -339,11 +342,9 @@ int main(int argc, char* argv[]) {
              * доходит НИКОГДА.
              *
              * Чем оборачивалось. В шаблоне ровно один ключ, и он не декоративный:
-             * vpn_impl = 2, то есть смешанный сетевой стек туннеля. Умолчание в
-             * коде — 0, gvisor, и на нём туннель отчитывается исправным, счётчики
-             * идут, имена разрешаются, а страницы не открываются. Ровно этот отказ
-             * описан в коммите 73c6818 по жалобе живого клиента. То есть Windows
-             * получал рабочую настройку, а macOS — ту, на которой не работает.
+             * Сейчас шаблон и код задают vpn_impl = 1 (System). Раньше шаблон
+             * задавал Mixed (2), а код — gVisor (0), поэтому платформы получали
+             * разные умолчания. Сохранённый явный выбор пользователя не меняем.
              *
              * Копируется только НЕДОСТАЮЩЕЕ, как и правила выше: перезапись при
              * каждом запуске стирала бы всё, что человек настроил.
@@ -406,30 +407,33 @@ int main(int argc, char* argv[]) {
 
     // load routing
     // Preset 1 is the RU preset — QUIC blocked with the public resolvers exempted first,
-    // domestic domains and game/anti-cheat traffic direct, local DNS for direct traffic.
-    // This used to build preset 0 (an empty rule set), so none of that reached a fresh
-    // install; the preset was only ever applied by hand from the routing dialog.
-    NekoGui::dataStore->routing = std::make_unique<NekoGui::Routing>(1);
-    NekoGui::dataStore->routing->fn = ROUTES_PREFIX + NekoGui::dataStore->active_routing;
+    // domestic domains and game/anti-cheat traffic direct, with DoH on each DNS path.
+    // New schemes inherit that preset. Saved schemes start from an empty schema,
+    // so omitted empty fields cannot reintroduce bundled rules after a restore.
+    NekoGui::dataStore->routing = GreenRhythm::RouteState::initialForPath(
+        ROUTES_PREFIX + NekoGui::dataStore->active_routing);
     isLoaded = NekoGui::dataStore->routing->Load();
     if (!isLoaded) {
         NekoGui::dataStore->routing->Save();
     }
 
-    // Before constructing the window/core: the first restored connection must
-    // already use the media rules. Revisions also reach users of earlier fixes.
-    if (NekoGui::dataStore->routing_video_revision < GreenRhythm::VideoRoutes::MigrationRevision) {
+    // Patch the loaded active scheme as well as disk before the first connection.
+    if (!NekoGui::dataStore->routing_ads_removed) {
         int changed = 0;
         QString error;
-        if (NekoGui::Routing::MigrateVideosAll(&changed)
-            && GreenRhythm::VideoRoutes::markComplete(NekoGui::dataStore->fn, &error)) {
-            NekoGui::dataStore->routing_video_migrated = true;
-            NekoGui::dataStore->routing_video_revision = GreenRhythm::VideoRoutes::MigrationRevision;
+        if (NekoGui::Routing::MigrateDefaultAdsAll(&changed)
+            && GreenRhythm::DefaultRoutes::markComplete(NekoGui::dataStore->fn, &error)) {
+            NekoGui::dataStore->routing_ads_removed = true;
         } else {
-            qWarning() << "video routing migration will retry on next start" << error;
+            qWarning() << "default ads routing migration will retry on next start" << error;
         }
-        if (changed > 0) qInfo() << "video routing updated, schemes:" << changed;
+        if (changed > 0) qInfo() << "default ads selector removed, schemes:" << changed;
     }
+
+    // Existing DNS/media/QUIC/game preferences are reviewed by the user. Opening
+    // the app and updating a release never applies a new bundled route policy.
+    if (GreenRhythm::RouteDefaultsPolicy::needsReview(NekoGui::dataStore->routing_defaults_review_revision))
+        qInfo() << "bundled routing defaults await review in Routes, revision:" << GreenRhythm::RouteDefaultsPolicy::Revision;
 
     // Translate
     QString locale;

@@ -81,6 +81,7 @@ namespace NekoGui_fmt {
         stream->reality_pbk = GetQueryValue(query, "pbk", "");
         stream->reality_sid = GetQueryValue(query, "sid", "");
         stream->reality_spx = GetQueryValue(query, "spx", "");
+        stream->reality_pqv = GetQueryValue(query, "pqv", "");
         stream->utlsFingerprint = GetQueryValue(query, "fp", "");
         if (stream->utlsFingerprint.isEmpty()) {
             stream->utlsFingerprint = NekoGui::dataStore->utlsFingerprint;

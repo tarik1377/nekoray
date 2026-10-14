@@ -10,8 +10,13 @@ namespace NekoGui_sub {
         void update(const QString &str);
 
         int gid_add_to = -1; // 导入到指定组 -1 为当前选中组
+        // Subscription updates validate the entire response before changing the store.
+        bool collect_only = false;
 
         QList<std::shared_ptr<NekoGui::ProxyEntity>> updated_order; // 新增的配置，按照导入时处理的先后排序
+
+    private:
+        void AddParsed(const std::shared_ptr<NekoGui::ProxyEntity> &ent);
     };
 
     class GroupUpdater : public QObject {

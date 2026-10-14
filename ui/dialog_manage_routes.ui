@@ -15,6 +15,26 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
+    <widget class="QGroupBox" name="defaultsReviewBox">
+     <property name="title"><string>Стандартные маршруты</string></property>
+     <layout class="QVBoxLayout" name="defaultsReviewLayout">
+      <item>
+       <widget class="QLabel" name="defaultsReviewStatus">
+        <property name="text"><string>Изменения стандартных правил применяются только по вашему выбору.</string></property>
+        <property name="wordWrap"><bool>true</bool></property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="defaultsChoicesLayout">
+        <item><widget class="QPushButton" name="defaultsApply"><property name="text"><string>Применить стандартные маршруты</string></property></widget></item>
+        <item><widget class="QPushButton" name="defaultsKeep"><property name="text"><string>Оставить мои</string></property></widget></item>
+        <item><widget class="QLabel" name="defaultsRestore"><property name="text"><string>&lt;a href="restore"&gt;Вернуть прежние правила&lt;/a&gt;</string></property><property name="openExternalLinks"><bool>false</bool></property></widget></item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="QTabWidget" name="tabWidget">
      <property name="currentIndex">
       <number>0</number>
@@ -383,6 +403,18 @@ For more information, see the document &quot;Configuration/DNS&quot;.</string>
             <property name="toolTip"><string>Адрес DNS из настроек рабочего VPN или локальной сети. Подключение к нему следует маршруту Windows.</string></property>
            </widget>
           </item>
+          <item>
+           <widget class="QLabel" name="local_dns_hosts_label">
+            <property name="text"><string>Фиксированные адреса внутренних сайтов (необязательно)</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPlainTextEdit" name="local_dns_hosts">
+            <property name="maximumHeight"><number>70</number></property>
+            <property name="placeholderText"><string>10.0.0.10 server.corp.example</string></property>
+            <property name="toolTip"><string>Для серверов с известным постоянным адресом. Указанные имена разрешаются внутри клиента до обращения к DNS. Остальные сайты продолжают использовать выбранные DNS-серверы.</string></property>
+           </widget>
+          </item>
          </layout>
         </widget>
        </item>
@@ -649,6 +681,8 @@ For more information, see the document &quot;Configuration/DNS&quot;.</string>
   </layout>
  </widget>
  <tabstops>
+  <tabstop>defaultsApply</tabstop>
+  <tabstop>defaultsKeep</tabstop>
   <tabstop>tabWidget</tabstop>
   <tabstop>sniffing_mode</tabstop>
   <tabstop>domainStrategyCombo</tabstop>

@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "country": "RU",
+  "source_url": "https://raw.githubusercontent.com/Loyalsoldier/geoip/release/text/ru.txt",
+  "source_commit": "49cb9d1346e6ddd709effe93fd2075aba34de0fe",
+  "source_timestamp": "2026-10-08T00:34:30Z",
+  "source_sha256": "00faa6686b931d1a02413dd89933f1492f6d0360ea8e21456a8dc56fdf4746d8",
+  "source_prefix_count": 25171,
+  "srs_version": 1,
+  "srs_bytes": 106238,
+  "srs_sha256": "1330cd63c4da11131ef66a018306129d066b83da399dbf9bf72c9c16a8fd46ed",
+  "generator": "github.com/sagernet/sing-box v1.13.18 common/srs.Write",
+  "license": "CC-BY-SA-4.0",
+  "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+  "attribution": "Loyalsoldier/geoip; includes GeoLite2 data created by MaxMind, available from https://www.maxmind.com",
+  "changes": "Converted the complete published RU CIDR text to sing-box SRS v1; no prefixes added or removed."
+}

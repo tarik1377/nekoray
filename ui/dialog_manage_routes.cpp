@@ -6,6 +6,9 @@
 #include "3rdparty/qv2ray/v3/components/GeositeReader/GeositeReader.hpp"
 #include "main/GuiUtils.hpp"
 #include "main/LocalDns.hpp"
+#include "main/RouteDefaultsPolicy.hpp"
+#include "main/RouteState.hpp"
+#include "ui/RouteDefaultsReview.hpp"
 #include "fmt/Preset.hpp"
 
 #include <QFile>
@@ -89,6 +92,15 @@ DialogManageRoutes::DialogManageRoutes(QWidget *parent) : QDialog(parent), ui(ne
     //
     REFRESH_ACTIVE_ROUTING(NekoGui::dataStore->active_routing, NekoGui::dataStore->routing.get())
 
+    ui->defaultsApply->setAccessibleName(tr("Применить стандартные маршруты"));
+    ui->defaultsKeep->setAccessibleName(tr("Оставить мои маршруты"));
+    ui->defaultsRestore->setAccessibleName(tr("Вернуть прежние правила из резервной копии"));
+    ui->defaultsRestore->setTextInteractionFlags(Qt::LinksAccessibleByKeyboard | Qt::LinksAccessibleByMouse);
+    connect(ui->defaultsApply, &QPushButton::clicked, this, &DialogManageRoutes::applyStandardRoutes);
+    connect(ui->defaultsKeep, &QPushButton::clicked, this, &DialogManageRoutes::keepOwnRoutes);
+    connect(ui->defaultsRestore, &QLabel::linkActivated, this, [this] { restorePreviousRoutes(); });
+    refreshDefaultsReview();
+
     ADD_ASTERISK(this)
 }
 
@@ -101,6 +113,11 @@ void DialogManageRoutes::accept() {
     if (!ui->use_dns_object->isChecked()
         && !GreenRhythm::LocalDns::parseSettings(ui->local_dns_domains->toPlainText(), ui->local_dns_server->text(),
                                                nullptr, nullptr, &error)) {
+        MessageBoxWarning("DNS", error);
+        return;
+    }
+    if (!ui->use_dns_object->isChecked()
+        && !GreenRhythm::LocalDns::parseHosts(ui->local_dns_hosts->toPlainText(), nullptr, &error)) {
         MessageBoxWarning("DNS", error);
         return;
     }
@@ -162,7 +179,124 @@ void DialogManageRoutes::UpdateDisplayRouting(NekoGui::Routing *conf, bool qv) {
     ui->direct_dns_strategy->setCurrentText(conf->direct_dns_strategy);
     ui->local_dns_domains->setPlainText(conf->local_dns_domains);
     ui->local_dns_server->setText(conf->local_dns_server);
+    ui->local_dns_hosts->setPlainText(conf->local_dns_hosts);
     ui->dns_final_out->setCurrentText(conf->dns_final_out);
+    if (directDomainTxt) refreshDefaultsReview();
+}
+
+void DialogManageRoutes::refreshDefaultsReview() {
+    namespace Policy = GreenRhythm::RouteDefaultsPolicy;
+    QJsonObject disk;
+    if (!Policy::readRoute(ROUTES_PREFIX + active_routing, &disk)) {
+        ui->defaultsReviewStatus->setText(tr("Не удалось прочитать сохранённую схему. Стандартные маршруты не применены."));
+        ui->defaultsApply->setEnabled(false);
+        ui->defaultsRestore->hide();
+        return;
+    }
+    const auto preview = Policy::preview(disk, routing_cn_lan.ToJson(), Policy::Mode::SafeUpgrade,
+                                         NekoGui::dataStore->custom_route_global);
+    const bool pending = Policy::needsReview(NekoGui::dataStore->routing_defaults_review_revision);
+    ui->defaultsApply->setEnabled(true);
+    ui->defaultsKeep->setEnabled(pending);
+    ui->defaultsReviewStatus->setText(pending
+        ? tr("Доступны стандартные маршруты версии %1: безопасное обновление изменит %2 полей (+%3 / −%4 правил). Выберите, применять их или сохранить свои.")
+            .arg(Policy::Revision).arg(preview.changedFields.size()).arg(preview.addedRules).arg(preview.removedRules)
+        : tr("Ваш выбор сохранён для версии %1. Обновления не меняют маршруты без вашего согласия.").arg(Policy::Revision));
+    QJsonObject settings;
+    const bool restore = Policy::readRoute(NekoGui::dataStore->fn, &settings)
+                         && Policy::canRestore(ROUTES_PREFIX + active_routing, settings);
+    ui->defaultsRestore->setVisible(restore);
+}
+
+static void syncDefaultsDecision(const GreenRhythm::RouteDefaultsPolicy::Result &result) {
+    NekoGui::dataStore->routing_defaults_review_revision = result.settings.value("routing_defaults_review_revision").toInt();
+    NekoGui::dataStore->routing_defaults_choice = result.settings.value("routing_defaults_choice").toString();
+    NekoGui::dataStore->routing_defaults_backup = result.settings.value("routing_defaults_backup").toString();
+}
+
+void DialogManageRoutes::applyStandardRoutes() {
+    namespace Policy = GreenRhythm::RouteDefaultsPolicy;
+    QJsonObject current;
+    QByteArray expected;
+    QString error;
+    if (CACHE.custom_route_global != NekoGui::dataStore->custom_route_global) {
+        MessageBoxWarning(tr("Сначала сохраните глобальные правила"),
+            tr("Сохраните изменения глобальных правил кнопкой «ОК», затем снова откройте «Маршруты» для применения стандартных правил."));
+        return;
+    }
+    if (!ui->use_dns_object->isChecked()
+        && (!GreenRhythm::LocalDns::parseSettings(ui->local_dns_domains->toPlainText(), ui->local_dns_server->text(),
+                                                 nullptr, nullptr, &error)
+            || !GreenRhythm::LocalDns::parseHosts(ui->local_dns_hosts->toPlainText(), nullptr, &error))) {
+        MessageBoxWarning("DNS", error);
+        return;
+    }
+    const auto path = ROUTES_PREFIX + active_routing;
+    if (!Policy::readRoute(path, &current, &expected, &error)) {
+        MessageBoxWarning(tr("Маршруты"), error);
+        return;
+    }
+    // Include the user's visible edits in the plan, while preserving fields
+    // understood by a newer client. The backup retains the original disk bytes.
+    NekoGui::Routing displayed;
+    SaveDisplayRouting(&displayed);
+    current = GreenRhythm::RouteState::mergeEditor(current, displayed);
+    const auto safe = Policy::preview(current, routing_cn_lan.ToJson(), Policy::Mode::SafeUpgrade, CACHE.custom_route_global);
+    const auto reset = Policy::preview(current, routing_cn_lan.ToJson(), Policy::Mode::ResetRoutes, CACHE.custom_route_global);
+    GreenRhythm::RouteDefaultsReview review(safe, reset, this);
+    if (review.exec() != QDialog::Accepted) return;
+    const auto result = Policy::apply(path, NekoGui::dataStore->fn,
+        review.mode() == Policy::Mode::SafeUpgrade ? safe : reset, expected);
+    if (!result.success) {
+        if (result.rollbackFailed && result.hasScheme && active_routing == NekoGui::dataStore->active_routing) {
+            GreenRhythm::RouteState::installSaved(NekoGui::dataStore->routing, result.scheme, path);
+            UpdateDisplayRouting(NekoGui::dataStore->routing.get(), false);
+        }
+        MessageBoxWarning(tr("Маршруты не применены"), result.error);
+        return;
+    }
+    syncDefaultsDecision(result);
+    const bool activeChanged = NekoGui::dataStore->active_routing != active_routing;
+    NekoGui::dataStore->active_routing = active_routing;
+    GreenRhythm::RouteState::installSaved(NekoGui::dataStore->routing, result.scheme, path);
+    if (result.routeChanged || activeChanged) MW_dialog_message(Dialog_DialogManageRoutes, "UpdateDataStore,RouteChanged");
+    QDialog::accept(); // do not overwrite the atomic commit via legacy Save()
+}
+
+void DialogManageRoutes::keepOwnRoutes() {
+    const auto result = GreenRhythm::RouteDefaultsPolicy::keep(NekoGui::dataStore->fn);
+    if (!result.success) {
+        MessageBoxWarning(tr("Выбор не сохранён"), result.error);
+        return;
+    }
+    syncDefaultsDecision(result);
+    refreshDefaultsReview(); // no route write, reload or disconnect
+}
+
+void DialogManageRoutes::restorePreviousRoutes() {
+    if (CACHE.custom_route_global != NekoGui::dataStore->custom_route_global) {
+        MessageBoxWarning(tr("Сначала сохраните глобальные правила"),
+            tr("Сохраните изменения глобальных правил кнопкой «ОК», затем снова откройте «Маршруты» для возврата прежних правил."));
+        return;
+    }
+    if (QMessageBox::question(this, tr("Вернуть прежние правила"),
+        tr("Вернуть маршруты этой схемы из резервной копии перед последним применением?"),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+    const auto result = GreenRhythm::RouteDefaultsPolicy::restore(ROUTES_PREFIX + active_routing, NekoGui::dataStore->fn);
+    if (!result.success) {
+        if (result.rollbackFailed && result.hasScheme && active_routing == NekoGui::dataStore->active_routing) {
+            GreenRhythm::RouteState::installSaved(NekoGui::dataStore->routing, result.scheme, ROUTES_PREFIX + active_routing);
+            UpdateDisplayRouting(NekoGui::dataStore->routing.get(), false);
+        }
+        MessageBoxWarning(tr("Правила не возвращены"), result.error);
+        return;
+    }
+    syncDefaultsDecision(result);
+    const bool activeChanged = NekoGui::dataStore->active_routing != active_routing;
+    NekoGui::dataStore->active_routing = active_routing;
+    GreenRhythm::RouteState::installSaved(NekoGui::dataStore->routing, result.scheme, ROUTES_PREFIX + active_routing);
+    if (result.routeChanged || activeChanged) MW_dialog_message(Dialog_DialogManageRoutes, "UpdateDataStore,RouteChanged");
+    QDialog::accept();
 }
 
 void DialogManageRoutes::SaveDisplayRouting(NekoGui::Routing *conf) {
@@ -187,6 +321,7 @@ void DialogManageRoutes::SaveDisplayRouting(NekoGui::Routing *conf) {
     conf->direct_dns_strategy = ui->direct_dns_strategy->currentText();
     conf->local_dns_domains = ui->local_dns_domains->toPlainText();
     conf->local_dns_server = ui->local_dns_server->text();
+    conf->local_dns_hosts = ui->local_dns_hosts->toPlainText();
     conf->dns_final_out = ui->dns_final_out->currentText();
 }
 

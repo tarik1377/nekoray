@@ -3,9 +3,13 @@
 #include "main/Interference.hpp"
 #include "main/TunHelper.hpp"
 #include "main/TunLifecycle.hpp"
+#include "main/RouteDefaultsPolicy.hpp"
+#include "ui/GeoDataStatus.hpp"
+#include "ui/RollbackAction.hpp"
 
 #include <QDateTime>
 #include <QDir>
+#include <QScopedValueRollback>
 #include <memory>
 
 #ifndef Q_OS_WIN
@@ -19,6 +23,7 @@
 #include "ui/SubscriptionSchedule.hpp"
 #include "ui/LanAddress.hpp"
 #include "ui/UpdateNotice.hpp"
+#include "ui/dialog_web_diagnostics.h"
 
 #include <QNetworkInterface>
 
@@ -388,6 +393,29 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         });
         connect(shell, &GreenRhythm::MainShell::systemProxyToggled, this,
                 [this](bool on) { neko_set_spmode_system_proxy(on); });
+        connect(shell, &GreenRhythm::MainShell::browserHelpRequested, this, [this] {
+            auto *dialog = new DialogWebDiagnostics(this);
+            dialog->setAttribute(Qt::WA_DeleteOnClose);
+            const auto *auth = NekoGui::dataStore->inbound_auth;
+            dialog->setProxyEndpoint(NekoGui::dataStore->inbound_socks_port,
+                                     auth->NeedAuth() ? auth->username : QString(),
+                                     auth->NeedAuth() ? auth->password : QString(),
+                                     NekoGui::dataStore->started_id >= 0);
+            connect(dialog, &DialogWebDiagnostics::connectBrowsersRequested, this, [this, dialog] {
+                // Recheck at click time: the profile can stop while this dialog is open.
+                if (NekoGui::dataStore->started_id < 0) {
+                    MessageBoxWarning(software_name, tr("Сначала подключите сервер GreenRhythm."));
+                    return;
+                }
+                neko_set_spmode_system_proxy(true);
+                dialog->setProxyEndpoint(NekoGui::dataStore->inbound_socks_port,
+                                        NekoGui::dataStore->inbound_auth->NeedAuth()
+                                            ? NekoGui::dataStore->inbound_auth->username : QString(),
+                                        NekoGui::dataStore->inbound_auth->NeedAuth()
+                                            ? NekoGui::dataStore->inbound_auth->password : QString(), true);
+            });
+            dialog->show();
+        });
         connect(shell, &GreenRhythm::MainShell::gamesViaTunnelToggled, this, [this](bool on) {
             NekoGui::dataStore->games_via_tunnel = on;
             show_log_impl(on ? tr("Игры пойдут через туннель. Пинг будет выше, адрес — зарубежный; "
@@ -476,6 +504,49 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         shell->setAppVersion(appVersion);
         connect(shell, &GreenRhythm::MainShell::routesRequested, this,
                 [this] { on_menu_routing_settings_triggered(); });
+        connect(shell, &GreenRhythm::MainShell::routeDefaultsRequested, this, [this] { open_route_review(false); });
+        connect(shell, &GreenRhythm::MainShell::restoreRoutesRequested, this, [this] { open_route_review(true); });
+        connect(shell, &GreenRhythm::MainShell::maintenanceShown, this, [this] { refresh_maintenance(true); });
+        connect(shell, &GreenRhythm::MainShell::geoDataRefreshRequested, this, [this] {
+            if (!NekoGui::dataStore->core_running || NekoGui::dataStore->started_id < 0) return;
+            if (!GreenRhythm::GeoData::requestRefresh(QDir::currentPath())) {
+                MessageBoxWarning(tr("GeoIP"), tr("Не удалось сохранить запрос на обновление. Проверьте доступ к каталогу настроек."));
+                return;
+            }
+            shell->markGeoRefreshRequested();
+        });
+        connect(shell, &GreenRhythm::MainShell::geoDataAutomaticToggled, this, [this](bool on) {
+            const bool previous = NekoGui::dataStore->geodata_auto_update;
+            if (on == previous) return;
+            if (!GreenRhythm::GeoData::saveAutomatic(QDir::currentPath(), on)) {
+                MessageBoxWarning(tr("GeoIP"), tr("Не удалось сохранить настройку автообновления. Предыдущее значение сохранено."));
+                refresh_maintenance();
+                return;
+            }
+            NekoGui::dataStore->geodata_auto_update = on;
+            if (!NekoGui::dataStore->Save()) {
+                if (GreenRhythm::GeoData::saveAutomatic(QDir::currentPath(), previous)) {
+                    NekoGui::dataStore->geodata_auto_update = previous;
+                    MessageBoxWarning(tr("GeoIP"), tr("Не удалось сохранить настройку приложения. Предыдущее значение восстановлено."));
+                } else {
+                    // The core has already received 'on'. Keep that value visible
+                    // rather than claiming a failed rollback succeeded.
+                    MessageBoxWarning(tr("GeoIP"), tr("Не удалось сохранить настройку приложения и вернуть прежнее значение. "
+                        "Для текущего подключения отправлено новое значение; после перезапуска оно может измениться. "
+                        "Проверьте доступ к каталогу настроек."));
+                }
+            }
+            refresh_maintenance();
+        });
+        connect(shell, &GreenRhythm::MainShell::rollbackRequested, this, [this] {
+            const auto version = shell->rollbackVersion();
+            if (version.isEmpty() || QMessageBox::question(this, tr("Вернуть предыдущую версию"),
+                tr("Вернуть GreenRhythm %1?\n\nПриложение закроет подключение и перезапустится. "
+                   "Серверы, подписки и настройки сохранятся. OpenVPN не изменяется.").arg(version),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+            if (!GreenRhythm::Rollback::launch(QApplication::applicationDirPath(), [] { MW_dialog_message("", "ExitForRollback"); }))
+                MessageBoxWarning(tr("Возврат версии"), tr("Не удалось подготовить возврат. GreenRhythm продолжает работать."));
+        });
         connect(shell, &GreenRhythm::MainShell::tunnelSettingsRequested, this,
                 [this] { on_menu_vpn_settings_triggered(); });
         // ВЫНЕСЕНО ИЗ «ВСЕ КОМАНДЫ» — через те же пункты меню, как у панели
@@ -526,6 +597,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
                 [this] { open_greenrhythm_panel(); });
         connect(shell, &GreenRhythm::MainShell::renewRequested, this, [] {
             QDesktopServices::openUrl(QUrl(GreenRhythm::kRenewUrl));
+        });
+        connect(shell, &GreenRhythm::MainShell::buyRequested, this, [] {
+            QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl));
         });
         connect(shell, &GreenRhythm::MainShell::panelRequested, this,
                 [this] { open_greenrhythm_panel(); });
@@ -930,6 +1004,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     args.push_back("-port");
     args.push_back(Int2String(NekoGui::dataStore->core_port));
     if (NekoGui::dataStore->flag_debug) args.push_back("-debug");
+    if (NekoGui::dataStore->remember_enable && NekoGui::dataStore->remember_id >= 0)
+        pending_core_profile = NekoGui::dataStore->remember_id;
 
     // Start core
     runOnUiThread(
@@ -996,39 +1072,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         NekoGui::dataStore->Save();
     }
 
-    // One-shot: bring existing routing schemes up to the shipped preset's QUIC guard and
-    // local DNS for direct traffic. Additive — see Routing::MigrateOne for the limits.
-    if (!NekoGui::dataStore->routing_quic_migrated) {
-        const int migrated = NekoGui::Routing::MigrateAll();
-        NekoGui::dataStore->routing_quic_migrated = true;
-        NekoGui::dataStore->Save();
-        if (migrated > 0)
-            MW_show_log(tr("Маршрутизация обновлена: блокировка QUIC и локальный DNS (схем: %1).").arg(migrated));
-    }
-
-    // Второй одноразовый ремонт, свой флаг: правило «мимо туннеля» поднимается выше
-    // блокировки udp/443. Ниже неё оно не работало вовсе — см. MigrateGameBypass.
-    if (!NekoGui::dataStore->routing_games_migrated) {
-        const int migrated = NekoGui::Routing::MigrateGamesAll();
-        NekoGui::dataStore->routing_games_migrated = true;
-        NekoGui::dataStore->Save();
-        if (migrated > 0)
-            MW_show_log(tr("Маршрутизация обновлена: игры и звонки теперь идут мимо туннеля раньше блокировок (схем: %1).").arg(migrated));
-    }
-
-    // Третий одноразовый ремонт, и снова свой флаг. Проход тот же самый: он
-    // дописывает в схему недостающие значения из пресета. Новым стало значение —
-    // шаблон пути расширен до «-Shipping.exe», потому что прежний ловил только
-    // сам файл игры и пропускал лаунчер, который Unreal кладёт рядом с ней.
-    // Игра шла мимо туннеля, лаунчер — через него, и разъехавшиеся адреса давали
-    // вечную загрузку при полностью исправной сети.
-    if (!NekoGui::dataStore->routing_launcher_migrated) {
-        const int migrated = NekoGui::Routing::MigrateGamesAll();
-        NekoGui::dataStore->routing_launcher_migrated = true;
-        NekoGui::dataStore->Save();
-        if (migrated > 0)
-            MW_show_log(tr("Маршрутизация обновлена: лаунчеры игр теперь идут тем же путём, что и сама игра (схем: %1).").arg(migrated));
-    }
+    if (GreenRhythm::RouteDefaultsPolicy::needsReview(NekoGui::dataStore->routing_defaults_review_revision))
+        MW_show_log(tr("В «Маршрутах» можно просмотреть стандартные правила версии %1. Текущие правила сохранены.")
+            .arg(GreenRhythm::RouteDefaultsPolicy::Revision));
 
     TM_auto_update_subsctiption = new QTimer;
     TM_auto_update_subsctiption_Reset_Minute = [&](int m) {
@@ -1040,6 +1086,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Страница «Настройки» — после миграции интервала выше: иначе первый запуск
     // после обновления показал бы прежнее число.
     refresh_app_options();
+    refresh_maintenance(true);
+    auto *maintenanceTimer = new QTimer(this);
+    connect(maintenanceTimer, &QTimer::timeout, this, [this] {
+        if (shell && shell->maintenanceVisible()) refresh_maintenance();
+    });
+    maintenanceTimer->start(2500);
 
 #ifdef Q_OS_WIN
     // Программа с правами (человек перезапустил её ради туннеля), а автозапуск
@@ -1184,7 +1236,10 @@ void MainWindow::dialog_message_impl(const QString &sender, const QString &info)
         }
     }
     //
-    if (info == "RestartProgram") {
+    if (info == "ExitForRollback") {
+        this->exit_reason = 0;
+        on_menu_exit_triggered();
+    } else if (info == "RestartProgram") {
         this->exit_reason = 2;
         on_menu_exit_triggered();
     } else if (info == "Raise") {
@@ -1223,6 +1278,8 @@ void MainWindow::dialog_message_impl(const QString &sender, const QString &info)
             // ждёт (см. main/TunLifecycle.hpp).
             neko_stop(false, false, true);
         } else if (info == "CoreCrashed") {
+            if (!connection_lifecycle.isStopping() && NekoGui::dataStore->started_id >= 0)
+                pending_core_profile = NekoGui::dataStore->started_id;
             // Ядро упало посреди попытки — например, не поднялось после
             // перезапуска, которого ждал neko_start. Её конец уже не придёт:
             // перезапуск ядра запомнит started_id, а у попытки его ещё нет.
@@ -1230,8 +1287,21 @@ void MainWindow::dialog_message_impl(const QString &sender, const QString &info)
                 shell->setState(GreenRhythm::MainShell::State::Failed, tr("ядро остановилось"));
             }
             neko_stop(true);
+        } else if (info == "CoreStartFailed") {
+            pending_core_profile = -1;
+            connection_lifecycle.cancel();
+            if (shell != nullptr)
+                shell->setState(GreenRhythm::MainShell::State::Failed, tr("не удалось запустить ядро"));
         } else if (info.startsWith("CoreStarted")) {
-            neko_start(info.split(",")[1].toInt());
+            const auto profile = info.split(",")[1].toInt();
+            // Explicit disconnect cancels an already queued core-ready event.
+            // A crash restart may resume the active profile, but never revive
+            // it while a user-requested stop is still running.
+            if (pending_core_profile == profile ||
+                (!connection_lifecycle.isStopping() && NekoGui::dataStore->started_id == profile)) {
+                pending_core_profile = -1;
+                neko_start(profile);
+            }
         }
     }
 }
@@ -1260,6 +1330,37 @@ void MainWindow::on_menu_manage_groups_triggered() {
 
 void MainWindow::on_menu_routing_settings_triggered() {
     USE_DIALOG(DialogManageRoutes)
+}
+
+void MainWindow::open_route_review(bool restoreBackup) {
+    if (dialog_is_using) {
+        MessageBoxInfo(tr("Маршруты"), tr("Сначала закройте открытое окно настроек. Несохранённые изменения останутся в нём."));
+        return;
+    }
+    QScopedValueRollback<bool> busy(dialog_is_using, true);
+    DialogManageRoutes editor(this);
+    // Reuse the guarded, backed-up route actions. Opening or cancelling their
+    // review never saves the editor, changes a choice or restarts a profile.
+    if (restoreBackup) editor.restorePreviousRoutes();
+    else editor.applyStandardRoutes();
+    refresh_maintenance();
+}
+
+void MainWindow::refresh_maintenance(bool inspectRollback) {
+    if (!shell) return;
+    const bool online = NekoGui::dataStore->core_running && NekoGui::dataStore->started_id >= 0;
+    const auto status = GreenRhythm::GeoData::readStatus(QDir::currentPath());
+    const auto state = status.value("state").toString();
+    shell->setMaintenanceGeo(NekoGui::dataStore->geodata_auto_update, online,
+        GreenRhythm::GeoData::brief(status, NekoGui::dataStore->geodata_auto_update, online),
+        state == "checking", state == "unused");
+    const auto route = ROUTES_PREFIX + NekoGui::dataStore->active_routing;
+    shell->setMaintenanceRoute(NekoGui::dataStore->active_routing,
+        GreenRhythm::RouteDefaultsPolicy::canRestore(route, NekoGui::dataStore->ToJson()));
+    if (inspectRollback && (!maintenanceRollbackCheck.isValid() || maintenanceRollbackCheck.elapsed() >= 30000)) {
+        maintenanceRollbackCheck.start();
+        shell->refreshRollbackStatus(QApplication::applicationDirPath());
+    }
 }
 
 void MainWindow::on_menu_vpn_settings_triggered() {
@@ -1350,7 +1451,15 @@ void MainWindow::on_menu_exit_triggered() {
         // «вернём, когда закроете клиент» дано без оговорок.
         if (GreenRhythm::interferencePaused()) GreenRhythm::resumeInterference(nullptr);
         //
+#ifdef Q_OS_WIN
+        if (!neko_set_spmode_system_proxy(false, false)) {
+            NekoGui::dataStore->prepare_exit = false;
+            mu_exit.unlock();
+            return; // keep the serving core alive if Windows cannot restore our proxy
+        }
+#else
         neko_set_spmode_system_proxy(false, false);
+#endif
         neko_set_spmode_vpn(false, false);
         if (NekoGui::dataStore->spmode_vpn) {
             mu_exit.unlock(); // retry
@@ -1366,6 +1475,10 @@ void MainWindow::on_menu_exit_triggered() {
         hide();
         runOnNewThread([=] {
             sem_stopped.acquire();
+            // A disconnect can finish while a cancelled Start RPC is still
+            // returning. Keep the GUI alive until its completion callback has
+            // released the operation, then ask our core to exit.
+            connection_lifecycle.waitUntilIdle();
             stop_core_daemon();
             runOnUiThread([=] {
                 on_menu_exit_triggered(); // continue exit progress
@@ -1412,8 +1525,16 @@ void MainWindow::on_menu_exit_triggered() {
     refresh_status();          \
     return;
 
-void MainWindow::neko_set_spmode_system_proxy(bool enable, bool save) {
-    if (enable != NekoGui::dataStore->spmode_system_proxy) {
+bool MainWindow::neko_set_spmode_system_proxy(bool enable, bool save) {
+    bool applyRequested = enable != NekoGui::dataStore->spmode_system_proxy;
+#ifdef Q_OS_WIN
+    // The selected mode is a preference, not proof of WinINET's current
+    // state: another client can disable or replace the proxy. An explicit
+    // enable (including "Connect browsers") must apply our current endpoint
+    // again. This does not introduce periodic ownership fights.
+    applyRequested = true; // explicit disable also cleans up a partial failed enable
+#endif
+    if (applyRequested) {
         if (enable) {
             auto socks_port = NekoGui::dataStore->inbound_socks_port;
             auto http_port = NekoGui::dataStore->inbound_socks_port;
@@ -1435,16 +1556,37 @@ void MainWindow::neko_set_spmode_system_proxy(bool enable, bool save) {
                                   tr("Не удалось включить системный прокси. "
                                      "Возможно, настройками сети управляет организация."));
                 refresh_status();
-                return;
+                return false;
+            }
+#else
+#ifdef Q_OS_WIN
+            QString error;
+            if (!SetSystemProxy(http_port, socks_port, &error)) {
+                NekoGui::dataStore->spmode_system_proxy = false;
+                MW_show_log(tr("[Ошибка] Не удалось подтвердить системный прокси: %1").arg(error));
+                MessageBoxWarning(software_name, tr("Не удалось подтвердить включение системного прокси.\n\n%1").arg(error));
+                refresh_status();
+                return false;
             }
 #else
             SetSystemProxy(http_port, socks_port);
+#endif
 #endif
         } else {
 #ifdef Q_OS_MACOS
             macos_clear_pac();
 #else
+#ifdef Q_OS_WIN
+            QString error;
+            if (!ClearSystemProxy(&error)) {
+                MW_show_log(tr("[Ошибка] Не удалось вернуть системный прокси: %1").arg(error));
+                MessageBoxWarning(software_name, tr("Не удалось вернуть прежние настройки прокси. Программа продолжает работать.\n\n%1").arg(error));
+                refresh_status();
+                return false;
+            }
+#else
             ClearSystemProxy();
+#endif
 #endif
         }
     }
@@ -1459,6 +1601,7 @@ void MainWindow::neko_set_spmode_system_proxy(bool enable, bool save) {
 
     NekoGui::dataStore->spmode_system_proxy = enable;
     refresh_status();
+    return true;
 }
 
 void MainWindow::neko_set_spmode_vpn(bool enable, bool save) {
@@ -1987,6 +2130,8 @@ void MainWindow::refresh_proxy_list_impl(const int &id, GroupSortAction groupSor
 // HKCU\Software\Classes registration — per-user, no admin. Re-checked on every
 // start so the handler self-heals when the exe is moved.
 static void RegisterGreenRhythmScheme() {
+    // Headless checks must not take over links from the user's installed GUI.
+    if (QGuiApplication::platformName() != QStringLiteral("windows")) return;
     const auto exe = QDir::toNativeSeparators(QApplication::applicationFilePath());
     const auto cmd = QStringLiteral("\"%1\" \"%2\"").arg(exe, QStringLiteral("%1"));
     QSettings reg(QStringLiteral("HKEY_CURRENT_USER\\Software\\Classes\\greenrhythm"), QSettings::NativeFormat);

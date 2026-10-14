@@ -14,3 +14,6 @@ curl -fLso $DEST/geosite.db "https://github.com/SagerNet/sing-geosite/releases/l
 
 #### copy res/public ####
 cp res/public/* $DEST
+
+# Reviewed offline GeoIP snapshot; online updates belong to the core manager.
+python3 tools/geodata_bootstrap.py "$DEST"

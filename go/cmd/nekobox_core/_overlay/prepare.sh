@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Готовит сборку ядра с правками sing-box и печатает имя go.mod,
+# Готовит сборку ядра с правками sing-box и sing-vmess и печатает имя go.mod,
 # который надо передать в -modfile.
 #
 #   go build -modfile "$(bash _overlay/prepare.sh)" ...
@@ -53,6 +53,22 @@ while IFS= read -r file; do
   fi
 done < <(find _overlay/sing-box -type f -name '*.go')
 
+# Vision must parse stream boundaries independently of outer TLS records.
+# Pin the second module independently: updating sing-box must not silently
+# keep a Vision source copied from an incompatible sing-vmess version.
+vmess_have=$(grep -m1 'github.com/sagernet/sing-vmess v' go.mod | sed 's/.*sing-vmess //' | awk '{print $1}' | tr -d '\r')
+if [ ! -f _overlay/sing-vmess/vless/vision.go ] || [ -z "$vmess_have" ]; then
+  echo "prepare.sh: pinned sing-vmess Vision overlay or module version missing" >&2
+  exit 1
+fi
+while IFS= read -r file; do
+  base=$(grep -m1 '^// overlay-base: github.com/sagernet/sing-vmess ' "$file" | awk '{print $4}')
+  if [ "$base" != "$vmess_have" ]; then
+    echo "prepare.sh: $file is based on ${base:-?}, expected $vmess_have" >&2
+    exit 1
+  fi
+done < <(find _overlay/sing-vmess -type f -name '*.go')
+
 # СНАЧАЛА СКАЧАТЬ, ПОТОМ СПРАШИВАТЬ. go list -m модуль не качает: на чистой
 # машине — а раннер CI каждый раз чистый — .Dir пришёл бы пустым, и скрипт
 # отказал бы на ровном месте. go mod download ничего не делает, если модуль уже
@@ -84,5 +100,24 @@ abs="$(cd "$dst" && (pwd -W 2>/dev/null || pwd))"
 cp go.mod go.overlay.mod
 cp go.sum go.overlay.sum
 go mod edit -replace "github.com/sagernet/sing-box=$abs" go.overlay.mod
+
+go mod download github.com/sagernet/sing-vmess
+vmess_src=$(go list -m -f '{{.Dir}}' github.com/sagernet/sing-vmess)
+vmess_src="${vmess_src//\\//}"
+if [ ! -f "$vmess_src/go.mod" ]; then
+  echo "prepare.sh: sing-vmess module not found after download ($vmess_src)" >&2
+  exit 1
+fi
+vmess_dst="_overlay/build/sing-vmess"
+rm -rf "$vmess_dst"
+cp -r "$vmess_src" "$vmess_dst"
+chmod -R u+w "$vmess_dst"
+while IFS= read -r file; do
+  relative="${file#_overlay/sing-vmess/}"
+  mkdir -p "$vmess_dst/$(dirname "$relative")"
+  cp "$file" "$vmess_dst/$relative"
+done < <(find _overlay/sing-vmess -type f -name '*.go')
+vmess_abs="$(cd "$vmess_dst" && (pwd -W 2>/dev/null || pwd))"
+go mod edit -replace "github.com/sagernet/sing-vmess=$vmess_abs" go.overlay.mod
 
 echo "go.overlay.mod"

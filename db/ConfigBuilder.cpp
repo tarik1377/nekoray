@@ -4,6 +4,7 @@
 #include "fmt/Preset.hpp"
 #include "main/TunHelper.hpp"
 #include "main/LocalDns.hpp"
+#include "main/RuRoutingPolicy.hpp"
 
 #include <QApplication>
 #include <QFile>
@@ -751,6 +752,11 @@ namespace NekoGui {
                                                    &localDnsDomains, &localDnsServer,
                                                    &status->result->error)) return;
         GreenRhythm::LocalDns::addToDns(dns, localDnsDomains, localDnsServer);
+        QJsonObject localHosts;
+        if (!dataStore->routing->use_dns_object
+            && !GreenRhythm::LocalDns::parseHosts(dataStore->routing->local_dns_hosts, &localHosts,
+                                               &status->result->error)) return;
+        GreenRhythm::LocalDns::addHostsToDns(dns, localHosts);
         status->result->coreConfig.insert("dns", dns);
 
         // Routing
@@ -773,8 +779,11 @@ namespace NekoGui {
                 {"outbound", "dns-out"},
             };
         }
+        if (!localHosts.isEmpty()) {
+            status->routingRulesDns += GreenRhythm::LocalDns::hostsResolveRule(localHosts, dataStore->routing->direct_dns_strategy);
+        }
         if (!localDnsDomains.isEmpty()) {
-            status->routingRulesDns += GreenRhythm::LocalDns::resolveRule(localDnsDomains, dataStore->routing->direct_dns_strategy);
+            status->routingRulesDns += GreenRhythm::LocalDns::resolveRule(localDnsDomains, dataStore->routing->direct_dns_strategy, localHosts.keys());
         }
 
         // sing-box routing rule object
@@ -930,14 +939,21 @@ namespace NekoGui {
         }
 
         // final add routing rule
-        // Порядок сборки: сначала поимённый выбор человека, затем цепочка пресета,
-        // затем его же общие правила, затем всё остальное.
+        // Explicit choices keep their precedence. Only the exact application
+        // fallback shipped with the RU preset goes after address rules: a
+        // Russian destination must not become foreign merely because Codex or
+        // Telegram opened it. Qualified or edited custom process rules stay put.
+        const auto schemeRules = GreenRhythm::RuRoutingPolicy::splitStandardFallback(
+            QString2QJsonObject(dataStore->routing->custom)["rules"].toArray(),
+            dataStore->routing->direct_ip, dataStore->routing->def_outbound,
+            dataStore->routing_defaults_choice);
         auto routingRules = status->routingRulesDns;
         QJSONARRAY_ADD(routingRules, status->routingRulesFirst)
-        QJSONARRAY_ADD(routingRules, QString2QJsonObject(dataStore->routing->custom)["rules"].toArray())
+        QJSONARRAY_ADD(routingRules, schemeRules.primary)
         if (status->forTest) routingRules = {};
         if (!status->forTest) QJSONARRAY_ADD(routingRules, QString2QJsonObject(dataStore->custom_route_global)["rules"].toArray())
         QJSONARRAY_ADD(routingRules, status->routingRules)
+        if (!status->forTest) QJSONARRAY_ADD(routingRules, schemeRules.fallback)
 
         // ОБХОД ФИЛЬТРАЦИИ НА ПРЯМОМ ПУТИ — СРЕДСТВАМИ ЯДРА, БЕЗ ДРАЙВЕРА.
         //
@@ -998,9 +1014,16 @@ namespace NekoGui {
             routingRules = shaped;
         }
 
+        bool autoDetectInterface = dataStore->spmode_vpn;
+#ifdef Q_OS_WIN
+        // A proxy-only core must also avoid entering another proxy TUN when
+        // dialing its server or downloading rule sets. The core preserves the
+        // OS routes to local/work networks when selecting the actual interface.
+        autoDetectInterface = true;
+#endif
         auto routeObj = QJsonObject{
             {"rules", routingRules},
-            {"auto_detect_interface", dataStore->spmode_vpn}, // TODO force enable?
+            {"auto_detect_interface", autoDetectInterface},
             {
                 "geoip",
                 QJsonObject{
@@ -1020,6 +1043,13 @@ namespace NekoGui {
             routeObj.remove("auto_detect_interface");
         }
         status->result->coreConfig.insert("route", routeObj);
+        // Core-owned local GeoIP cache keeps offline startup independent of
+        // GitHub availability. Exported configs remain standard sing-box JSON.
+        if (!status->forExport && !status->forTest)
+            status->result->coreConfig.insert("geodata_update", QJsonObject{{"enabled", dataStore->geodata_auto_update}});
+#ifdef Q_OS_WIN
+        if (!status->forExport) status->result->coreConfig.insert("windows_work_vpn", true);
+#endif
 
         // experimental
         QJsonObject experimentalObj;
@@ -1118,18 +1148,31 @@ namespace NekoGui {
                           .replace("%FAKE_DNS_INBOUND%", dataStore->fake_dns ? "tun-in" : "empty")
                           .replace("%PORT%", Int2String(dataStore->inbound_socks_port));
         const bool diagnosticLog = qEnvironmentVariableIsSet("GREENRHYTHM_TUN_DIAGNOSTICS");
+#ifdef Q_OS_WIN
+        const bool preserveWorkVPN = true;
+#else
+        const bool preserveWorkVPN = false;
+#endif
 #ifdef Q_OS_MACOS
         const bool preserveTunRoutes = true;
 #else
         const bool preserveTunRoutes = false;
 #endif
-        if (diagnosticLog || preserveTunRoutes) {
+        if (diagnosticLog || preserveTunRoutes || preserveWorkVPN) {
             // The helper is elevated and does not inherit our environment.
             // Set verbosity in its generated config, without persisting a preference.
             QJsonParseError error;
             auto document = QJsonDocument::fromJson(config.toUtf8(), &error);
             if (error.error == QJsonParseError::NoError && document.isObject()) {
                 auto object = document.object();
+                if (preserveWorkVPN) {
+                    auto route = object.value("route").toObject();
+                    if (route.value("default_interface").toString().isEmpty()) {
+                        route["auto_detect_interface"] = true;
+                        object["route"] = route;
+                        object["windows_work_vpn"] = true;
+                    }
+                }
                 if (diagnosticLog) {
                     auto log = object.value("log").toObject();
                     log["level"] = QStringLiteral("debug");

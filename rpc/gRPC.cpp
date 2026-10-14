@@ -14,6 +14,8 @@
 #include <QtEndian>
 #include <QThread>
 #include <QMutex>
+#include <QSemaphore>
+#include <QNetworkProxy>
 #include <QAbstractNetworkCache>
 
 namespace QtGrpc {
@@ -146,6 +148,9 @@ namespace QtGrpc {
             //
             thread = new QThread;
             nm = new QNetworkAccessManager();
+            // Control RPC is always local, including while a tunnel or system
+            // proxy is being replaced. Never send it to the user's proxy.
+            nm->setProxy(QNetworkProxy::NoProxy);
             nm->setCache(new NoCache);
             nm->moveToThread(thread);
             thread->start();
@@ -169,18 +174,16 @@ namespace QtGrpc {
 
             QByteArray responseArray;
             QNetworkReply::NetworkError err;
-            QMutex lock;
-            lock.lock();
+            QSemaphore finished;
 
             runOnUiThread(
                 [&] {
                     err = call(methodName, serviceName, requestArray, responseArray, timeout_ms);
-                    lock.unlock();
+                    finished.release();
                 },
                 nm);
 
-            lock.lock();
-            lock.unlock();
+            finished.acquire();
             // qDebug() << "rsp err" << err;
             // qDebug() << "rsp array" << responseArray;
 
@@ -213,9 +216,12 @@ namespace NekoGui_rpc {
         default_grpc_channel->Call("Exit", request, &reply, 500);
     }
 
-    QString Client::Start(bool *rpcOK, const libcore::LoadConfigReq &request) {
+    QString Client::Start(bool *rpcOK, const libcore::LoadConfigReq &request, int timeoutMs) {
         libcore::ErrorResp reply;
-        auto status = default_grpc_channel->Call("Start", request, &reply);
+        // A dying core can leave its HTTP/2 stream open. Lifecycle calls use a
+        // separate connection and a deadline, so that stream cannot strand the
+        // stop/start gate or consume replies belonging to a replacement core.
+        auto status = make_grpc_channel()->Call("Start", request, &reply, qMax(1, timeoutMs));
 
         if (status == QNetworkReply::NoError) {
             *rpcOK = true;
@@ -226,10 +232,10 @@ namespace NekoGui_rpc {
         }
     }
 
-    QString Client::Stop(bool *rpcOK) {
+    QString Client::Stop(bool *rpcOK, int timeoutMs) {
         libcore::EmptyReq request;
         libcore::ErrorResp reply;
-        auto status = default_grpc_channel->Call("Stop", request, &reply);
+        auto status = make_grpc_channel()->Call("Stop", request, &reply, qMax(1, timeoutMs));
 
         if (status == QNetworkReply::NoError) {
             *rpcOK = true;

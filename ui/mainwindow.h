@@ -7,6 +7,7 @@
 #ifndef MW_INTERFACE
 
 #include <QTime>
+#include <QElapsedTimer>
 #include <QTimer>
 #include <QTableWidgetItem>
 #include <QKeyEvent>
@@ -26,6 +27,7 @@
 
 #include "db/ProxyEntity.hpp"
 #include "main/GuiUtils.hpp"
+#include "main/ConnectionLifecycle.hpp"
 
 #endif
 
@@ -70,7 +72,7 @@ public:
 
     void neko_stop(bool crash = false, bool sem = false, bool keep_tunnel = false);
 
-    void neko_set_spmode_system_proxy(bool enable, bool save = true);
+    bool neko_set_spmode_system_proxy(bool enable, bool save = true);
 
     void neko_set_spmode_vpn(bool enable, bool save = true);
 
@@ -205,8 +207,8 @@ private:
     //
     int proxy_last_order = -1;
     bool select_mode = false;
-    QMutex mu_starting;
-    QMutex mu_stopping;
+    GreenRhythm::ConnectionLifecycle connection_lifecycle;
+    int pending_core_profile = -1;
     QMutex mu_exit;
     QSemaphore sem_stopped;
     int exit_reason = 0;
@@ -303,6 +305,9 @@ private:
     // автообновление подписки. Не из refresh_status: тот зовётся раз в две
     // секунды, а AutoRun_IsEnabled читает реестр или файл автозапуска.
     void refresh_app_options();
+    void refresh_maintenance(bool inspectRollback = false);
+    void open_route_review(bool restoreBackup);
+    QElapsedTimer maintenanceRollbackCheck;
 
     QLabel *conn_route_summary = nullptr; // live route "map": proxy/direct/block split + bar
 

@@ -3,7 +3,8 @@ package route
 
 import (
 	"net/netip"
-	"strings"
+
+	"github.com/sagernet/sing-box/common/workvpn"
 )
 
 type privateRouteInterface struct {
@@ -24,8 +25,7 @@ func selectPrivateInterface(address netip.Addr, lookup func(netip.Addr) (private
 	if err != nil || !iface.up || iface.index <= 0 || iface.name == "" {
 		return "", 0, false
 	}
-	identity := strings.ToLower(iface.name + " " + iface.description)
-	if strings.Contains(identity, "neko-tun") || strings.Contains(identity, "sing-tun") {
+	if workvpn.IsProxyTunnel(iface.name, iface.description) {
 		return "", 0, false
 	}
 	return iface.name, iface.index, true

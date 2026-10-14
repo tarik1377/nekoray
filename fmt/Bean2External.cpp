@@ -469,6 +469,7 @@ namespace NekoGui_fmt {
                 {"fingerprint", stream->utlsFingerprint.isEmpty() ? "chrome" : stream->utlsFingerprint},
             };
             if (!stream->reality_spx.trimmed().isEmpty()) r["spiderX"] = stream->reality_spx;
+            if (!stream->reality_pqv.trimmed().isEmpty()) r["mldsa65Verify"] = stream->reality_pqv;
             ss["realitySettings"] = r;
         } else if (sec == "tls") {
             ss["security"] = "tls";

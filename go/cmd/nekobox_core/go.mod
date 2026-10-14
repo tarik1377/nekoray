@@ -3,10 +3,10 @@ module nekobox_core
 go 1.24.7
 
 require (
-	greenrhythm_release v0.0.0
 	github.com/matsuridayo/libneko v1.0.0
 	github.com/sagernet/sing v0.8.12
 	github.com/sagernet/sing-box v1.13.18
+	greenrhythm_release v0.0.0
 	grpc_server v1.0.0
 )
 
@@ -20,6 +20,7 @@ require (
 	github.com/anytls/sing-anytls v0.0.11 // indirect
 	github.com/caddyserver/certmagic v0.25.3-0.20260421143802-60d9d8b415d6 // indirect
 	github.com/caddyserver/zerossl v0.1.5 // indirect
+	github.com/cloudflare/circl v1.6.4
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/coreos/go-iptables v0.7.1-0.20240112124308-65c67c9f46e6 // indirect
 	github.com/cretz/bine v0.2.0 // indirect

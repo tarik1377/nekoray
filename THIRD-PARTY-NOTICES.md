@@ -87,6 +87,17 @@ LGPLv3** — и это не формальность. Из выбора след
 [MaxMind GeoLite2](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data)
 и [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community).
 
+Резервный российский набор `geoip-ru-bootstrap.srs` и его автоматические
+обновления используют [Loyalsoldier/geoip](https://github.com/Loyalsoldier/geoip),
+включающий GeoLite2 data created by [MaxMind](https://www.maxmind.com).
+Данные распространяются по [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/);
+текст лицензии приложен в `GEODATA-LICENSE.txt` и
+`config/LICENSE-CC-BY-SA-4.0.txt`.
+Мы преобразуем опубликованный полный список RU CIDR в формат SRS без изменения
+префиксов. Источник, версия и контрольные суммы резервного снимка записаны в
+`GEOIP-RU-BOOTSTRAP.txt` и `config/geoip-ru-bootstrap.json`.
+Это отдельная лицензия данных.
+
 ## Если вы получили эту программу и вам нужен исходный код
 
 Он лежит по ссылке выше и доступен всем. Если по какой-то причине ссылка не

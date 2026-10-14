@@ -1,6 +1,15 @@
 #!/bin/bash
 set -e
 
+# Windows overlapped socket operations in Go 1.26.0/1.26.1 can corrupt memory
+# (golang/go#77975). Use the same exact patched toolchain locally and in CI.
+toolchain_version=$(tr -d ' \t\r\n' < .go-version)
+if [[ ! "$toolchain_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Invalid pinned Go version in .go-version" >&2
+  exit 1
+fi
+export GOTOOLCHAIN="go$toolchain_version"
+
 source libs/env_deploy.sh
 [ "$GOOS" == "windows" ] && [ "$GOARCH" == "amd64" ] && DEST=$DEPLOYMENT/windows64 || true
 [ "$GOOS" == "windows" ] && [ "$GOARCH" == "arm64" ] && DEST=$DEPLOYMENT/windows-arm64 || true

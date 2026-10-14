@@ -12,6 +12,7 @@ class QVBoxLayout;
 namespace GreenRhythm {
 
     class PowerGlow;
+    class MaintenancePanel;
 
     /**
      * Новая оболочка главного окна: боковая колонка и страницы.
@@ -198,6 +199,12 @@ namespace GreenRhythm {
 
         /** Версия в строке «Обновления программы»: что стоит сейчас. */
         void setAppVersion(const QString &version);
+        void setMaintenanceRoute(const QString &name, bool canRestore);
+        void setMaintenanceGeo(bool automatic, bool online, const QString &text, bool checking, bool unused);
+        void markGeoRefreshRequested();
+        void refreshRollbackStatus(const QString &directory);
+        QString rollbackVersion() const;
+        bool maintenanceVisible() const;
 
         /**
          * Строки, которые жили только в «Ещё → Все команды»: подключаться при
@@ -249,6 +256,12 @@ namespace GreenRhythm {
 
         /** Инструменты, переехавшие из верхнего ряда. */
         void routesRequested();
+        void routeDefaultsRequested();
+        void restoreRoutesRequested();
+        void geoDataRefreshRequested();
+        void geoDataAutomaticToggled(bool on);
+        void rollbackRequested();
+        void maintenanceShown();
         /** Окно параметров туннеля: стек, MTU, IPv6, исключения. */
         void tunnelSettingsRequested();
         /** «Что мешает подключению» — только под Windows. */
@@ -269,9 +282,12 @@ namespace GreenRhythm {
 
         /** Открыть страницу продления. */
         void renewRequested();
+        void buyRequested();
 
         /** Открыть разбор «что-то не работает». */
         void troubleRequested();
+        /** Сравнить пути сайта и настройки DNS браузеров без входа в аккаунт. */
+        void browserHelpRequested();
 
         /** Показать список программ, идущих мимо VPN. */
         void bypassListRequested();
@@ -322,6 +338,7 @@ namespace GreenRhythm {
         QWidget *emptyHint = nullptr;
 
         QPushButton *modeTun = nullptr;
+        MaintenancePanel *maintenance = nullptr;
         QPushButton *modeProxy = nullptr;
         QPushButton *gamesToggle = nullptr;
         QPushButton *dpiToggle = nullptr;

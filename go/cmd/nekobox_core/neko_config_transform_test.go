@@ -198,8 +198,8 @@ func TestTransformInboundsSniffAndTun(t *testing.T) {
 		}
 	}
 	tun := ibs[1].(map[string]interface{})
-	if tun["stack"] != "mixed" {
-		t.Errorf("gvisor stack should be forced to mixed, got %#v", tun["stack"])
+	if tun["stack"] != "gvisor" {
+		t.Errorf("explicit gvisor stack must be preserved, got %#v", tun["stack"])
 	}
 	if _, ok := tun["inet4_address"]; ok {
 		t.Error("legacy inet4_address should be removed")
@@ -279,12 +279,11 @@ func TestTransformPreservesExistingV2RayApi(t *testing.T) {
 	}
 }
 
-// gvisor/empty -> mixed (robust default); an explicit "system" is honoured
-// (native UDP for voice/gaming).
+// Explicit selections are preserved; unset uses System.
 func TestNormalizeTunStack(t *testing.T) {
 	cases := []struct{ stack, want string }{
-		{"", "mixed"},
-		{"gvisor", "mixed"},
+		{"", "system"},
+		{"gvisor", "gvisor"},
 		{"system", "system"},
 		{"mixed", "mixed"},
 	}

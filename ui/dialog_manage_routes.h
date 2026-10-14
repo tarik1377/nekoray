@@ -43,7 +43,12 @@ private:
     QString title_base;
     QString active_routing;
 
+    void refreshDefaultsReview();
+    void keepOwnRoutes();
+
 public slots:
+    void applyStandardRoutes();
+    void restorePreviousRoutes();
 
     void accept() override;
 

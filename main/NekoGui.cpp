@@ -1,8 +1,10 @@
 #include "NekoGui.hpp"
 #include "fmt/Preset.hpp"
 #include "VideoRoutes.hpp"
+#include "DefaultRoutes.hpp"
 
 #include <QFile>
+#include <QSaveFile>
 #include <QDir>
 #include <QApplication>
 #include <QFileInfo>
@@ -67,9 +69,14 @@ namespace NekoGui_ConfigItem {
     }
 
     QJsonObject JsonStore::ToJson(const QStringList &without) {
-        QJsonObject object;
+        QJsonObject object = unknown_fields;
+        for (const auto &name : without) object.remove(name);
+        // A field may become registered after loading. Its current value wins;
+        // empty known strings must not resurrect their old unknown value.
+        for (auto item = _map.constBegin(); item != _map.constEnd(); ++item) object.remove(item.key());
         for (const auto &_item: _map) {
             auto item = _item.get();
+            if (item == nullptr) continue;
             if (without.contains(item->name)) continue;
             switch (item->type) {
                 case itemType::string:
@@ -109,8 +116,10 @@ namespace NekoGui_ConfigItem {
     }
 
     void JsonStore::FromJson(QJsonObject object) {
+        unknown_fields = {};
         for (const auto &key: object.keys()) {
             if (_map.count(key) == 0) {
+                unknown_fields.insert(key, object.value(key));
                 continue;
             }
 
@@ -187,14 +196,18 @@ namespace NekoGui_ConfigItem {
         if (save_control_no_save) return false;
 
         auto save_content = ToJsonBytes();
-        auto changed = last_save_content != save_content;
+        const auto changed = last_save_content != save_content;
+        QSaveFile file(fn);
+        // Never fall back to truncating the only existing configuration file.
+        file.setDirectWriteFallback(false);
+        if (!file.open(QIODevice::WriteOnly) || file.write(save_content) != save_content.size() || !file.commit()) {
+            // Neither content, credentials nor the user-chosen filename enter
+            // the warning. Keep last_save_content unchanged so a retry remains
+            // a real change after permissions/locks are repaired.
+            qWarning("Configuration save failed; previous file retained.");
+            return false;
+        }
         last_save_content = save_content;
-
-        QFile file;
-        file.setFileName(fn);
-        file.open(QIODevice::ReadWrite | QIODevice::Truncate);
-        file.write(save_content);
-        file.close();
 
         return changed;
     }
@@ -266,6 +279,8 @@ namespace NekoGui {
         _add(new configItem("mw_size", &mw_size, itemType::string));
         _add(new configItem("conn_stat", &connection_statistics, itemType::boolean));
         _add(new configItem("vpn_impl", &vpn_implementation, itemType::integer));
+        _add(new configItem("routing_ads_removed", &routing_ads_removed, itemType::boolean));
+        _add(new configItem("routing_dns_repaired", &routing_dns_repaired, itemType::boolean));
         _add(new configItem("vpn_mtu", &vpn_mtu, itemType::integer));
         _add(new configItem("vpn_ipv6", &vpn_ipv6, itemType::boolean));
         _add(new configItem("vpn_hide_console", &vpn_hide_console, itemType::boolean));
@@ -286,12 +301,16 @@ namespace NekoGui {
         _add(new configItem("sub_insecure", &sub_insecure, itemType::boolean));
         _add(new configItem("sub_auto_update", &sub_auto_update, itemType::integer));
         _add(new configItem("sub_auto_update_migrated", &sub_auto_update_migrated, itemType::boolean));
+        _add(new configItem("geodata_auto_update", &geodata_auto_update, itemType::boolean));
         _add(new configItem("conn_stat_migrated", &conn_stat_migrated, itemType::boolean));
         _add(new configItem("routing_quic_migrated", &routing_quic_migrated, itemType::boolean));
         _add(new configItem("routing_games_migrated", &routing_games_migrated, itemType::boolean));
         _add(new configItem("routing_launcher_migrated", &routing_launcher_migrated, itemType::boolean));
         _add(new configItem("routing_video_migrated", &routing_video_migrated, itemType::boolean));
         _add(new configItem("routing_video_revision", &routing_video_revision, itemType::integer));
+        _add(new configItem("routing_defaults_review_revision", &routing_defaults_review_revision, itemType::integer));
+        _add(new configItem("routing_defaults_choice", &routing_defaults_choice, itemType::string));
+        _add(new configItem("routing_defaults_backup", &routing_defaults_backup, itemType::string));
         _add(new configItem("log_ignore", &log_ignore, itemType::stringList));
         _add(new configItem("start_minimal", &start_minimal, itemType::boolean));
         _add(new configItem("max_log_line", &max_log_line, itemType::integer));
@@ -331,19 +350,17 @@ namespace NekoGui {
     Routing::Routing(int preset) : JsonStore() {
         if (preset == 1) {
             def_outbound = "proxy";
-            direct_dns = "77.88.8.8";
+            direct_dns = "https://1.1.1.1/dns-query";
             direct_dns_strategy = "ipv4_only";
             remote_dns = "https://1.1.1.1/dns-query";
             remote_dns_strategy = "ipv4_only";
             dns_routing = true;
-            // Direct/bypass traffic must resolve names locally. With "proxy" here every
-            // unmatched DNS query is tunnelled abroad and back, adding seconds of latency
-            // to the very domains we deliberately route direct (RU sites, games, launchers).
-            dns_final_out = "bypass";
+            // Explicit direct domains use DoH on the direct outbound. Unmatched
+            // names follow the proxy, so blocked/spoofed local UDP DNS cannot
+            // prevent VPN destinations from connecting before routing starts.
+            dns_final_out = "proxy";
             sniffing_mode = 1;
-            block_domain =
-                "geosite:category-ads-all\n"
-                "domain:appcenter.ms";
+            block_domain = "domain:appcenter.ms";
             block_ip = "";
             direct_domain =
                 "domain:ru\n"
@@ -490,6 +507,7 @@ namespace NekoGui {
         _add(new configItem("direct_dns_strategy", &this->direct_dns_strategy, itemType::string));
         _add(new configItem("local_dns_domains", &this->local_dns_domains, itemType::string));
         _add(new configItem("local_dns_server", &this->local_dns_server, itemType::string));
+        _add(new configItem("local_dns_hosts", &this->local_dns_hosts, itemType::string));
         _add(new configItem("domain_strategy", &this->domain_strategy, itemType::string));
         _add(new configItem("outbound_domain_strategy", &this->outbound_domain_strategy, itemType::string));
         _add(new configItem("dns_routing", &this->dns_routing, itemType::boolean));
@@ -540,19 +558,12 @@ namespace NekoGui {
     // Deliberately conservative, because this edits a file the customer may have curated:
     //  - the QUIC rules are PREPENDED (order matters, first match wins) and only when the
     //    scheme has no udp/443 or protocol:quic rule of its own;
-    //  - dns_final_out moves only from the exact old default "proxy", so anyone who chose
-    //    something else keeps it;
     //  - a custom rule set we cannot parse is left completely alone — a hand-written
     //    config is worth more than this migration;
     //  - nothing is ever removed, and the domain/IP lists are not touched at all.
     bool Routing::MigrateOne(Routing *r) {
         if (r == nullptr) return false;
         bool changed = false;
-
-        if (r->dns_final_out == "proxy") {
-            r->dns_final_out = "bypass";
-            changed = true;
-        }
 
         const QString original = r->custom.trimmed();
         auto obj = QString2QJsonObject(original);
@@ -746,6 +757,46 @@ namespace NekoGui {
                 complete = false;
                 qWarning() << "video routing migration failed:" << name << error;
             } else if (result == GreenRhythm::VideoRoutes::FileResult::Updated) {
+                updated++;
+            }
+        }
+        if (changed) *changed = updated;
+        return complete;
+    }
+
+    bool Routing::MigrateDefaultAdsAll(int *changed) {
+        int updated = 0;
+        bool complete = true;
+        for (const auto &name : List()) {
+            QString *loaded = name == dataStore->active_routing && dataStore->routing
+                                  ? &dataStore->routing->block_domain : nullptr;
+            QString error;
+            const auto result = GreenRhythm::DefaultRoutes::migrateFile(
+                ROUTES_PREFIX + name, loaded, &error);
+            if (result == GreenRhythm::DefaultRoutes::FileResult::Failed) {
+                complete = false;
+                qWarning() << "default ads routing migration failed:" << name << error;
+            } else if (result == GreenRhythm::DefaultRoutes::FileResult::Updated) {
+                updated++;
+            }
+        }
+        if (changed) *changed = updated;
+        return complete;
+    }
+
+    bool Routing::MigrateDefaultDnsAll(int *changed) {
+        int updated = 0;
+        bool complete = true;
+        for (const auto &name : List()) {
+            const bool active = name == dataStore->active_routing && dataStore->routing;
+            QString error;
+            const auto result = GreenRhythm::DefaultRoutes::repairDnsFile(
+                ROUTES_PREFIX + name, active ? &dataStore->routing->direct_dns : nullptr,
+                active ? &dataStore->routing->dns_final_out : nullptr, &error);
+            if (result == GreenRhythm::DefaultRoutes::FileResult::Failed) {
+                complete = false;
+                qWarning() << "default DNS routing repair failed:" << name << error;
+            } else if (result == GreenRhythm::DefaultRoutes::FileResult::Updated) {
                 updated++;
             }
         }

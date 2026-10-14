@@ -68,7 +68,7 @@ jobs:
         if: matrix.cross_os != 'public_res'
         uses: actions/setup-go@v4
         with:
-          go-version: "^1.24"
+          go-version-file: ".go-version"
 
       - name: Clone libneko dependency
         if: matrix.cross_os != 'public_res'
@@ -91,6 +91,7 @@ jobs:
         shell: bash
         run: |
           node --test tools/sign-release.test.mjs
+          python3 tools/geodata_bootstrap_test.py
           (cd go/release_auth && go test ./...)
           (cd go/grpc_server && go test ./...)
           # С ТОЙ ЖЕ ПРАВКОЙ SING-BOX, ЧТО И СБОРКА (patches/README.md, _overlay).
@@ -102,7 +103,9 @@ jobs:
             MODFILE=$(bash _overlay/prepare.sh)
             CORE_TAGS="with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api"
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" ./...
+            go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/common/tls -run TestRealityMLDSA65
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/route -run TestPrivateDestinationInterface
+            go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/common/workvpn github.com/sagernet/sing-box/dns github.com/sagernet/sing-box/route/rule -run TestWorkVPN
           )
           # Свой модуль, поэтому в перечисление выше он не попадал. Здесь
           # лежит проверка на обход каталога при распаковке обновления:
@@ -121,12 +124,10 @@ jobs:
           mkdir -p deployment/public_res
           curl -fLso deployment/public_res/geosite-category-ads-all.srs \
             "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs"
-          curl -fLso deployment/public_res/geoip-ru.srs \
-            "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs"
           # Пустой файл curl создаёт и при отказе, поэтому проверяем размер —
           # так же, как в шаге «Fetch geo data». Без -f и без этой проверки
           # страница ошибки уехала бы в выпуск набором правил маршрутизации.
-          for f in geosite-category-ads-all.srs geoip-ru.srs; do
+          for f in geosite-category-ads-all.srs geoip-ru-bootstrap.srs geoip-ru-bootstrap.json LICENSE-CC-BY-SA-4.0.txt; do
             test -s "deployment/public_res/$f" || { echo "пустой или отсутствует: $f"; exit 1; }
           done
 
@@ -164,7 +165,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v4
         with:
-          go-version: "^1.24"
+          go-version-file: ".go-version"
 
       - name: Clone libneko dependency
         run: |
@@ -458,10 +459,10 @@ jobs:
           curl -fLso deployment/public_res/geoip.db             "https://github.com/SagerNet/sing-geoip/releases/latest/download/geoip.db"
           curl -fLso deployment/public_res/geosite.db             "https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite.db"
           curl -fLso deployment/public_res/geosite-category-ads-all.srs             "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs"
-          curl -fLso deployment/public_res/geoip-ru.srs             "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs"
+          python3 tools/geodata_bootstrap.py deployment/public_res
           # Пустой файл curl создаёт и при отказе, поэтому проверяем размер: без
           # этого сборка вышла бы с нулевыми базами и вела бы себя как без них.
-          for f in geoip.db geosite.db geosite-category-ads-all.srs geoip-ru.srs; do
+          for f in geoip.db geosite.db geosite-category-ads-all.srs geoip-ru-bootstrap.srs geoip-ru-bootstrap.json LICENSE-CC-BY-SA-4.0.txt; do
             test -s "deployment/public_res/$f" || { echo "пустой или отсутствует: $f"; exit 1; }
           done
 

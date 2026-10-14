@@ -4,6 +4,8 @@
 
 #include "go/grpc_server/gen/libcore.pb.h"
 #include <QString>
+#include <functional>
+#include <memory>
 
 namespace QtGrpc {
     class Http2GrpcChannelPrivate;
@@ -20,9 +22,9 @@ namespace NekoGui_rpc {
 
         // QString returns is error string
 
-        QString Start(bool *rpcOK, const libcore::LoadConfigReq &request);
+        QString Start(bool *rpcOK, const libcore::LoadConfigReq &request, int timeoutMs = 15000);
 
-        QString Stop(bool *rpcOK);
+        QString Stop(bool *rpcOK, int timeoutMs = 5000);
 
         long long QueryStats(const std::string &tag, const std::string &direct);
 

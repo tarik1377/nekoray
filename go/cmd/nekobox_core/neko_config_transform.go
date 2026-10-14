@@ -10,13 +10,11 @@ import (
 	"os"
 )
 
-// normalizeTunStack picks a reliable TUN stack. Empty/unset and "gvisor" map to the
-// robust default "mixed" (pure gvisor drops connections on some Windows setups). An
-// explicit "system" is HONOURED: it uses the native UDP stack, which gives lower
-// latency for voice/gaming than mixed's gVisor-based UDP.
+// Preserve explicit selections so the GUI label describes the running stack.
+// Unset uses System; sing-tun reports unsupported options without substitution.
 func normalizeTunStack(stack string) string {
-	if stack == "gvisor" || stack == "" {
-		return "mixed"
+	if stack == "" {
+		return "system"
 	}
 	return stack
 }
@@ -37,6 +35,17 @@ func transformConfigBytes(configJSON []byte) ([]byte, error) {
 
 	// 1. Clean route: remove deprecated geoip/geosite DB paths
 	if route, ok := config["route"].(map[string]interface{}); ok {
+		// Explicit user rule-set definitions own their tags. Reusing a legacy
+		// geoip selector must not replace or manage an explicitly supplied set.
+		if definitions, ok := route["rule_set"].([]interface{}); ok {
+			for _, definition := range definitions {
+				if set, ok := definition.(map[string]interface{}); ok {
+					if tag, ok := set["tag"].(string); ok {
+						tags[tag] = true
+					}
+				}
+			}
+		}
 		delete(route, "geoip")
 		delete(route, "geosite")
 		if rules, ok := route["rules"].([]interface{}); ok {
@@ -146,8 +155,7 @@ func transformInbounds(config map[string]interface{}) {
 
 		// TUN fixes
 		if ibMap["type"] == "tun" {
-			// Normalise the TUN stack: gvisor/empty -> mixed (robust default), but an
-			// explicit "system" is kept (native UDP, better for voice/gaming).
+			// Preserve all explicit stack selections, including gVisor.
 			stack, _ := ibMap["stack"].(string)
 			ibMap["stack"] = normalizeTunStack(stack)
 			// Legacy TUN address fields — removed in 1.12
@@ -307,7 +315,19 @@ func addRuleSet(ruleSets *[]interface{}, known map[string]bool, tag, url string)
 	// tag we don't ship, otherwise referencing e.g. geoip:cn / geosite:google
 	// would point at a missing local file and break the whole config.
 	localPath := tag + ".srs"
-	if _, err := os.Stat(localPath); err == nil {
+	managed := false
+	if tag == "geoip-ru" {
+		if path, err := managedGeoDataPath(); err == nil {
+			localPath, managed = path, true
+		} else if content, readErr := readGeoDataFile("geoip-ru-bootstrap.srs", geoDataMaxDownload); readErr == nil {
+			// A read-only/invalid cache directory must not turn a valid offline
+			// package into a mandatory remote download or prevent connection.
+			if _, decodeErr := decodeGeoData(content); decodeErr == nil {
+				localPath = "geoip-ru-bootstrap.srs"
+			}
+		}
+	}
+	if _, err := os.Stat(localPath); managed || err == nil {
 		ruleSet["type"] = "local"
 		ruleSet["path"] = localPath
 	} else {

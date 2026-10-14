@@ -144,14 +144,16 @@ namespace NekoGui_sys {
         connect(this, &QProcess::readyReadStandardOutput, this, [&]() {
             auto log = readAllStandardOutput();
             if (!NekoGui::dataStore->core_running) {
-                if (log.contains("grpc server listening")) {
+                const auto readiness = readiness_tail + log;
+                readiness_tail = readiness.right(128);
+                if (readiness.contains("grpc server listening")) {
                     // The core really started
                     NekoGui::dataStore->core_running = true;
                     if (start_profile_when_core_is_up >= 0) {
                         MW_dialog_message("ExternalProcess", "CoreStarted," + Int2String(start_profile_when_core_is_up));
                         start_profile_when_core_is_up = -1;
                     }
-                } else if (log.contains("failed to serve")) {
+                } else if (readiness.contains("failed to serve")) {
                     // The core failed to start
                     QProcess::kill();
                 }
@@ -172,7 +174,9 @@ namespace NekoGui_sys {
         connect(this, &QProcess::errorOccurred, this, [&](QProcess::ProcessError error) {
             if (error == QProcess::ProcessError::FailedToStart) {
                 failed_to_start = true;
+                start_profile_when_core_is_up = -1;
                 MW_show_log("start core error occurred: " + errorString() + "\n");
+                MW_dialog_message("ExternalProcess", "CoreStartFailed");
             }
         });
         connect(this, &QProcess::stateChanged, this, [&](QProcess::ProcessState state) {
@@ -200,16 +204,30 @@ namespace NekoGui_sys {
                 // Restart
                 start_profile_when_core_is_up = NekoGui::dataStore->started_id;
                 MW_show_log("[Error] " + QObject::tr("Core exited, restarting."));
-                setTimeout([=] { Restart(); }, this, 1000);
+                const auto crashedGeneration = generation();
+                setTimeout([=] { if (generation() == crashedGeneration) Restart(); }, this, 1000);
             }
         });
     }
 
     void CoreProcess::Start() {
+        if (started) return;
+        ++process_generation;
+        readiness_tail.clear();
         show_stderr = false;
+        failed_to_start = false;
         // cwd: same as GUI, at ./config
         ExternalProcess::Start();
         write((NekoGui::dataStore->core_token + "\n").toUtf8());
+        const auto startingGeneration = generation();
+        setTimeout([=] {
+            if (generation() != startingGeneration || NekoGui::dataStore->core_running || failed_to_start) return;
+            failed_to_start = true;
+            start_profile_when_core_is_up = -1;
+            MW_show_log(QObject::tr("Ядро не открыло канал управления за 15 секунд."));
+            MW_dialog_message("ExternalProcess", "CoreStartFailed");
+            QProcess::kill();
+        }, this, 15000);
     }
 
     void CoreProcess::Restart() {

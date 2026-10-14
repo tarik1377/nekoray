@@ -1,5 +1,7 @@
 // DO NOT INCLUDE THIS
 
+#include <QJsonObject>
+
 namespace NekoGui_ConfigItem {
     // config 工具
     enum itemType {
@@ -38,6 +40,9 @@ namespace NekoGui_ConfigItem {
         bool save_control_compact = false;
         bool save_control_no_save = false;
         QByteArray last_save_content;
+        // Keep fields written by newer clients through this client's load/save
+        // cycle. They are replaced on FromJson, never merged from a stale file.
+        QJsonObject unknown_fields;
 
         JsonStore() = default;
 

@@ -45,12 +45,23 @@ var trafficManager atomic.Pointer[trafficontrol.Manager]
 
 // nekoCreate creates a sing-box instance from JSON config bytes.
 func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
+	if !previousGeoDataStopped() {
+		return nil, nil, errors.New("previous country-rule refresh is still stopping; retry shortly")
+	}
 	// Transform legacy config fields if needed
 	transformed, err := transformConfigBytes(configJSON)
 	if err != nil {
 		log.Printf("config transform warning: %v", err)
 	} else {
 		configJSON = transformed
+	}
+	configJSON, workVPNEnabled, err := extractWorkVPNOption(configJSON)
+	if err != nil {
+		return nil, nil, err
+	}
+	configJSON, geoSettings, err := extractGeoDataSettings(configJSON)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Write the debug config only in debug mode — it contains secrets (inbound auth
@@ -68,6 +79,22 @@ func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
 		cancel()
 		return nil, nil, err
 	}
+	if workVPNEnabled {
+		if err := configureWorkVPN(ctx, &options); err != nil {
+			cancel()
+			return nil, nil, err
+		}
+	}
+	var geoManager *geoDataManager
+	if geoSettings.Present && usesManagedGeoData(options) {
+		geoManager, err = prepareGeoDataManager(".", geoDataBootstrapPath(), geoSettings)
+		if err != nil {
+			// Refresh/metadata failures must never stop a working offline VPN.
+			log.Print("geodata: automatic refresh unavailable; existing rules retained")
+		}
+	} else if geoSettings.Present {
+		writeUnusedGeoDataStatus()
+	}
 
 	instance, err := box.New(box.Options{
 		Context: ctx,
@@ -83,6 +110,12 @@ func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
 		instance.Close()
 		cancel()
 		return nil, nil, err
+	}
+	if geoManager != nil {
+		if startGeoDataManager(ctx, instance, geoManager) {
+			boxCancel := cancel
+			cancel = func() { cancelGeoDataAndWait(boxCancel, geoManager.done, 10*time.Second) }
+		}
 	}
 
 	// Capture the v2ray_api stats service (enabled via injected experimental.v2ray_api)
