@@ -41,9 +41,10 @@ core integration, including their targeted race tests. Updater tests include
 exclusive Windows file locks, replacement failures, rollback, restart failure
 and retry. Do not treat a mocked or constructor-only TUN as a live packet test.
 
-Ordinary dependency route tests pass. A full upstream route-package race run
-also exposes an existing `LocalRuleSet` reload race, reproduced without this
-overlay; targeted tests of the added work VPN mechanism pass under `-race`.
+The existing `TestLiveRuleSetReloadsWithoutRestart` exposed an upstream
+`LocalRuleSet` reload race. The overlay now snapshots rule slices under the
+publisher's mutex and protects cleanup/close writes. The test must pass under
+`-race`, alongside the added work VPN tests.
 
 For live checks, use a loopback proxy core with the app-generated config and the
 same config-directory working directory as the GUI. Bundled `.srs` files live
