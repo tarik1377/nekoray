@@ -269,6 +269,7 @@ namespace GreenRhythm {
 
         /** Открыть страницу продления. */
         void renewRequested();
+        void buyRequested();
 
         /** Открыть разбор «что-то не работает». */
         void troubleRequested();

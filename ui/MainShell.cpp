@@ -275,10 +275,16 @@ namespace GreenRhythm {
         struct Nav { QString label; QString icon; int page; };
         for (const auto &item : QList<Nav>{{tr("Подключение"), "gr-shield-check", 0},
                                           {tr("Серверы"), "gr-nav-servers", 1},
-                                          {tr("Настройки"), "gr-sliders", 3}}) {
+                                          {tr("Журнал"), "gr-nav-log", 2},
+                                          {tr("Маршруты"), "gr-routes", -1},
+                                          {tr("Настройки"), "gr-sliders", 3},
+                                          {tr("Купить VPN"), "gr-arrow-right", -2}}) {
             auto *button = new QPushButton(Icons::icon(item.icon, QColor(kMuted), QColor(kAccent), 20), "  " + item.label, bar);
+            button->setObjectName(item.page >= 0 ? QStringLiteral("grNav%1").arg(item.page)
+                                               : item.page == -1 ? QStringLiteral("grSidebarRoutes") : QStringLiteral("grSidebarBuy"));
+            button->setAccessibleName(item.label);
             button->setProperty("page", item.page);
-            button->setCheckable(true);
+            button->setCheckable(item.page >= 0);
             button->setMinimumHeight(44);
             button->setCursor(Qt::PointingHandCursor);
             button->setStyleSheet(QStringLiteral(
@@ -286,8 +292,12 @@ namespace GreenRhythm {
                 "QPushButton:hover { background: %2; color: %3; }"
                 "QPushButton:checked { background: rgba(186,214,91,0.10); color: %4; }"
                 "QPushButton:focus { border-color: %4; }").arg(kMuted, kSurfaceUp, kText, kAccent));
-            connect(button, &QPushButton::clicked, this, [this, item] { selectPage(item.page); });
-            navButtons << button;
+            connect(button, &QPushButton::clicked, this, [this, item] {
+                if (item.page == -1) emit routesRequested();
+                else if (item.page == -2) emit buyRequested();
+                else selectPage(item.page);
+            });
+            if (item.page >= 0) navButtons << button;
             box->addWidget(button);
         }
         box->addStretch();

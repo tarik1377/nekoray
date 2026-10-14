@@ -527,6 +527,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         connect(shell, &GreenRhythm::MainShell::renewRequested, this, [] {
             QDesktopServices::openUrl(QUrl(GreenRhythm::kRenewUrl));
         });
+        connect(shell, &GreenRhythm::MainShell::buyRequested, this, [] {
+            QDesktopServices::openUrl(QUrl(GreenRhythm::kBuyUrl));
+        });
         connect(shell, &GreenRhythm::MainShell::panelRequested, this,
                 [this] { open_greenrhythm_panel(); });
         // Кнопка спрашивает, а не читает буфер молча: с пустым буфером прежняя
