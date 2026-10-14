@@ -129,10 +129,13 @@ func response(q *dns.Msg, ips ...string) *dns.Msg {
 }
 
 func TestWorkVPNUnknownNamesAndPublicPrefixes(t *testing.T) {
-	var calls atomic.Int32
+	type cacheProbeKey struct{}
+	var cacheMisses atomic.Int32
 	m := syntheticManager()
-	m.exchange = func(_ context.Context, r resolver, q *dns.Msg) (*dns.Msg, error) {
-		calls.Add(1)
+	m.exchange = func(ctx context.Context, r resolver, q *dns.Msg) (*dns.Msg, error) {
+		if ctx.Value(cacheProbeKey{}) != nil {
+			cacheMisses.Add(1)
+		}
 		if r.index == 7 {
 			return nil, errors.New("one VPN DNS unreachable")
 		}
@@ -154,9 +157,14 @@ func TestWorkVPNUnknownNamesAndPublicPrefixes(t *testing.T) {
 	if _, err := r.Pack(); err != nil {
 		t.Fatalf("invalid NODATA response: %v", err)
 	}
-	before := calls.Load()
-	_, _, _ = m.TryLookup(context.Background(), "never-configured-before.example")
-	if calls.Load() != before {
+	// The first successful resolver can return before its losing workers run.
+	// Count exchanges belonging to this lookup, not late work from the first.
+	probe := context.WithValue(context.Background(), cacheProbeKey{}, true)
+	ips, ok, err = m.TryLookup(probe, "never-configured-before.example")
+	if err != nil || !ok || len(ips) != 1 || ips[0] != netip.MustParseAddr("203.0.113.21") {
+		t.Fatalf("cached corporate lookup changed: %v %v %v", ips, ok, err)
+	}
+	if cacheMisses.Load() != 0 {
 		t.Fatal("classified answer was not cached")
 	}
 	// OS changes invalidate corporate DNS independently from ordinary DNS cache.
