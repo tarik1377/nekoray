@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -19,6 +20,20 @@ func main() {
 	}
 	if strings.HasPrefix(strings.ToLower(filepath.Base(os.Args[0])), "launcher") {
 		Launcher()
+		return
+	}
+	// Inspection and explicit support registration never launch UI, terminate
+	// applications or bootstrap a second helper.
+	if len(os.Args) == 2 && os.Args[1] == "--rollback-info" {
+		_ = json.NewEncoder(os.Stdout).Encode(previousVersionInfo(filepath.Dir(exe)))
+		return
+	}
+	if len(os.Args) == 4 && (os.Args[1] == "--register-previous-local" || os.Args[1] == "--register-current-local") {
+		if err = registerVerifiedLocal(filepath.Dir(exe), os.Args[3], os.Args[2], os.Args[1] == "--register-current-local"); err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		_, _ = fmt.Fprintln(os.Stdout, "Проверенная локальная версия зарегистрирована.")
 		return
 	}
 	if runtimeWindows() && !strings.HasPrefix(strings.ToLower(filepath.Base(exe)), "greenrhythm-updater-") {
@@ -45,7 +60,11 @@ func main() {
 		MessageBoxPlain("Обновление GreenRhythm", err.Error())
 		return
 	}
-	runUpdateUI(Updater)
+	if len(os.Args) == 2 && os.Args[1] == "--rollback" {
+		runUpdateUI(Rollback)
+	} else {
+		runUpdateUI(Updater)
+	}
 }
 func copyUpdater(exe string) (string, error) {
 	data, err := os.ReadFile(exe)

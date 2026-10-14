@@ -18,6 +18,7 @@ type installTransaction struct {
 	files                    []string
 	changed                  []installedFile
 	rename                   func(string, string) error
+	removeOnly               map[string]bool
 }
 
 func newInstallTransaction(payload, install string, rename func(string, string) error) (*installTransaction, error) {
@@ -93,6 +94,9 @@ func (tx *installTransaction) apply() error {
 			item.original = true
 		} else if !os.IsNotExist(err) {
 			return err
+		}
+		if tx.removeOnly[rel] {
+			continue
 		}
 		if err := tx.rename(filepath.Join(tx.payload, rel), dst); err != nil {
 			return fmt.Errorf("не удалось установить %s: %w", rel, err)

@@ -64,7 +64,7 @@ func runUpdateWindow(work func() error, visible bool) {
 	})
 	oldProc, _, _ = progressUser32.NewProc("SetWindowLongPtrW").Call(hwnd, ^uintptr(3), proc) // GWLP_WNDPROC = -4
 	label, _, _ := create.Call(0, uintptr(unsafe.Pointer(winText("STATIC"))), uintptr(unsafe.Pointer(winText("Подготовка установки…"))), 0x50000000, 20, 25, 570, 100, hwnd, 0, 0, 0)
-	note, _, _ := create.Call(0, uintptr(unsafe.Pointer(winText("STATIC"))), uintptr(unsafe.Pointer(winText("Это окно останется открытым до запуска программы.\r\nПри ошибке можно повторить установку; пакет будет сохранён."))), 0x50000000, 20, 125, 570, 45, hwnd, 0, 0, 0)
+	note, _, _ := create.Call(0, uintptr(unsafe.Pointer(winText("STATIC"))), uintptr(unsafe.Pointer(winText("Это окно останется открытым до запуска программы.\r\nПри ошибке можно повторить действие; резервные файлы сохранятся."))), 0x50000000, 20, 125, 570, 45, hwnd, 0, 0, 0)
 	font, _, _ := syscall.NewLazyDLL("gdi32.dll").NewProc("GetStockObject").Call(17)
 	for _, control := range []uintptr{label, note} {
 		progressUser32.NewProc("SendMessageW").Call(control, 0x30, font, 1)
@@ -107,7 +107,7 @@ func runUpdateWindow(work func() error, visible bool) {
 			if err == nil {
 				return
 			}
-			answer := MessageBox(hwnd, "Установка не завершена. Пакет сохранён для повтора.\r\n\r\n"+err.Error(), "Обновление GreenRhythm", 0x5|0x10)
+			answer := MessageBox(hwnd, "Действие не завершено. Файлы сохранены для повтора.\r\n\r\n"+err.Error(), "Обновление GreenRhythm", 0x5|0x10)
 			if answer != 4 {
 				return
 			}

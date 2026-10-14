@@ -16,6 +16,7 @@ type installOptions struct {
 	rename func(string, string) error
 	wait   time.Duration
 	report func(string)
+	record func(string, string, []string) (*installationRecord, error)
 }
 
 func Updater() error {
@@ -27,7 +28,7 @@ func Updater() error {
 		return errors.New("пакет обновления не найден — загрузите его через программу")
 	}
 	return installUpdate(packagePath, ".", installOptions{verify: verifyArchive, start: startApplication,
-		rename: os.Rename, wait: 30 * time.Second, report: reportProgress})
+		rename: os.Rename, wait: 30 * time.Second, report: reportProgress, record: signedInstallationRecord})
 }
 
 // Retain originals until the GUI starts. User settings, profiles and routes are
@@ -85,6 +86,32 @@ func installUpdate(archive, install string, options installOptions) error {
 	if err != nil {
 		return err
 	}
+	previousCandidate := ""
+	if runtimeWindows() && options.record != nil {
+		next, err := options.record(archive, payload, tx.files)
+		if err != nil {
+			tx.discard()
+			return err
+		}
+		if err = writeRecord(filepath.Join(payload, installationReceipt), next); err != nil {
+			tx.discard()
+			return err
+		}
+		tx.files = append(tx.files, installationReceipt)
+		var previous installationRecord
+		err = readJSONFile(filepath.Join(install, installationReceipt), &previous)
+		if err == nil {
+			previousCandidate, err = prepareSnapshot(install, install, &previous)
+			if err != nil {
+				tx.discard()
+				return err
+			}
+			defer os.RemoveAll(previousCandidate)
+		} else if !os.IsNotExist(err) {
+			tx.discard()
+			return err
+		}
+	}
 	report("Ожидание завершения прежней программы…")
 	if err = waitForFiles(tx.files, install, options.wait); err != nil {
 		tx.discard()
@@ -94,6 +121,12 @@ func installUpdate(archive, install string, options installOptions) error {
 	if err = tx.apply(); err != nil {
 		report("Восстановление прежней установки…")
 		return errors.Join(err, tx.rollback())
+	}
+	if previousCandidate != "" {
+		report("Сохранение проверенной предыдущей версии для отката…")
+		if err = publishSnapshot(install, previousCandidate); err != nil {
+			return errors.Join(err, tx.rollback())
+		}
 	}
 	report("4/4 · Запуск GreenRhythm…")
 	if err = options.start(install); err != nil {

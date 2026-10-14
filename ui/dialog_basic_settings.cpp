@@ -8,6 +8,7 @@
 #include "main/GuiUtils.hpp"
 #include "main/NekoGui.hpp"
 #include "ui/SubscriptionSchedule.hpp"
+#include "ui/RollbackAction.hpp"
 
 #include <QFileDialog>
 #include <QInputDialog>
@@ -99,6 +100,17 @@ DialogBasicSettings::DialogBasicSettings(QWidget *parent)
     // pinned conn_stat:false had no way back — the tab stayed empty with no explanation.
     //
     D_LOAD_BOOL(check_include_pre)
+    GreenRhythm::Rollback::refreshStatus(this, ui->rollback_version, ui->rollback_status, QApplication::applicationDirPath());
+    connect(ui->rollback_version, &QPushButton::clicked, this, [this] {
+        const auto version = ui->rollback_version->property("rollbackVersion").toString();
+        if (version.isEmpty() || QMessageBox::question(this, tr("Откатить версию"),
+            tr("Вернуть GreenRhythm %1?\n\nСерверы, подписки и настройки останутся текущими. "
+               "Для замены программы подключение закроется, окно установки покажет ход возврата и запустит сохранённую версию.").arg(version),
+               QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+        if (!GreenRhythm::Rollback::launch(QApplication::applicationDirPath(), [] { MW_dialog_message("", "ExitForRollback"); })) {
+            MessageBoxWarning(tr("Откатить версию"), tr("Не удалось подготовить или запустить возврат. GreenRhythm продолжает работать."));
+        }
+    });
     D_LOAD_BOOL(connection_statistics)
     D_LOAD_INT(max_log_line)
     //

@@ -876,6 +876,9 @@ endif ()
 add_executable(connection_lifecycle_test EXCLUDE_FROM_ALL test/ConnectionLifecycleTest.cpp)
 target_include_directories(connection_lifecycle_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(connection_lifecycle_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+add_executable(rollback_action_test EXCLUDE_FROM_ALL test/RollbackActionTest.cpp)
+target_include_directories(rollback_action_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(rollback_action_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 add_executable(core_process_lifecycle_test EXCLUDE_FROM_ALL test/CoreProcessLifecycleTest.cpp sys/ExternalProcess.cpp main/RelayTrace.cpp)
 target_include_directories(core_process_lifecycle_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(core_process_lifecycle_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
@@ -891,6 +894,7 @@ target_link_libraries(program_watch_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}:
 
 set(GR_TEST_TARGETS
         connection_lifecycle_test
+        rollback_action_test
         core_process_lifecycle_test
         import_integration_test
         sidebar_actions_test
