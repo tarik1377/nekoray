@@ -1,6 +1,7 @@
 #include "NekoGui.hpp"
 #include "fmt/Preset.hpp"
 #include "VideoRoutes.hpp"
+#include "DefaultRoutes.hpp"
 
 #include <QFile>
 #include <QDir>
@@ -266,6 +267,7 @@ namespace NekoGui {
         _add(new configItem("mw_size", &mw_size, itemType::string));
         _add(new configItem("conn_stat", &connection_statistics, itemType::boolean));
         _add(new configItem("vpn_impl", &vpn_implementation, itemType::integer));
+        _add(new configItem("routing_ads_removed", &routing_ads_removed, itemType::boolean));
         _add(new configItem("vpn_mtu", &vpn_mtu, itemType::integer));
         _add(new configItem("vpn_ipv6", &vpn_ipv6, itemType::boolean));
         _add(new configItem("vpn_hide_console", &vpn_hide_console, itemType::boolean));
@@ -341,9 +343,7 @@ namespace NekoGui {
             // to the very domains we deliberately route direct (RU sites, games, launchers).
             dns_final_out = "bypass";
             sniffing_mode = 1;
-            block_domain =
-                "geosite:category-ads-all\n"
-                "domain:appcenter.ms";
+            block_domain = "domain:appcenter.ms";
             block_ip = "";
             direct_domain =
                 "domain:ru\n"
@@ -747,6 +747,26 @@ namespace NekoGui {
                 complete = false;
                 qWarning() << "video routing migration failed:" << name << error;
             } else if (result == GreenRhythm::VideoRoutes::FileResult::Updated) {
+                updated++;
+            }
+        }
+        if (changed) *changed = updated;
+        return complete;
+    }
+
+    bool Routing::MigrateDefaultAdsAll(int *changed) {
+        int updated = 0;
+        bool complete = true;
+        for (const auto &name : List()) {
+            QString *loaded = name == dataStore->active_routing && dataStore->routing
+                                  ? &dataStore->routing->block_domain : nullptr;
+            QString error;
+            const auto result = GreenRhythm::DefaultRoutes::migrateFile(
+                ROUTES_PREFIX + name, loaded, &error);
+            if (result == GreenRhythm::DefaultRoutes::FileResult::Failed) {
+                complete = false;
+                qWarning() << "default ads routing migration failed:" << name << error;
+            } else if (result == GreenRhythm::DefaultRoutes::FileResult::Updated) {
                 updated++;
             }
         }

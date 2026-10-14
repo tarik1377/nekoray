@@ -10,13 +10,11 @@ import (
 	"os"
 )
 
-// normalizeTunStack picks a reliable TUN stack. Empty/unset and "gvisor" map to the
-// robust default "mixed" (pure gvisor drops connections on some Windows setups). An
-// explicit "system" is HONOURED: it uses the native UDP stack, which gives lower
-// latency for voice/gaming than mixed's gVisor-based UDP.
+// Preserve explicit selections so the GUI label describes the running stack.
+// Unset uses System; sing-tun reports unsupported options without substitution.
 func normalizeTunStack(stack string) string {
-	if stack == "gvisor" || stack == "" {
-		return "mixed"
+	if stack == "" {
+		return "system"
 	}
 	return stack
 }
@@ -146,8 +144,7 @@ func transformInbounds(config map[string]interface{}) {
 
 		// TUN fixes
 		if ibMap["type"] == "tun" {
-			// Normalise the TUN stack: gvisor/empty -> mixed (robust default), but an
-			// explicit "system" is kept (native UDP, better for voice/gaming).
+			// Preserve all explicit stack selections, including gVisor.
 			stack, _ := ibMap["stack"].(string)
 			ibMap["stack"] = normalizeTunStack(stack)
 			// Legacy TUN address fields — removed in 1.12

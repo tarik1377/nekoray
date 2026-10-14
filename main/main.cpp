@@ -18,6 +18,7 @@
 #include "3rdparty/RunGuard.hpp"
 #include "main/NekoGui.hpp"
 #include "main/VideoRoutes.hpp"
+#include "main/DefaultRoutes.hpp"
 #include "main/TunHelper.hpp"
 
 #include "ui/mainwindow_interface.h"
@@ -339,11 +340,9 @@ int main(int argc, char* argv[]) {
              * доходит НИКОГДА.
              *
              * Чем оборачивалось. В шаблоне ровно один ключ, и он не декоративный:
-             * vpn_impl = 2, то есть смешанный сетевой стек туннеля. Умолчание в
-             * коде — 0, gvisor, и на нём туннель отчитывается исправным, счётчики
-             * идут, имена разрешаются, а страницы не открываются. Ровно этот отказ
-             * описан в коммите 73c6818 по жалобе живого клиента. То есть Windows
-             * получал рабочую настройку, а macOS — ту, на которой не работает.
+             * Сейчас шаблон и код задают vpn_impl = 1 (System). Раньше шаблон
+             * задавал Mixed (2), а код — gVisor (0), поэтому платформы получали
+             * разные умолчания. Сохранённый явный выбор пользователя не меняем.
              *
              * Копируется только НЕДОСТАЮЩЕЕ, как и правила выше: перезапись при
              * каждом запуске стирала бы всё, что человек настроил.
@@ -414,6 +413,19 @@ int main(int argc, char* argv[]) {
     isLoaded = NekoGui::dataStore->routing->Load();
     if (!isLoaded) {
         NekoGui::dataStore->routing->Save();
+    }
+
+    // Patch the loaded active scheme as well as disk before the first connection.
+    if (!NekoGui::dataStore->routing_ads_removed) {
+        int changed = 0;
+        QString error;
+        if (NekoGui::Routing::MigrateDefaultAdsAll(&changed)
+            && GreenRhythm::DefaultRoutes::markComplete(NekoGui::dataStore->fn, &error)) {
+            NekoGui::dataStore->routing_ads_removed = true;
+        } else {
+            qWarning() << "default ads routing migration will retry on next start" << error;
+        }
+        if (changed > 0) qInfo() << "default ads selector removed, schemes:" << changed;
     }
 
     // Before constructing the window/core: the first restored connection must

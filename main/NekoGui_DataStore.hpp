@@ -54,6 +54,8 @@ namespace NekoGui {
 
         // Both active and saved RU schemes; false keeps the one-shot flag retryable.
         static bool MigrateVideosAll(int *changed = nullptr);
+
+        static bool MigrateDefaultAdsAll(int *changed = nullptr);
     };
 
     class ExtraCore : public JsonStore {
@@ -202,7 +204,8 @@ namespace NekoGui {
         // VPN
         bool fake_dns = false;
         bool vpn_internal_tun = true;
-        int vpn_implementation = 0;
+        int vpn_implementation = 1; // Preset::SingBox::VpnImplementation: System
+        bool routing_ads_removed = false;
         int vpn_mtu = 1500;
         bool vpn_ipv6 = false;
         bool vpn_hide_console = true;

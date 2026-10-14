@@ -145,6 +145,7 @@ set(PROJECT_SOURCES
         main/main.cpp
         main/NekoGui.cpp
         main/VideoRoutes.cpp
+        main/DefaultRoutes.cpp
         main/LocalDns.cpp
         main/NekoGui_Utils.cpp
         main/HTTPRequestHelper.cpp
@@ -805,6 +806,18 @@ add_executable(video_routes_test EXCLUDE_FROM_ALL test/VideoRoutesTest.cpp main/
 target_include_directories(video_routes_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(video_routes_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 
+add_executable(default_routes_test EXCLUDE_FROM_ALL test/DefaultRoutesTest.cpp main/DefaultRoutes.cpp)
+target_include_directories(default_routes_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(default_routes_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+
+add_executable(system_routes_patch EXCLUDE_FROM_ALL support/SystemRoutesPatch.cpp main/DefaultRoutes.cpp)
+target_include_directories(system_routes_patch PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(system_routes_patch PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+
+add_executable(system_routes_patch_test EXCLUDE_FROM_ALL test/SystemRoutesPatchTest.cpp main/DefaultRoutes.cpp)
+target_include_directories(system_routes_patch_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(system_routes_patch_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+
 add_executable(local_dns_test EXCLUDE_FROM_ALL test/LocalDnsTest.cpp main/LocalDns.cpp)
 target_include_directories(local_dns_test PRIVATE ${CMAKE_SOURCE_DIR})
 
@@ -853,6 +866,8 @@ target_include_directories(program_watch_lifetime_test PRIVATE ${CMAKE_SOURCE_DI
 target_link_libraries(program_watch_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
 set(GR_TEST_TARGETS
+        system_routes_patch_test
+        default_routes_test
         http_outage_test
         video_routes_test
         local_dns_test
