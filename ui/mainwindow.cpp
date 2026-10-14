@@ -4,9 +4,12 @@
 #include "main/TunHelper.hpp"
 #include "main/TunLifecycle.hpp"
 #include "main/RouteDefaultsPolicy.hpp"
+#include "ui/GeoDataStatus.hpp"
+#include "ui/RollbackAction.hpp"
 
 #include <QDateTime>
 #include <QDir>
+#include <QScopedValueRollback>
 #include <memory>
 
 #ifndef Q_OS_WIN
@@ -501,6 +504,49 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         shell->setAppVersion(appVersion);
         connect(shell, &GreenRhythm::MainShell::routesRequested, this,
                 [this] { on_menu_routing_settings_triggered(); });
+        connect(shell, &GreenRhythm::MainShell::routeDefaultsRequested, this, [this] { open_route_review(false); });
+        connect(shell, &GreenRhythm::MainShell::restoreRoutesRequested, this, [this] { open_route_review(true); });
+        connect(shell, &GreenRhythm::MainShell::maintenanceShown, this, [this] { refresh_maintenance(true); });
+        connect(shell, &GreenRhythm::MainShell::geoDataRefreshRequested, this, [this] {
+            if (!NekoGui::dataStore->core_running || NekoGui::dataStore->started_id < 0) return;
+            if (!GreenRhythm::GeoData::requestRefresh(QDir::currentPath())) {
+                MessageBoxWarning(tr("GeoIP"), tr("Не удалось сохранить запрос на обновление. Проверьте доступ к каталогу настроек."));
+                return;
+            }
+            shell->markGeoRefreshRequested();
+        });
+        connect(shell, &GreenRhythm::MainShell::geoDataAutomaticToggled, this, [this](bool on) {
+            const bool previous = NekoGui::dataStore->geodata_auto_update;
+            if (on == previous) return;
+            if (!GreenRhythm::GeoData::saveAutomatic(QDir::currentPath(), on)) {
+                MessageBoxWarning(tr("GeoIP"), tr("Не удалось сохранить настройку автообновления. Предыдущее значение сохранено."));
+                refresh_maintenance();
+                return;
+            }
+            NekoGui::dataStore->geodata_auto_update = on;
+            if (!NekoGui::dataStore->Save()) {
+                if (GreenRhythm::GeoData::saveAutomatic(QDir::currentPath(), previous)) {
+                    NekoGui::dataStore->geodata_auto_update = previous;
+                    MessageBoxWarning(tr("GeoIP"), tr("Не удалось сохранить настройку приложения. Предыдущее значение восстановлено."));
+                } else {
+                    // The core has already received 'on'. Keep that value visible
+                    // rather than claiming a failed rollback succeeded.
+                    MessageBoxWarning(tr("GeoIP"), tr("Не удалось сохранить настройку приложения и вернуть прежнее значение. "
+                        "Для текущего подключения отправлено новое значение; после перезапуска оно может измениться. "
+                        "Проверьте доступ к каталогу настроек."));
+                }
+            }
+            refresh_maintenance();
+        });
+        connect(shell, &GreenRhythm::MainShell::rollbackRequested, this, [this] {
+            const auto version = shell->rollbackVersion();
+            if (version.isEmpty() || QMessageBox::question(this, tr("Вернуть предыдущую версию"),
+                tr("Вернуть GreenRhythm %1?\n\nПриложение закроет подключение и перезапустится. "
+                   "Серверы, подписки и настройки сохранятся. OpenVPN не изменяется.").arg(version),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+            if (!GreenRhythm::Rollback::launch(QApplication::applicationDirPath(), [] { MW_dialog_message("", "ExitForRollback"); }))
+                MessageBoxWarning(tr("Возврат версии"), tr("Не удалось подготовить возврат. GreenRhythm продолжает работать."));
+        });
         connect(shell, &GreenRhythm::MainShell::tunnelSettingsRequested, this,
                 [this] { on_menu_vpn_settings_triggered(); });
         // ВЫНЕСЕНО ИЗ «ВСЕ КОМАНДЫ» — через те же пункты меню, как у панели
@@ -1040,6 +1086,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Страница «Настройки» — после миграции интервала выше: иначе первый запуск
     // после обновления показал бы прежнее число.
     refresh_app_options();
+    refresh_maintenance(true);
+    auto *maintenanceTimer = new QTimer(this);
+    connect(maintenanceTimer, &QTimer::timeout, this, [this] {
+        if (shell && shell->maintenanceVisible()) refresh_maintenance();
+    });
+    maintenanceTimer->start(2500);
 
 #ifdef Q_OS_WIN
     // Программа с правами (человек перезапустил её ради туннеля), а автозапуск
@@ -1278,6 +1330,37 @@ void MainWindow::on_menu_manage_groups_triggered() {
 
 void MainWindow::on_menu_routing_settings_triggered() {
     USE_DIALOG(DialogManageRoutes)
+}
+
+void MainWindow::open_route_review(bool restoreBackup) {
+    if (dialog_is_using) {
+        MessageBoxInfo(tr("Маршруты"), tr("Сначала закройте открытое окно настроек. Несохранённые изменения останутся в нём."));
+        return;
+    }
+    QScopedValueRollback<bool> busy(dialog_is_using, true);
+    DialogManageRoutes editor(this);
+    // Reuse the guarded, backed-up route actions. Opening or cancelling their
+    // review never saves the editor, changes a choice or restarts a profile.
+    if (restoreBackup) editor.restorePreviousRoutes();
+    else editor.applyStandardRoutes();
+    refresh_maintenance();
+}
+
+void MainWindow::refresh_maintenance(bool inspectRollback) {
+    if (!shell) return;
+    const bool online = NekoGui::dataStore->core_running && NekoGui::dataStore->started_id >= 0;
+    const auto status = GreenRhythm::GeoData::readStatus(QDir::currentPath());
+    const auto state = status.value("state").toString();
+    shell->setMaintenanceGeo(NekoGui::dataStore->geodata_auto_update, online,
+        GreenRhythm::GeoData::brief(status, NekoGui::dataStore->geodata_auto_update, online),
+        state == "checking", state == "unused");
+    const auto route = ROUTES_PREFIX + NekoGui::dataStore->active_routing;
+    shell->setMaintenanceRoute(NekoGui::dataStore->active_routing,
+        GreenRhythm::RouteDefaultsPolicy::canRestore(route, NekoGui::dataStore->ToJson()));
+    if (inspectRollback && (!maintenanceRollbackCheck.isValid() || maintenanceRollbackCheck.elapsed() >= 30000)) {
+        maintenanceRollbackCheck.start();
+        shell->refreshRollbackStatus(QApplication::applicationDirPath());
+    }
 }
 
 void MainWindow::on_menu_vpn_settings_triggered() {

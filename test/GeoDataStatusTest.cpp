@@ -4,8 +4,9 @@
 #include <QTemporaryDir>
 #include <cstdio>
 
-static int failures = 0;
+static int checks = 0, failures = 0;
 static void check(bool ok, const char *label) {
+    ++checks;
     if (!ok) { ++failures; std::fprintf(stderr, "FAIL: %s\n", label); }
 }
 int main(int argc, char **argv) {
@@ -43,6 +44,95 @@ int main(int argc, char **argv) {
     status["applied_at"] = "0001-01-01T00:00:00Z";
     check(!describe(status, true, true).contains(QStringLiteral("Рабочая база применена")),
           "Go zero time is not a successful application timestamp");
+
+    const auto emptyBrief = brief({}, true, true);
+    check(emptyBrief.contains(QStringLiteral("встроенная база"))
+          && !emptyBrief.contains(QStringLiteral("Проверено:"))
+          && !emptyBrief.contains(QStringLiteral("диапазонов РФ:")),
+          "brief empty status reports available fallback without inventing a verified update");
+    const auto offlineBrief = brief({}, true, false);
+    check(offlineBrief.contains(QStringLiteral("подключитесь к VPN"))
+          && !offlineBrief.contains(QStringLiteral("Проверено:")),
+          "brief disconnected state explains the connection requirement without claiming success");
+    const auto checkingBrief = brief(QJsonObject{{"state", "checking"}}, true, true);
+    check(checkingBrief.contains(QStringLiteral("Проверяем обновление"))
+          && !checkingBrief.contains(QStringLiteral("Доступна встроенная"))
+          && !checkingBrief.contains(QStringLiteral("Проверено:")),
+          "brief active check is distinct from completion and bootstrap fallback");
+    const QJsonObject updated{{"state", "updated"}, {"checked_at", "2026-10-14T13:00:00Z"},
+                              {"applied_at", "2026-10-14T12:00:00Z"}, {"prefix_count", 25171},
+                              {"error", "<script>private-secret</script>"}};
+    const auto expectedChecked = QDateTime(QDate(2026, 10, 14), QTime(13, 0), Qt::UTC)
+                                     .toLocalTime().toString(QStringLiteral("dd.MM.yyyy HH:mm"));
+    const auto updatedBrief = brief(updated, true, true);
+    check(updatedBrief.contains(QStringLiteral("Проверено: ") + expectedChecked)
+          && updatedBrief.contains(QStringLiteral("диапазонов РФ: 25171")),
+          "brief successful check presents its local date and verified range count together");
+    check(updatedBrief.contains(QStringLiteral("раз в сутки"))
+          && updatedBrief.contains(QStringLiteral("без перезапуска туннеля"))
+          && !updatedBrief.contains(QStringLiteral("private-secret"))
+          && !updatedBrief.contains(QStringLiteral("<script>")),
+          "brief auto status describes cadence without exposing untrusted error text");
+    const auto manualBrief = brief(updated, false, true);
+    check(manualBrief.contains(QStringLiteral("Автопроверка выключена"))
+          && manualBrief.contains(QStringLiteral("вручную"))
+          && manualBrief.contains(expectedChecked)
+          && !manualBrief.contains(QStringLiteral("раз в сутки")),
+          "brief disabled auto preserves useful last-check metadata without promising scheduled checks");
+    check(brief({}, false, false).contains(QStringLiteral("подключитесь к VPN"))
+          && brief({}, false, false).contains(QStringLiteral("Автопроверка выключена")),
+          "brief offline and disabled auto are represented independently");
+    auto unusedStatus = updated;
+    unusedStatus["state"] = "unused";
+    const auto unusedBrief = brief(unusedStatus, true, true);
+    check(unusedBrief.contains(QStringLiteral("нет встроенного правила GeoIP РФ"))
+          && unusedBrief.contains(QStringLiteral("Ваши правила сохранены"))
+          && !unusedBrief.contains(QStringLiteral("Проверено:"))
+          && !unusedBrief.contains(QStringLiteral("25171"))
+          && !unusedBrief.contains(QStringLiteral("раз в сутки")),
+          "brief unused scheme does not advertise a stale successful update or active auto schedule");
+    auto unconfirmedStatus = updated;
+    unconfirmedStatus["state"] = "unconfirmed";
+    const auto unconfirmedBrief = brief(unconfirmedStatus, true, true);
+    check(unconfirmedBrief.contains(QStringLiteral("не подтвердило"))
+          && unconfirmedBrief.contains(QStringLiteral("резервная копия сохранена"))
+          && !unconfirmedBrief.contains(QStringLiteral("Проверено:"))
+          && !unconfirmedBrief.contains(QStringLiteral("25171"))
+          && !unconfirmedBrief.contains(QStringLiteral("действует предыдущая база")),
+          "brief unconfirmed application takes precedence over stale success metadata and never asserts active rules");
+    check(brief(unconfirmedStatus, false, false).contains(QStringLiteral("не подтвердило")),
+          "brief unconfirmed warning remains visible when offline with auto disabled");
+    auto failedStatus = updated;
+    failedStatus["state"] = "error";
+    const auto failedBrief = brief(failedStatus, false, true);
+    check(failedBrief.contains(QStringLiteral("Обновить не удалось"))
+          && failedBrief.contains(QStringLiteral("действует предыдущая база"))
+          && failedBrief.contains(expectedChecked)
+          && !failedBrief.contains(QStringLiteral("private-secret")),
+          "brief failed refresh retains last successful check without hiding the failed attempt");
+    auto invalidBriefStatus = updated;
+    invalidBriefStatus["checked_at"] = "invalid";
+    check(!brief(invalidBriefStatus, true, true).contains(QStringLiteral("Проверено:"))
+          && !brief(invalidBriefStatus, true, true).contains(QStringLiteral("25171")),
+          "brief invalid check timestamp cannot validate an otherwise plausible count");
+    invalidBriefStatus["checked_at"] = "0001-01-01T00:00:00Z";
+    check(!brief(invalidBriefStatus, true, true).contains(QStringLiteral("Проверено:")),
+          "brief Go zero timestamp is not presented as a successful check");
+    auto countStatus = updated;
+    for (const int count : {-1, 0, 250001}) {
+        countStatus["prefix_count"] = count;
+        const auto countBrief = brief(countStatus, true, true);
+        check(countBrief.contains(QStringLiteral("Последняя проверка: ") + expectedChecked)
+              && !countBrief.contains(QStringLiteral("диапазонов РФ:")),
+              "brief rejects out-of-range counts while retaining the valid check date");
+    }
+    countStatus["prefix_count"] = 250000;
+    check(brief(countStatus, true, true).contains(QStringLiteral("диапазонов РФ: 250000")),
+          "brief accepts the documented maximum range count");
+    check(QDir(temp.path()).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty()
+          && updated.value("state").toString() == "updated"
+          && updated.value("prefix_count").toInt() == 25171,
+          "rendering brief states creates no diagnostic settings or refresh request and leaves inputs unchanged");
     check(saveAutomatic(temp.path(), false), "atomic auto setting writes");
     QFile setting(QDir(temp.path()).filePath(".geodata/settings.json"));
     check(setting.open(QIODevice::ReadOnly) && QJsonDocument::fromJson(setting.readAll()).object().value("enabled").isBool(),
@@ -59,6 +149,6 @@ int main(int argc, char **argv) {
     check(broken.open(QIODevice::WriteOnly), "status fixture opens");
     broken.write("{broken"); broken.close();
     check(readStatus(temp.path()).isEmpty(), "partial status cannot be interpreted as fresh data");
-    std::printf("GeoIP status: %d failures\n", failures);
+    std::printf("GeoIP status: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

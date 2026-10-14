@@ -525,7 +525,7 @@ static void updateNoticeInSidebar() {
        s.updatesDetail->text().contains(QStringLiteral("1.8.4")) &&
            s.updatesDetail->text().contains(QStringLiteral("1.8.3")));
     is(QStringLiteral("кнопка строки — «Обновить», а не «Проверить»"),
-       s.checkUpdates->text() == QStringLiteral("Обновить"));
+       s.checkUpdates->text() == QStringLiteral("Обновить…"));
     is(QStringLiteral("установка значения не шлёт сигнала"), s.updateChecks == 0);
     s.click(noticeButton);
     is(QStringLiteral("«Обновить» в колонке — прежняя проверка с кнопками, ровно раз"), s.updateChecks == 1);
@@ -535,7 +535,7 @@ static void updateNoticeInSidebar() {
        !notice->isHidden() && noticeText->text().contains(QStringLiteral("новая версия")));
     s.w.setUpdateAvailable(false);
     is(QStringLiteral("обновлений нет — строка прячется, кнопка снова «Проверить»"),
-       notice->isHidden() && s.checkUpdates->text() == QStringLiteral("Проверить") &&
+       notice->isHidden() && s.checkUpdates->text() == QStringLiteral("Проверить обновления") &&
            s.updatesDetail->text().contains(QStringLiteral("1.8.3")));
 }
 

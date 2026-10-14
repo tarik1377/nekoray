@@ -44,11 +44,11 @@ private:
     QString active_routing;
 
     void refreshDefaultsReview();
-    void applyStandardRoutes();
     void keepOwnRoutes();
-    void restorePreviousRoutes();
 
 public slots:
+    void applyStandardRoutes();
+    void restorePreviousRoutes();
 
     void accept() override;
 

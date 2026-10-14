@@ -11,6 +11,15 @@ rules. Keeping rules commits only the review decision and never reloads a core.
 Increment `RouteDefaultsPolicy::Revision` when a bundled policy needs review;
 a decision from a newer version is not invalidated by a downgrade.
 
+The main Settings page also exposes **Стандартные маршруты…**, **Мои правила…**
+and, when a matching backup is available, **Вернуть прежние правила…** at the
+top of the page. The first action opens the same guarded preview directly.
+Its **Оставить как есть** button closes the preview without saving a review
+decision, changing route priorities or restarting the connection. Enter defaults
+to that button. Changed fields have readable labels; a preview with no changes
+cannot be applied. Full reset requires an explicit acknowledgement, including
+after switching between modes. Merely viewing Settings is read-only.
+
 Apply opens a preview with two clearly different modes:
 
 * **Safe update**, selected initially, retains custom process/domain/IP rules,

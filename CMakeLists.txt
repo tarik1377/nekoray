@@ -706,6 +706,17 @@ set_property(TARGET settings_page_test PROPERTY AUTOMOC ON)
 target_include_directories(settings_page_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(settings_page_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg)
 
+add_executable(maintenance_panel_test EXCLUDE_FROM_ALL
+        test/MaintenancePanelTest.cpp
+        ui/MainShell.cpp
+        ui/Icons.cpp
+        ui/ServerCardDelegate.cpp
+        res/neko.qrc)
+set_property(TARGET maintenance_panel_test PROPERTY AUTORCC ON)
+set_property(TARGET maintenance_panel_test PROPERTY AUTOMOC ON)
+target_include_directories(maintenance_panel_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(maintenance_panel_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg)
+
 # План запуска winws — золотым набором. Аргументы строятся один раз и уезжают
 # в кернел-драйвер: ошибка в порядке профилей или пустой список означают не
 # «не сработало», а «дурим весь трафик машины». Набор чистый: ни сети, ни
@@ -946,6 +957,7 @@ set(GR_TEST_TARGETS
         power_button_test
         power_state_test
         settings_page_test
+        maintenance_panel_test
         network_repair_test
         dpi_plan_test
         interference_test

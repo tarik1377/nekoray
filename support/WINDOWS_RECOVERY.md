@@ -48,12 +48,17 @@ updater recognises it and will not offer the older v1.9.2 as an upgrade.
 * A compact settings action restores a verified previous Windows runtime while
   retaining current user files. A failed startup restores the current runtime
   and its previous-version snapshot. See [rollback and compatibility limits](../docs/windows-version-rollback.md).
+* Settings starts with route review, GeoIP status/update and program recovery
+  cards. Version recovery names the verified previous version and confirms the
+  required application restart. Route recovery is a separate action. GeoIP
+  refresh requires a running connection and has a 30-second request cooldown;
+  status polling and opening these cards never change routes or reconnect.
 * Explorer reports the same numeric product version as the application, core
   and package, including the fourth component used for repair builds.
 
 ## Validation
 
-The full Windows Qt suite contains 40 test programs. The live import test accepts
+The full Windows Qt suite contains 45 test programs. The live import test accepts
 a URL file and a private export directory: keep these outside the public tree.
 It downloads through the actual Qt HTTP/parser/store path and builds native
 REALITY, internal System and external System TUN configurations. Config building

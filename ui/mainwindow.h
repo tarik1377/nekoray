@@ -7,6 +7,7 @@
 #ifndef MW_INTERFACE
 
 #include <QTime>
+#include <QElapsedTimer>
 #include <QTimer>
 #include <QTableWidgetItem>
 #include <QKeyEvent>
@@ -304,6 +305,9 @@ private:
     // автообновление подписки. Не из refresh_status: тот зовётся раз в две
     // секунды, а AutoRun_IsEnabled читает реестр или файл автозапуска.
     void refresh_app_options();
+    void refresh_maintenance(bool inspectRollback = false);
+    void open_route_review(bool restoreBackup);
+    QElapsedTimer maintenanceRollbackCheck;
 
     QLabel *conn_route_summary = nullptr; // live route "map": proxy/direct/block split + bar
 

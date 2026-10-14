@@ -2,6 +2,8 @@
 #include "ui/Icons.hpp"
 #include "ui/Palette.hpp"
 #include "ui/SubscriptionSchedule.hpp"
+#include "ui/MaintenancePanel.hpp"
+#include "ui/RollbackAction.hpp"
 
 #include <QGridLayout>
 #include <QPainter>
@@ -449,6 +451,16 @@ namespace GreenRhythm {
         auto *page = new QWidget(scroll); auto *box = new QVBoxLayout(page); box->setContentsMargins(28, 24, 28, 24); box->setSpacing(18);
         auto *heading = new QLabel(tr("Настройки"), page); QFont f = heading->font(); f.setBold(true); f.setPointSizeF(f.pointSizeF() * 1.45); heading->setFont(f); box->addWidget(heading);
         box->addWidget(muted(page, tr("Как подключаться и что направлять через VPN")));
+        maintenance = new MaintenancePanel({
+            [this] { emit routeDefaultsRequested(); }, [this] { emit routesRequested(); },
+            [this] { emit restoreRoutesRequested(); }, [this] { emit geoDataRefreshRequested(); },
+            [this] { emit rollbackRequested(); }, [this] { emit checkUpdateRequested(); },
+            [this](bool enabled) { emit geoDataAutomaticToggled(enabled); },
+            [this] { emit maintenanceShown(); }
+        }, page);
+        box->addWidget(maintenance);
+        checkUpdatesButton = maintenance->updateButton;
+        updatesDetail = maintenance->versionDetail;
         auto addRow = [&](const QString &title, const QString &description, const QString &icon, QPushButton *button) {
             auto *card = new QWidget(page); card->setObjectName("grSettingRow");
             card->setStyleSheet(QStringLiteral("QWidget#grSettingRow { background: %1; border-radius: 14px; }").arg(kSurfaceUp));
@@ -489,8 +501,6 @@ namespace GreenRhythm {
         addRow(tr("Игры через VPN"), tr("Обычно игры подключаются напрямую. Включите, если игровые серверы недоступны."), "gr-routes", gamesToggle);
         bypassLine = new QPushButton(tr("Настроить"), page); connect(bypassLine, &QPushButton::clicked, this, &MainShell::bypassListRequested);
         addRow(tr("Исключения"), tr("Приложения и адреса, которые подключаются напрямую."), "gr-list", bypassLine);
-        auto *routes = new QPushButton(tr("Открыть"), page); connect(routes, &QPushButton::clicked, this, &MainShell::routesRequested);
-        addRow(tr("Правила маршрутизации"), tr("Собственные правила для доменов, адресов и приложений."), "gr-routes", routes);
         box->addWidget(caption(page, tr("ОБХОД ФИЛЬТРАЦИИ")));
         dpiToggle = toggle(page, tr("Включить")); dpiToggle->setAccessibleName(tr("Обход фильтрации"));
         connect(dpiToggle, &QPushButton::clicked, this, &MainShell::dpiFragmentToggled);
@@ -532,10 +542,6 @@ namespace GreenRhythm {
         subscriptionToggle = toggle(page, tr("Обновлять подписку автоматически")); subscriptionToggle->setObjectName("grSubscriptionAutoUpdate");
         connect(subscriptionToggle, &QPushButton::clicked, this, &MainShell::subscriptionAutoUpdateToggled);
         subscriptionDetail = addRow(tr("Обновлять подписку автоматически"), QString(), "gr-refresh", subscriptionToggle); subscriptionDetail->setObjectName("grSubscriptionAutoUpdateDetail");
-        auto *updates = new QPushButton(tr("Проверить"), page); updates->setObjectName("grCheckUpdates"); updates->setAccessibleName(tr("Проверить обновления"));
-        checkUpdatesButton = updates;
-        connect(updates, &QPushButton::clicked, this, &MainShell::checkUpdateRequested);
-        updatesDetail = addRow(tr("Обновления программы"), QString(), "gr-download", updates); updatesDetail->setObjectName("grCheckUpdatesDetail");
         setAppOptions(false, false, 0); setAppVersion(QString());
         auto *advanced = new QPushButton(tr("Открыть"), page); connect(advanced, &QPushButton::clicked, this, &MainShell::settingsRequested);
         addRow(tr("Дополнительные настройки"), tr("Язык и оформление, локальный прокси, проверка серверов, тонкая настройка подписки и ядра."), "gr-sliders", advanced);
@@ -703,6 +709,21 @@ namespace GreenRhythm {
         paintUpdates();
     }
 
+    void MainShell::setMaintenanceRoute(const QString &name, bool canRestore) {
+        if (maintenance) maintenance->setRoute(name, canRestore);
+    }
+    void MainShell::setMaintenanceGeo(bool automatic, bool online, const QString &text, bool checking, bool unused) {
+        if (maintenance) maintenance->setGeo(automatic, online, text, checking, unused);
+    }
+    void MainShell::markGeoRefreshRequested() { if (maintenance) maintenance->markGeoRequested(); }
+    void MainShell::refreshRollbackStatus(const QString &directory) {
+        if (maintenance) Rollback::refreshStatus(maintenance, maintenance->rollbackButton, maintenance->rollbackDetail, directory);
+    }
+    QString MainShell::rollbackVersion() const {
+        return maintenance ? maintenance->rollbackButton->property("rollbackVersion").toString() : QString();
+    }
+    bool MainShell::maintenanceVisible() const { return maintenance && maintenance->isVisible(); }
+
     void MainShell::setUpdateAvailable(bool available, const QString &version) {
         updateAvailable = available;
         availableVersion = version;
@@ -715,7 +736,7 @@ namespace GreenRhythm {
             updateNoticeText->setText(tr("Доступна %1").arg(fresh));
             updateNotice->setVisible(updateAvailable);
         }
-        if (checkUpdatesButton != nullptr) checkUpdatesButton->setText(updateAvailable ? tr("Обновить") : tr("Проверить"));
+        if (checkUpdatesButton != nullptr) checkUpdatesButton->setText(updateAvailable ? tr("Обновить…") : tr("Проверить обновления"));
         if (updatesDetail == nullptr) return;
         if (updateAvailable) {
             updatesDetail->setText(installedVersion.isEmpty() ? tr("Доступна %1.").arg(fresh)

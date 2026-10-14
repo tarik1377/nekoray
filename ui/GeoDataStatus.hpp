@@ -52,6 +52,29 @@ inline QString describe(const QJsonObject &status, bool automatic, bool connecte
     return lines.join(QChar('\n'));
 }
 
+inline QString brief(const QJsonObject &status, bool automatic, bool connected) {
+    const auto state = status.value(QStringLiteral("state")).toString();
+    if (state == QStringLiteral("unconfirmed"))
+        return QStringLiteral("Ядро не подтвердило правила. Проверьте обновление ещё раз; резервная копия сохранена.");
+    if (connected && state == QStringLiteral("unused"))
+        return QStringLiteral("В этой схеме нет встроенного правила GeoIP РФ. Ваши правила сохранены.");
+    QStringList lines;
+    if (!connected) lines << QStringLiteral("Для проверки подключитесь к VPN.");
+    else if (state == QStringLiteral("checking")) lines << QStringLiteral("Проверяем обновление базы…");
+    else if (state == QStringLiteral("error")) lines << QStringLiteral("Обновить не удалось; действует предыдущая база.");
+    const auto checked = timestamp(status, QStringLiteral("checked_at"));
+    if (!checked.isEmpty()) {
+        const auto count = status.value(QStringLiteral("prefix_count")).toInt();
+        lines << (count > 0 && count <= 250000
+            ? QStringLiteral("Проверено: %1 · диапазонов РФ: %2.").arg(checked).arg(count)
+            : QStringLiteral("Последняя проверка: %1.").arg(checked));
+    }
+    else if (state != QStringLiteral("checking")) lines << QStringLiteral("Доступна встроенная база или сохранённая копия.");
+    lines << (automatic ? QStringLiteral("Проверяется раз в сутки, без перезапуска туннеля.")
+                        : QStringLiteral("Автопроверка выключена; можно проверить вручную."));
+    return lines.join(QChar('\n'));
+}
+
 // A fixed, bounded request file is the only command accepted by the core. No
 // URL, path or downloaded bytes from the GUI are interpreted by the updater.
 inline bool requestRefresh(const QString &directory) {

@@ -7,9 +7,6 @@
 namespace Ui {
     class DialogBasicSettings;
 }
-class QCheckBox;
-class QLabel;
-class QPushButton;
 
 class DialogBasicSettings : public QDialog {
     Q_OBJECT
@@ -25,10 +22,6 @@ public slots:
 
 private:
     Ui::DialogBasicSettings *ui;
-    QCheckBox *geoAutoUpdate = nullptr;
-    QLabel *geoStatus = nullptr;
-    QPushButton *geoRefresh = nullptr;
-    void refreshGeoDataStatus();
 
     struct {
         QJsonObject extraCore;

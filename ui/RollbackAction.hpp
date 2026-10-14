@@ -37,6 +37,7 @@ inline Status parseStatus(const QByteArray &data) {
 inline void showStatus(QPushButton *button, QLabel *label, const Status &status) {
     button->setEnabled(status.available);
     button->setProperty("rollbackVersion", status.version);
+    button->setText(status.available ? QObject::tr("Вернуть %1…").arg(status.version) : QObject::tr("Вернуть предыдущую…"));
     label->setText(status.available ? QObject::tr("Можно вернуть %1 · %2").arg(status.version,
         status.provenance == "signed-release" ? QObject::tr("подписанный выпуск") : QObject::tr("проверенная локальная сборка")) :
         (status.error.isEmpty() ? QObject::tr("Проверенная предыдущая версия пока не сохранена.") : status.error));

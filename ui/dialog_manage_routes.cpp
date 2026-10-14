@@ -280,7 +280,8 @@ void DialogManageRoutes::restorePreviousRoutes() {
         return;
     }
     if (QMessageBox::question(this, tr("Вернуть прежние правила"),
-        tr("Вернуть маршруты этой схемы из резервной копии перед последним применением?")) != QMessageBox::Yes) return;
+        tr("Вернуть маршруты этой схемы из резервной копии перед последним применением?"),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
     const auto result = GreenRhythm::RouteDefaultsPolicy::restore(ROUTES_PREFIX + active_routing, NekoGui::dataStore->fn);
     if (!result.success) {
         if (result.rollbackFailed && result.hasScheme && active_routing == NekoGui::dataStore->active_routing) {
