@@ -13,6 +13,10 @@ import (
 
 type testWorkInterface struct{}
 
+type testNoWorkInterface struct{ testWorkInterface }
+
+func (testNoWorkInterface) HasNetworks() bool { return false }
+
 func (testWorkInterface) HasScope(string) bool { return false }
 func (testWorkInterface) Interface(ip netip.Addr) (string, int, bool) {
 	return "Office", 7, netip.MustParsePrefix("203.0.113.0/24").Contains(ip)
@@ -55,5 +59,14 @@ func TestWorkVPNRouteLeavesPublicTrafficOnConfiguredOutbound(t *testing.T) {
 	m.Destination = M.Socksaddr{Addr: netip.MustParseAddr("203.0.113.21"), Port: 443}
 	if !r.Match(m) {
 		t.Fatal("specific public VPN route ignored")
+	}
+}
+
+func TestWorkVPNRouteWithoutWorkNetworksSkipsDNS(t *testing.T) {
+	dns := &testWorkDNSRouter{ips: []netip.Addr{netip.MustParseAddr("198.51.100.7")}}
+	r := &WorkVPNItem{context.Background(), testNoWorkInterface{}, dns}
+	m := &adapter.InboundContext{Destination: M.Socksaddr{Fqdn: "public.example", Port: 443}}
+	if r.Match(m) || dns.calls != 0 || len(m.DestinationAddresses) != 0 {
+		t.Fatal("inactive work VPN added a DNS lookup or changed the proxy destination")
 	}
 }

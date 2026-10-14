@@ -85,6 +85,32 @@ func syntheticManager() *Manager {
 	return m
 }
 
+func TestWorkVPNHasNetworksRequiresSpecificActiveVPNRoutes(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		data     Snapshot
+		excluded []string
+		want     bool
+	}{
+		{"active", syntheticSnapshot(), nil, true},
+		{"absent", Snapshot{}, nil, false},
+		{"own excluded", syntheticSnapshot(), []string{"Office A", "Office B"}, false},
+		{"default routes only", Snapshot{Adapters: syntheticSnapshot().Adapters, Routes: []Route{
+			{netip.MustParsePrefix("0.0.0.0/0"), 7, 0},
+			{netip.MustParsePrefix("0.0.0.0/1"), 7, 0},
+			{netip.MustParsePrefix("128.0.0.0/1"), 7, 0},
+		}}, nil, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m := New(test.excluded)
+			m.read = func() (Snapshot, error) { return test.data, nil }
+			if m.HasNetworks() != test.want {
+				t.Fatal("incorrect active VPN route detection")
+			}
+		})
+	}
+}
+
 func response(q *dns.Msg, ips ...string) *dns.Msg {
 	r := new(dns.Msg)
 	r.SetReply(q)

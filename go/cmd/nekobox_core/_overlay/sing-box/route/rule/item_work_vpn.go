@@ -32,6 +32,11 @@ func NewWorkVPNItem(ctx context.Context) (*WorkVPNItem, error) {
 }
 
 func (r *WorkVPNItem) Match(metadata *adapter.InboundContext) bool {
+	// Without any specific work VPN route, preserve the original proxy path
+	// without introducing a DNS lookup for an HTTP/SOCKS domain destination.
+	if detector, ok := r.manager.(interface{ HasNetworks() bool }); ok && !detector.HasNetworks() {
+		return false
+	}
 	if metadata.Destination.Addr.IsValid() {
 		_, _, ok := r.manager.Interface(metadata.Destination.Addr)
 		return ok

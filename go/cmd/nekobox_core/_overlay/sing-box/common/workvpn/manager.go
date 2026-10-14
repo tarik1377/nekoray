@@ -69,6 +69,19 @@ func (m *Manager) HasScope(domain string) bool {
 	return scope > 0 && len(servers) > 0
 }
 
+func (m *Manager) HasNetworks() bool {
+	s, _ := m.current()
+	for _, route := range s.Routes {
+		if !specificPrefix(route.Prefix) {
+			continue
+		}
+		if adapter, ok := s.adapter(route.Index); ok && adapter.isVPN(m.excluded) {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Manager) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
