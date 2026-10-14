@@ -273,6 +273,8 @@ namespace GreenRhythm {
 
         /** Открыть разбор «что-то не работает». */
         void troubleRequested();
+        /** Сравнить пути сайта и настройки DNS браузеров без входа в аккаунт. */
+        void browserHelpRequested();
 
         /** Показать список программ, идущих мимо VPN. */
         void bypassListRequested();

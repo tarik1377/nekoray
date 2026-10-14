@@ -435,6 +435,12 @@ namespace GreenRhythm {
         troubleLink = new QPushButton(tr("Нужна помощь с подключением?"), page); troubleLink->setStyleSheet(linkStyle(kMuted));
         troubleLink->setCursor(Qt::PointingHandCursor); connect(troubleLink, &QPushButton::clicked, this, &MainShell::troubleRequested);
         outer->addWidget(troubleLink, 0, Qt::AlignCenter);
+        auto *browserHelp = new QPushButton(tr("Помощь браузеру"), page);
+        browserHelp->setObjectName(QStringLiteral("grBrowserHelp"));
+        browserHelp->setAccessibleName(tr("Проверить подключение сайта и DNS браузера"));
+        browserHelp->setStyleSheet(linkStyle(kMuted)); browserHelp->setCursor(Qt::PointingHandCursor);
+        connect(browserHelp, &QPushButton::clicked, this, &MainShell::browserHelpRequested);
+        outer->addWidget(browserHelp, 0, Qt::AlignCenter);
         return page;
     }
 
