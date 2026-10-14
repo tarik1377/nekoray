@@ -1,3 +1,13 @@
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #include "db/ConfigBuilder.hpp"
 #include "fmt/includes.h"
 #include "main/HTTPRequestHelper.hpp"
@@ -15,9 +25,6 @@
 #include <QTcpSocket>
 #include <QUrlQuery>
 #include <iostream>
-#ifdef Q_OS_WIN
-#include <qt_windows.h>
-#endif
 
 namespace {
 int failures = 0, checks = 0;
