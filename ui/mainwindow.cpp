@@ -2009,6 +2009,8 @@ void MainWindow::refresh_proxy_list_impl(const int &id, GroupSortAction groupSor
 // HKCU\Software\Classes registration — per-user, no admin. Re-checked on every
 // start so the handler self-heals when the exe is moved.
 static void RegisterGreenRhythmScheme() {
+    // Headless checks must not take over links from the user's installed GUI.
+    if (QGuiApplication::platformName() != QStringLiteral("windows")) return;
     const auto exe = QDir::toNativeSeparators(QApplication::applicationFilePath());
     const auto cmd = QStringLiteral("\"%1\" \"%2\"").arg(exe, QStringLiteral("%1"));
     QSettings reg(QStringLiteral("HKEY_CURRENT_USER\\Software\\Classes\\greenrhythm"), QSettings::NativeFormat);
