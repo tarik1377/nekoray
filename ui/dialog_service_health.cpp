@@ -16,14 +16,14 @@ DialogServiceHealth::DialogServiceHealth(QWidget *parent, const QList<GreenRhyth
     : QDialog(parent), probeTargets(targets) {
     setObjectName("grServiceHealth"); setWindowTitle(tr("Проверка подключения и сервисов")); resize(740, 650);
     auto *layout = new QVBoxLayout(this);
-    auto *intro = new QLabel(tr("Проверка не прерывает подключение и не меняет маршруты. Повторные запросы помогут увидеть кратковременные сбои. Отчёт можно скопировать в поддержку; автоматически он никуда не отправляется."), this);
+    auto *intro = new QLabel(tr("Сравним работающий профиль с его отдельной проверкой без ваших правил и до двух альтернатив из свежей подписки. Подключение и маршруты не меняются. Проверка может занять до 2,5 минут; отчёт автоматически никуда не отправляется."), this);
     intro->setWordWrap(true); layout->addWidget(intro);
     service = new QComboBox(this); service->setObjectName("grHealthService");
     service->addItem(tr("Подписка и подключение"), "general"); service->addItem(tr("Discord: доступ и проблема с голосом"), "discord");
     layout->addWidget(service);
     stability = new QCheckBox(tr("Наблюдать дольше — 10 серий запросов вместо 3"), this); stability->setObjectName("grHealthStability"); layout->addWidget(stability);
     auto *actions = new QHBoxLayout;
-    start = new QPushButton(tr("Начать проверку"), this); start->setObjectName("grHealthStart");
+    start = new QPushButton(tr("Сравнить профили и проверить"), this); start->setObjectName("grHealthStart");
     cancel = new QPushButton(tr("Остановить проверку"), this); cancel->setObjectName("grHealthCancel"); cancel->setEnabled(false);
     actions->addWidget(start); actions->addWidget(cancel); layout->addLayout(actions);
     progress = new QProgressBar(this); progress->setObjectName("grHealthProgress"); progress->setRange(0, 1); progress->setValue(0); layout->addWidget(progress);

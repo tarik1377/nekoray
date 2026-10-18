@@ -1,5 +1,6 @@
 #include "ui/mainwindow_common.hpp"
 #include "ui/dialog_service_health.h"
+#include "main/HealthProfiles.hpp"
 #include <QCryptographicHash>
 
 /**
@@ -21,7 +22,10 @@ void MainWindow::run_diagnostics() {
     }
     auto *dialog = new DialogServiceHealth(this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
-    struct Snapshot { int profile = -1; quint64 core = 0, connection = 0; bool tun = false; };
+    struct Snapshot {
+        int profile = -1; quint64 core = 0, connection = 0; bool tun = false;
+        QByteArray settings; GreenRhythm::HealthCandidate candidate;
+    };
     auto snapshot = std::make_shared<Snapshot>();
     dialog->captureContext = [this, snapshot] {
         GreenRhythm::HealthContext context;
@@ -51,6 +55,12 @@ void MainWindow::run_diagnostics() {
             const auto identity = running->type + ':' + running->bean->serverAddress.toLower()
                 + ':' + QString::number(running->bean->serverPort);
             context.nodeId = QString::fromLatin1(QCryptographicHash::hash(identity.toUtf8(), QCryptographicHash::Sha256).toHex().left(20));
+            context.currentCandidate = GreenRhythm::healthCandidate(running, group && group->front_proxy_id >= 0);
+            context.coreExecutable = QCoreApplication::applicationDirPath() + "/greenrhythm_core"
+#ifdef Q_OS_WIN
+                + ".exe"
+#endif
+                ;
         }
         const auto routes = QJsonDocument(NekoGui::dataStore->routing->ToJson()).toJson(QJsonDocument::Compact)
             + NekoGui::dataStore->custom_route_global.toUtf8() + NekoGui::dataStore->vpn_rule_process.toUtf8();
@@ -61,19 +71,24 @@ void MainWindow::run_diagnostics() {
 #endif
         snapshot->connection = connection_lifecycle.token();
         snapshot->tun = context.tunEnabled;
+        snapshot->candidate = context.currentCandidate;
+        snapshot->settings = QCryptographicHash::hash(routes + (group ? group->url.toUtf8() : QByteArray()), QCryptographicHash::Sha256);
         return context;
     };
     dialog->contextStillCurrent = [this, snapshot] {
+        const auto group = running ? NekoGui::profileManager->GetGroup(running->gid) : NekoGui::profileManager->CurrentGroup();
+        const auto settings = QJsonDocument(NekoGui::dataStore->routing->ToJson()).toJson(QJsonDocument::Compact)
+            + NekoGui::dataStore->custom_route_global.toUtf8() + NekoGui::dataStore->vpn_rule_process.toUtf8()
+            + (group ? group->url.toUtf8() : QByteArray());
         return snapshot->profile == NekoGui::dataStore->started_id
 #ifndef NKR_NO_GRPC
             && snapshot->core == (core_process ? core_process->generation() : 0)
 #endif
-            && snapshot->connection == connection_lifecycle.token() && snapshot->tun == NekoGui::dataStore->spmode_vpn;
+            && snapshot->connection == connection_lifecycle.token() && snapshot->tun == NekoGui::dataStore->spmode_vpn
+            && snapshot->settings == QCryptographicHash::hash(settings, QCryptographicHash::Sha256);
     };
-    dialog->health->validateSubscription = [](const QByteArray &body) {
-        NekoGui_sub::RawUpdater parser; parser.collect_only = true;
-        parser.update(QString::fromUtf8(body));
-        return parser.updated_order.size();
+    dialog->health->readSubscription = [snapshot](const QByteArray &body) {
+        return GreenRhythm::healthSubscription(body, snapshot->candidate);
     };
     connect(dialog, &DialogServiceHealth::observeDiscordRequested, this, [this, dialog] {
         if (!dialog->contextStillCurrent()) { dialog->health->invalidate(); return; }

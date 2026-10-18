@@ -154,6 +154,9 @@ set(PROJECT_SOURCES
         main/BrowserNetworkHints.hpp
         main/ServiceHealth.cpp
         main/ServiceHealth.hpp
+        main/ProfileProbe.cpp main/ProfileProbe.hpp
+        main/DiscordTransport.cpp main/DiscordTransport.hpp
+        main/HealthProfiles.cpp main/HealthProfiles.hpp
         ui/dialog_service_health.cpp
         ui/dialog_service_health.h
         main/RelayTrace.cpp
@@ -826,12 +829,22 @@ enable_testing()
 
 add_executable(service_health_test EXCLUDE_FROM_ALL test/ServiceHealthTest.cpp
         main/ServiceHealth.cpp main/ServiceHealth.hpp main/BrowserNetworkHints.cpp main/BrowserNetworkHints.hpp
+        main/ProfileProbe.cpp main/ProfileProbe.hpp main/DiscordTransport.cpp main/DiscordTransport.hpp
         ui/dialog_service_health.cpp ui/dialog_service_health.h)
 set_target_properties(service_health_test PROPERTIES AUTOMOC ON)
 target_include_directories(service_health_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(service_health_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
 if (WIN32)
     target_link_libraries(service_health_test PRIVATE wininet)
+endif ()
+add_executable(profile_diagnostics_test EXCLUDE_FROM_ALL test/ProfileDiagnosticsTest.cpp
+        main/ProfileProbe.cpp main/ProfileProbe.hpp main/DiscordTransport.cpp main/DiscordTransport.hpp
+        main/ServiceHealth.cpp main/ServiceHealth.hpp main/BrowserNetworkHints.cpp main/BrowserNetworkHints.hpp)
+set_target_properties(profile_diagnostics_test PROPERTIES AUTOMOC ON)
+target_include_directories(profile_diagnostics_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(profile_diagnostics_test PRIVATE Qt${QT_VERSION_MAJOR}::Network)
+if (WIN32)
+    target_link_libraries(profile_diagnostics_test PRIVATE wininet)
 endif ()
 
 add_executable(browser_network_hints_test EXCLUDE_FROM_ALL
@@ -885,6 +898,7 @@ target_include_directories(local_dns_test PRIVATE ${CMAKE_SOURCE_DIR})
 add_executable(import_integration_test EXCLUDE_FROM_ALL
         test/ImportIntegrationTest.cpp
         main/NekoGui.cpp main/NekoGui_Utils.cpp main/VideoRoutes.cpp main/DefaultRoutes.cpp main/LocalDns.cpp
+        main/HealthProfiles.cpp
         main/HTTPRequestHelper.cpp main/DeviceCredentials.cpp main/RelayTrace.cpp main/TunHelper.cpp
         main/RelayComponent.cpp main/RelayComponentParse.cpp main/RelayActivation.cpp main/RelayActivationParse.cpp
         db/Database.cpp db/ProfileFilter.cpp db/ConfigBuilder.cpp
@@ -941,6 +955,7 @@ target_link_libraries(program_watch_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}:
 
 set(GR_TEST_TARGETS
         service_health_test
+        profile_diagnostics_test
         browser_network_hints_test
         connection_lifecycle_test
         rollback_action_test

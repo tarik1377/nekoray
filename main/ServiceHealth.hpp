@@ -1,5 +1,6 @@
 #pragma once
 #include "BrowserNetworkHints.hpp"
+#include "ProfileProbe.hpp"
 #include <QDateTime>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
@@ -29,6 +30,8 @@ struct HealthContext {
     bool subscriptionViaProfile = false;
     int cachedProfiles = 0, lastUpdateOutcome = 0;
     qint64 lastUpdateUtc = 0;
+    HealthCandidate currentCandidate;
+    QString coreExecutable;
 };
 QList<HealthTarget> healthTargets(const QString &service);
 QString healthPathName(WebCheckPath path);
@@ -49,6 +52,7 @@ public:
     QString details() const;
     QJsonObject report() const;
     std::function<int(const QByteArray &)> validateSubscription;
+    std::function<HealthSubscription(const QByteArray &)> readSubscription;
     // Allows a cancelled/stale run to remain visible without claiming success.
     void invalidate();
     void recordDiscordObservation(int viaTunnel, int direct, int udp, bool limited,
@@ -61,6 +65,8 @@ private:
     void maybeFinish();
     void fetchDocument(bool subscription);
     void stopJobs();
+    void nextCandidate();
+    QString comparisonConclusion() const;
     HealthContext context;
     QString service, reportId;
     QList<HealthTarget> targets;
@@ -76,5 +82,14 @@ private:
     QString subscriptionState = "not_checked", discordState = "not_checked";
     int subscriptionHttp = 0, subscriptionProfiles = 0;
     QJsonObject discordObservation;
+    HealthSubscription fresh;
+    DiscordTransport activeTransport;
+    ProfileProbe *isolated = nullptr;
+    QJsonArray comparison;
+    QStringList comparisonDetails;
+    QList<HealthCandidate> candidates;
+    bool comparisonStarted = false, comparisonDone = true, activeTransportDone = true;
+    QTimer overall;
+    bool deadlineExceeded = false;
 };
 } // namespace GreenRhythm

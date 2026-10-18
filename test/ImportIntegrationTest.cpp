@@ -13,6 +13,7 @@
 #include "main/HTTPRequestHelper.hpp"
 #include "main/RouteState.hpp"
 #include "main/RuRoutingPolicy.hpp"
+#include "main/HealthProfiles.hpp"
 #include "sub/GroupUpdater.hpp"
 
 #include <QApplication>
@@ -193,6 +194,36 @@ int main(int argc, char **argv) {
     check(audit.updated_order.size() == 2 && NekoGui::profileManager->profiles.size() == profilesBeforeAudit
           && QDir("profiles").entryList(QDir::Files) == filesBeforeAudit,
           "diagnostic subscription validation parses real profiles without changing the store or profile files");
+
+    const auto beanBefore = plain->bean->ToJson();
+    const auto trafficBefore = plain->traffic_data->ToJson();
+    auto currentCandidate = GreenRhythm::healthCandidate(plain);
+    check(!currentCandidate.outbound.isEmpty() && plain->bean->ToJson() == beanBefore
+          && plain->traffic_data->ToJson() == trafficBefore, "health candidate clones the native builder without mutating active bean or traffic tags");
+    const auto freshA = fixture("renamed-current");
+    const auto freshB = fixture("new-b").replace("203.0.113.1", "203.0.113.2");
+    const auto freshC = fixture("new-c").replace("203.0.113.1", "203.0.113.3");
+    const auto freshD = fixture("new-d").replace("203.0.113.1", "203.0.113.4");
+    auto comparison = GreenRhythm::healthSubscription((freshA + '\n' + freshB + '\n' + freshB + '\n' + freshC + '\n' + freshD).toUtf8().toBase64(), currentCandidate);
+    check(comparison.count == 5 && comparison.currentPresence == "present" && comparison.alternatives.size() == 2,
+          "fresh snapshot deduplicates current and repeated profiles and caps alternatives at two");
+    check(comparison.alternatives[0].outbound.value("server") == "203.0.113.2"
+          && comparison.alternatives[1].outbound.value("server") == "203.0.113.3", "only fresh subscription entries become alternatives in subscription order");
+    comparison = GreenRhythm::healthSubscription(freshB.toUtf8(), currentCandidate);
+    check(comparison.currentPresence == "absent" && comparison.alternatives.size() == 1, "deleted current profile is explicitly absent and not inherited as a fresh alternative");
+    const auto rotated = freshA; auto rotatedEntity = NekoGui::ProfileManager::NewProxyEntity("vless");
+    rotatedEntity->TrojanVLESSBean()->TryParseLink(rotated);
+    rotatedEntity->TrojanVLESSBean()->password = "22222222-2222-4222-8222-222222222222";
+    comparison = GreenRhythm::healthSubscription(rotatedEntity->bean->ToShareLink().toUtf8(), currentCandidate);
+    check(comparison.currentPresence == "absent" && comparison.alternatives.size() == 1, "rotated credentials at the same endpoint remain a distinct fresh candidate");
+    check(GreenRhythm::healthCandidate(plain, true).unavailable == "front_proxy", "group front-proxy topology is reported unsupported rather than silently bypassed as the same profile");
+    plain->bean->custom_config = "{\"inbounds\":[]}";
+    check(GreenRhythm::healthCandidate(plain).outbound.isEmpty(), "arbitrary custom config cannot inject TUN or hooks into diagnostics");
+    plain->bean->custom_config.clear();
+    comparison = GreenRhythm::healthSubscription("<html>not a subscription</html>", currentCandidate);
+    check(comparison.count == 0 && comparison.alternatives.isEmpty(), "malformed fresh response never falls back to cached profiles");
+    check(NekoGui::profileManager->profiles.size() == profilesBeforeAudit && QDir("profiles").entryList(QDir::Files) == filesBeforeAudit,
+          "comparison of real subscription profiles preserves the profile store and files");
 
     NekoGui_sub::RawUpdater raw;
     raw.update(QString::fromUtf8((fixture("base64-a") + "\n" + fixture("base64-b")).toUtf8().toBase64()));
