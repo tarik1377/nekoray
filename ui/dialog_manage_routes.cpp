@@ -193,8 +193,8 @@ void DialogManageRoutes::refreshDefaultsReview() {
         ui->defaultsRestore->hide();
         return;
     }
-    const auto preview = Policy::preview(disk, routing_cn_lan.ToJson(), Policy::Mode::SafeUpgrade,
-                                         NekoGui::dataStore->custom_route_global);
+    const auto preview = GreenRhythm::RouteState::defaultsPreview(disk, routing_cn_lan, Policy::Mode::SafeUpgrade,
+                                                                  NekoGui::dataStore->custom_route_global);
     const bool pending = Policy::needsReview(NekoGui::dataStore->routing_defaults_review_revision);
     ui->defaultsApply->setEnabled(true);
     ui->defaultsKeep->setEnabled(pending);
@@ -241,8 +241,8 @@ void DialogManageRoutes::applyStandardRoutes() {
     NekoGui::Routing displayed;
     SaveDisplayRouting(&displayed);
     current = GreenRhythm::RouteState::mergeEditor(current, displayed);
-    const auto safe = Policy::preview(current, routing_cn_lan.ToJson(), Policy::Mode::SafeUpgrade, CACHE.custom_route_global);
-    const auto reset = Policy::preview(current, routing_cn_lan.ToJson(), Policy::Mode::ResetRoutes, CACHE.custom_route_global);
+    const auto safe = GreenRhythm::RouteState::defaultsPreview(current, routing_cn_lan, Policy::Mode::SafeUpgrade, CACHE.custom_route_global);
+    const auto reset = GreenRhythm::RouteState::defaultsPreview(current, routing_cn_lan, Policy::Mode::ResetRoutes, CACHE.custom_route_global);
     GreenRhythm::RouteDefaultsReview review(safe, reset, this);
     if (review.exec() != QDialog::Accepted) return;
     const auto result = Policy::apply(path, NekoGui::dataStore->fn,

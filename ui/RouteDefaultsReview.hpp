@@ -47,22 +47,23 @@ public:
         changes->setMargin(10);
         changesScroll->setWidget(changes);
         layout->addWidget(changesScroll, 1);
-        noChanges = new QLabel(tr("Для выбранного варианта изменений нет. Текущие маршруты сохранятся. Можно оставить как есть."), this);
+        noChanges = new QLabel(this);
         noChanges->setObjectName("routeDefaultsNoChanges");
         noChanges->setWordWrap(true);
         layout->addWidget(noChanges);
         acknowledgement = new QCheckBox(tr("Я согласен заменить мои маршруты и правила программ этой схемы"), this);
         acknowledgement->setObjectName("routeDefaultsResetConfirm");
         layout->addWidget(acknowledgement);
-        auto *note = new QLabel(tr("Перед применением сохраняется резервная копия. Локальный DNS и глобальные правила сохраняются. Для текущего подключения может потребоваться перезапуск."), this);
+        note = new QLabel(tr("Перед применением сохраняется резервная копия. Локальный DNS и глобальные правила сохраняются. Для текущего подключения может потребоваться перезапуск."), this);
         note->setWordWrap(true);
         layout->addWidget(note);
         auto *buttons = new QDialogButtonBox(this);
         applyButton = buttons->addButton(tr("Применить изменения"), QDialogButtonBox::AcceptRole);
         applyButton->setObjectName("routeDefaultsApplyConfirmed");
         applyButton->setAutoDefault(false);
-        auto *leaveButton = buttons->addButton(tr("Оставить как есть"), QDialogButtonBox::RejectRole);
+        leaveButton = buttons->addButton(tr("Оставить как есть"), QDialogButtonBox::RejectRole);
         leaveButton->setObjectName("routeDefaultsLeaveUnchanged");
+        leaveButton->setAutoDefault(false);
         leaveButton->setDefault(true);
         layout->addWidget(buttons);
         connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -81,16 +82,21 @@ public:
     void accept() override {
         const bool safe = safeOption->isChecked();
         const auto &plan = safe ? safePlan : resetPlan;
-        if (plan.changedFields.isEmpty() || (!safe && !acknowledgement->isChecked())) return;
+        if (plan.changedFields.isEmpty()) {
+            // Closing an unchanged review must never enter the caller's apply path.
+            QDialog::reject();
+            return;
+        }
+        if (!safe && !acknowledgement->isChecked()) return;
         QDialog::accept();
     }
 private:
     RouteDefaultsPolicy::Preview safePlan, resetPlan;
     QRadioButton *safeOption, *resetOption;
     QCheckBox *acknowledgement;
-    QLabel *summary, *changes, *noChanges;
+    QLabel *summary, *changes, *noChanges, *note;
     QScrollArea *changesScroll;
-    QPushButton *applyButton;
+    QPushButton *applyButton, *leaveButton;
     QString fieldLabel(const QString &field) const {
         const QList<QPair<QString, QString>> labels{
             {"direct_domain", tr("Сайты напрямую, без VPN")},
@@ -128,11 +134,20 @@ private:
         QStringList fields;
         for (const auto &field : plan.changedFields) fields.append(QStringLiteral("• ") + fieldLabel(field));
         changes->setText(fields.join(QLatin1Char('\n')));
+        summary->setVisible(hasChanges);
         changesScroll->setVisible(hasChanges);
+        noChanges->setText(safe
+            ? tr("Обновление не требуется. Текущие маршруты сохранятся. Нажмите «Готово», чтобы закрыть окно.")
+            : tr("В этой схеме уже установлены стандартные маршруты. Повторный сброс не требуется. Нажмите «Готово», чтобы закрыть окно."));
         noChanges->setVisible(!hasChanges);
-        acknowledgement->setVisible(!safe);
+        acknowledgement->setVisible(!safe && hasChanges);
         acknowledgement->setEnabled(hasChanges);
-        applyButton->setEnabled(hasChanges && (safe || acknowledgement->isChecked()));
+        note->setVisible(hasChanges);
+        leaveButton->setVisible(hasChanges);
+        leaveButton->setDefault(hasChanges);
+        applyButton->setText(hasChanges ? tr("Применить изменения") : tr("Готово"));
+        applyButton->setDefault(!hasChanges);
+        applyButton->setEnabled(!hasChanges || safe || acknowledgement->isChecked());
     }
 };
 } // namespace GreenRhythm

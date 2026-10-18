@@ -2,12 +2,32 @@
 #include "ui_dialog_manage_routes.h"
 #include <QApplication>
 #include <QKeyEvent>
+#include <QMouseEvent>
+#include <QWindow>
+#include <QFile>
+#include <QDir>
+#include <QJsonDocument>
+#include <QTemporaryDir>
 #include <QScrollBar>
 #include <cstdio>
 static int checks = 0, failures = 0;
 static void check(bool ok, const char *message) {
     ++checks;
     if (!ok) { ++failures; std::fprintf(stderr, "FAIL: %s\n", message); }
+}
+static void click(QWidget *widget, const QPoint &position) {
+    auto *window = widget->window();
+    const QPointF local(widget->mapTo(window, position));
+    const QPointF global(widget->mapToGlobal(position));
+    QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(window->windowHandle(), &press);
+    QMouseEvent release(QEvent::MouseButtonRelease, local, global, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(window->windowHandle(), &release);
+    QCoreApplication::processEvents();
+}
+static QByteArray read(const QString &path) {
+    QFile file(path); if (!file.open(QIODevice::ReadOnly)) return {};
+    return file.readAll();
 }
 int main(int argc, char **argv) {
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
@@ -77,24 +97,67 @@ int main(int argc, char **argv) {
     check(keyboardCancel.result() == QDialog::Rejected && keyboardApprovals == 0, "Enter on the default choice leaves routes unchanged");
 
     GreenRhythm::RouteDefaultsPolicy::Preview empty;
-    GreenRhythm::RouteDefaultsReview unchanged(empty, empty);
-    auto *emptyApply = unchanged.findChild<QPushButton*>("routeDefaultsApplyConfirmed");
-    auto *emptyExplanation = unchanged.findChild<QLabel*>("routeDefaultsNoChanges");
-    int emptyApprovals = 0;
-    QObject::connect(&unchanged, &QDialog::accepted, [&] { ++emptyApprovals; });
-    unchanged.show(); app.processEvents();
-    check(!emptyApply->isEnabled() && emptyExplanation->isVisible()
-          && emptyExplanation->text().contains(QString::fromUtf8("изменений нет")), "no changes disables apply and explains why");
-    unchanged.accept();
-    unchanged.findChild<QRadioButton*>("routeDefaultsReset")->setChecked(true);
-    unchanged.findChild<QCheckBox*>("routeDefaultsResetConfirm")->setChecked(true);
-    unchanged.accept();
-    check(!emptyApply->isEnabled() && emptyApprovals == 0, "even acknowledged reset cannot approve an empty plan");
+    QTemporaryDir storage;
+    QDir().mkpath(storage.filePath("routes_box")); QDir().mkpath(storage.filePath("groups"));
+    const auto routePath = storage.filePath("routes_box/Default");
+    const auto settingsPath = storage.filePath("groups/greenrhythm.json");
+    const QByteArray routeBytes = "{\"direct_domain\":\"domain:ru\"}\r\n";
+    const QByteArray settingsBytes = "{\"routing_defaults_choice\":\"upgrade\",\"vpn_impl\":1}\r\n";
+    for (const auto &entry : {qMakePair(routePath, routeBytes), qMakePair(settingsPath, settingsBytes)}) {
+        QFile file(entry.first);
+        check(file.open(QIODevice::WriteOnly) && file.write(entry.second) == entry.second.size(), "private no-change storage fixture written");
+    }
+    empty.after = QJsonDocument::fromJson(routeBytes).object();
+    for (bool resetMode : {false, true}) {
+        GreenRhythm::RouteDefaultsReview unchanged(empty, empty);
+        int emptyApprovals = 0, closed = 0;
+        QObject::connect(&unchanged, &QDialog::accepted, [&] {
+            ++emptyApprovals;
+            GreenRhythm::RouteDefaultsPolicy::apply(routePath, settingsPath, empty, routeBytes);
+        });
+        QObject::connect(&unchanged, &QDialog::rejected, [&] { ++closed; });
+        unchanged.show(); app.processEvents();
+        if (resetMode) {
+            auto *resetChoice = unchanged.findChild<QRadioButton*>("routeDefaultsReset");
+            click(resetChoice, resetChoice->rect().center());
+        }
+        auto *done = unchanged.findChild<QPushButton*>("routeDefaultsApplyConfirmed");
+        auto *explanation = unchanged.findChild<QLabel*>("routeDefaultsNoChanges");
+        check(done->isEnabled() && done->isDefault() && done->text() == QString::fromUtf8("Готово"),
+              "unchanged safe/reset choice offers a working Done action");
+        check(explanation->isVisible()
+              && !unchanged.findChild<QCheckBox*>("routeDefaultsResetConfirm")->isVisible()
+              && !unchanged.findChild<QLabel*>("routeDefaultsPreview")->isVisible()
+              && !unchanged.findChild<QPushButton*>("routeDefaultsLeaveUnchanged")->isVisible(),
+              "unchanged choice has no disabled consent, destructive summary or duplicate close button");
+        if (resetMode) check(explanation->text().contains(QString::fromUtf8("стандартные маршруты")),
+              "unchanged reset explicitly explains that the standard routes are already installed");
+        click(done, done->rect().center());
+        check(!unchanged.isVisible() && unchanged.result() == QDialog::Rejected && emptyApprovals == 0 && closed == 1,
+              "real mouse click on Done closes without entering the caller's apply branch");
+        check(read(routePath) == routeBytes && read(settingsPath) == settingsBytes
+              && !GreenRhythm::RouteDefaultsPolicy::canRestore(routePath, QJsonDocument::fromJson(read(settingsPath)).object()),
+              "Done preserves exact route/settings bytes and creates no restore backup");
+    }
 
     GreenRhythm::RouteDefaultsReview optionalReset(empty, reset);
-    check(!optionalReset.findChild<QPushButton*>("routeDefaultsApplyConfirmed")->isEnabled(), "unchanged safe plan does not silently select destructive reset");
-    optionalReset.findChild<QRadioButton*>("routeDefaultsReset")->setChecked(true);
-    check(!optionalReset.findChild<QPushButton*>("routeDefaultsApplyConfirmed")->isEnabled(), "available reset still requires acknowledgement when safe plan has no changes");
+    optionalReset.show(); app.processEvents();
+    auto *optionalApply = optionalReset.findChild<QPushButton*>("routeDefaultsApplyConfirmed");
+    check(optionalApply->isEnabled() && optionalApply->text() == QString::fromUtf8("Готово"),
+          "unchanged safe plan closes normally without selecting destructive reset");
+    auto *optionalChoice = optionalReset.findChild<QRadioButton*>("routeDefaultsReset");
+    click(optionalChoice, optionalChoice->rect().center());
+    auto *optionalConfirm = optionalReset.findChild<QCheckBox*>("routeDefaultsResetConfirm");
+    check(optionalConfirm->isVisible() && optionalConfirm->isEnabled() && !optionalConfirm->isChecked()
+          && !optionalApply->isEnabled() && optionalApply->text() == QString::fromUtf8("Применить изменения")
+          && optionalReset.findChild<QPushButton*>("routeDefaultsLeaveUnchanged")->isDefault(),
+          "switching from no-change to real reset restores the full explicit consent guard");
+    optionalReset.accept();
+    check(optionalReset.isVisible(), "programmatic acceptance still cannot bypass consent after mode switch");
+    click(optionalConfirm, optionalConfirm->rect().center());
+    check(optionalConfirm->isChecked() && optionalApply->isEnabled(), "real mouse click on confirmation text enables a real reset");
+    click(optionalApply, optionalApply->rect().center());
+    check(optionalReset.result() == QDialog::Accepted, "confirmed real reset remains usable through mouse input");
 
     GreenRhythm::RouteDefaultsPolicy::Preview large = safe;
     for (int i = 0; i < 90; ++i) large.changedFields.append(QStringLiteral("future-private-field-%1").arg(i));
