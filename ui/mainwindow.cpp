@@ -582,6 +582,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
                 [this] { on_menu_update_subscription_triggered(); });
         connect(shell, &GreenRhythm::MainShell::checkUpdateRequested, this,
                 [this] { CheckUpdate(); });
+        connect(shell, &GreenRhythm::MainShell::downloadAppRequested, this,
+                [] { QDesktopServices::openUrl(QUrl(GreenRhythm::kAppsUrl)); });
         connect(shell, &GreenRhythm::MainShell::moreRequested, this,
                 [this](const QPoint &pos) {
                     // Меню собирается из той же полосы, что была сверху: те же
@@ -1112,6 +1114,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Минута после запуска, дальше раз в сутки; спрашивается наш сайт (манифест
     // /api/app/version), найденная версия — строкой в колонке, без окон.
     auto *updateTimer = new QTimer(this);
+    updateTimer->setObjectName("grUpdateTimer");
     connect(updateTimer, &QTimer::timeout, this, [this, updateTimer] {
         updateTimer->setInterval(GreenRhythm::Update::kCheckEveryMs);
         CheckUpdate(true);

@@ -61,6 +61,10 @@
 #include <QScrollArea>
 #include <QStackedWidget>
 #include <QWindow>
+#include <QDialog>
+#include <QPlainTextEdit>
+#include <QTimer>
+#include <QFontDatabase>
 
 #include <cstdio>
 
@@ -549,6 +553,8 @@ static void versionFromAssetName() {
        versionFromAsset(QStringLiteral("GreenRhythm-1.9.0-macos-arm64.dmg")) == QStringLiteral("1.9.0"));
     is(QStringLiteral("GreenRhythm-v2.0-windows-x64.zip → 2.0"),
        versionFromAsset(QStringLiteral("GreenRhythm-v2.0-windows-x64.zip")) == QStringLiteral("2.0"));
+    is(QStringLiteral("номер локальной сборки не обрезается до третьей части"),
+       versionFromAsset(QStringLiteral("GreenRhythm-v1.9.2.7-windows-x64.zip")) == QStringLiteral("1.9.2.7"));
     is(QStringLiteral("без номера — пусто, а не «64» из x64"),
        versionFromAsset(QStringLiteral("greenrhythm-windows-x64.zip")).isEmpty() &&
            versionFromAsset(QString()).isEmpty());
@@ -558,6 +564,71 @@ static void versionFromAssetName() {
 }
 
 /** Окно спрашивает само и молчит обо всём, кроме найденной версии. */
+static void updateBannerActions() {
+    const auto args = QApplication::arguments(); const int render = args.indexOf("--render-update-banner");
+    if (render >= 0) {
+#ifdef Q_OS_WIN
+        QFontDatabase::addApplicationFont("C:/Windows/Fonts/segoeui.ttf");
+        QApplication::setFont(QFont("Segoe UI", 10));
+#endif
+        qApp->setStyleSheet(slurp("res/theme/feiyangqingyun/qss/modern.css"));
+    }
+    Shell s;
+    auto *banner = s.w.findChild<QWidget *>("grUpdateBanner");
+    auto *title = s.w.findChild<QLabel *>("grUpdateBannerTitle");
+    auto *update = s.w.findChild<QPushButton *>("grBannerUpdate");
+    auto *site = s.w.findChild<QPushButton *>("grBannerDownload");
+    auto *notes = s.w.findChild<QPushButton *>("grUpdateReleaseNotes");
+    auto *later = s.w.findChild<QPushButton *>("grUpdateLater");
+    auto *quick = s.w.findChild<QPushButton *>("grQuickServiceHealth");
+    is(QStringLiteral("плашка содержит обновление, официальный сайт, изменения и «позже»"), banner && title && update && site && notes && later && quick);
+    if (!banner || !title || !update || !site || !notes || !later || !quick) return;
+    is(QStringLiteral("до проверки плашка не предлагает неизвестную версию"), banner->isHidden());
+    int downloads = 0, diagnoses = 0, reconnects = 0;
+    QObject::connect(&s.w, &GreenRhythm::MainShell::downloadAppRequested, [&] { ++downloads; });
+    QObject::connect(&s.w, &GreenRhythm::MainShell::diagnosticsRequested, [&] { ++diagnoses; });
+    QObject::connect(&s.w, &GreenRhythm::MainShell::connectToggled, [&] { ++reconnects; });
+    s.w.setAppVersion("2.0.0");
+    const auto remoteNotes = QStringLiteral("<img src=https://fixture.invalid/image>\nИзменения\n") + QString(18000, 'x');
+    s.w.setUpdateAvailable(true, "2.1.0", remoteNotes);
+    auto *pages = s.w.findChild<QStackedWidget *>("grPages");
+    for (int index = 0; index < pages->count(); ++index) {
+        pages->setCurrentIndex(index); QCoreApplication::processEvents();
+        is(QStringLiteral("плашка видна вне страницы %1").arg(index), banner->isVisible() && title->text().contains("2.1.0"));
+    }
+    s.click(site); s.click(update);
+    is(QStringLiteral("кнопки сайта и обновления отправляют по одному отдельному действию"), downloads == 1 && s.updateChecks == 1 && reconnects == 0);
+    bool plainNotes = false;
+    QTimer closeNotes; closeNotes.setInterval(1);
+    QObject::connect(&closeNotes, &QTimer::timeout, &s.w, [&] {
+        auto *dialog = s.w.findChild<QDialog *>("grReleaseNotesDialog");
+        if (!dialog) return;
+        closeNotes.stop();
+        auto *text = dialog->findChild<QPlainTextEdit *>();
+        plainNotes = text && text->isReadOnly() && text->toPlainText() == remoteNotes.left(16000);
+        dialog->accept();
+    });
+    closeNotes.start();
+    s.click(notes);
+    is(QStringLiteral("изменения показаны ограниченным обычным текстом без исполнения HTML"), plainNotes);
+    s.w.setUpdateBusy(true);
+    is(QStringLiteral("во время операции кнопки обновления недоступны, сайт доступен"), !update->isEnabled() && !s.checkUpdates->isEnabled() && site->isEnabled());
+    s.w.setUpdateBusy(false); s.w.setUpdateCheckFailed();
+    is(QStringLiteral("ошибка новой проверки не теряет найденное обновление и обозначена отдельно"), banner->isVisible() && s.updatesDetail->text().contains("не удалась") && title->text().contains("2.1.0"));
+    s.click(later); s.w.setUpdateAvailable(true, "2.1.0");
+    is(QStringLiteral("«позже» скрывает эту версию до следующего запуска, боковая кнопка остаётся"), banner->isHidden() && !s.w.findChild<QWidget *>("grUpdateNotice")->isHidden());
+    s.w.setUpdateAvailable(true, "2.1.1");
+    is(QStringLiteral("следующая версия снова показывает плашку"), banner->isVisible());
+    s.w.showPage(0); s.click(quick);
+    is(QStringLiteral("диагностика с главного экрана не запрашивает переподключения"), diagnoses == 1 && reconnects == 0);
+    if (render >= 0 && render + 1 < args.size()) {
+        s.w.setUpdateAvailable(false); s.w.setUpdateAvailable(true, "2.1.0", "Диагностика подписки и Discord");
+        s.w.setState(GreenRhythm::MainShell::State::Idle);
+        s.w.resize(1100, 820); QCoreApplication::processEvents();
+        is(QStringLiteral("собственное offscreen-превью сохранено"), s.w.grab().save(args[render + 1]));
+    }
+}
+
 static void quietUpdateCheckWired() {
     std::puts("Исходник окна: тихая проверка по таймеру");
     const QString window = slurp(QStringLiteral("ui/mainwindow.cpp"));
@@ -570,7 +641,7 @@ static void quietUpdateCheckWired() {
     is(QStringLiteral("окно заводит тихую проверку: минута после запуска, потом раз в сутки"),
        timer > 0 && around.contains(QStringLiteral("GreenRhythm::Update::kCheckEveryMs")) &&
            around.contains(QStringLiteral("CheckUpdate(true)")) && around.contains(QStringLiteral("runOnNewThread")));
-    const QString check = grpc.mid(grpc.indexOf(QStringLiteral("void MainWindow::CheckUpdate(bool quiet)")), 2600);
+    const QString check = grpc.mid(grpc.indexOf(QStringLiteral("void MainWindow::CheckUpdate(bool quiet)")));
     is(QStringLiteral("тихая проверка не показывает ни «обновлений нет», ни ошибку сети"),
        check.contains(QStringLiteral("if (!quiet) MessageBoxInfo(QObject::tr(\"Update\"), QObject::tr(\"No update\"));")) &&
            check.contains(QStringLiteral("if (quiet) return;")));
@@ -592,6 +663,7 @@ int main(int argc, char *argv[]) {
     lanAddressPick();
     hiddenFeaturesWired();
     updateNoticeInSidebar();
+    updateBannerActions();
     versionFromAssetName();
     quietUpdateCheckWired();
     std::printf("\n%d проверок, провалено %d\n", checks, fails);

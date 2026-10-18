@@ -25,10 +25,11 @@ namespace GreenRhythm::Update {
     inline constexpr int kFirstCheckMs = 60 * 1000;
     /// Дальше — раз в сутки, пока программа работает: с автозапуском это недели.
     inline constexpr int kCheckEveryMs = 24 * 60 * 60 * 1000;
+    inline constexpr int kRetryCheckMs = 5 * 60 * 1000;
 
     /** «GreenRhythm-v1.8.4-windows-x64.zip» → «1.8.4»; пусто — номера в имени нет. */
     inline QString versionFromAsset(const QString &asset) {
-        static const QRegularExpression version(QStringLiteral(R"re((?:^|[^0-9.])v?(\d+\.\d+(?:\.\d+)?)(?![0-9]))re"));
+        static const QRegularExpression version(QStringLiteral(R"re((?:^|[^0-9.])v?(\d+\.\d+(?:\.\d+){0,2})(?![0-9.]))re"));
         const auto match = version.match(asset);
         return match.hasMatch() ? match.captured(1) : QString();
     }

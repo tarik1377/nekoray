@@ -1,5 +1,6 @@
 #pragma once
 #include "NekoGui.hpp"
+#include "RouteDefaultsPolicy.hpp"
 #include <QFile>
 #include <memory>
 
@@ -24,6 +25,12 @@ inline QJsonObject mergeEditor(const QJsonObject &disk, const NekoGui::Routing &
     const auto visible = completeSnapshot(displayed);
     for (const auto &key : visible.keys()) merged.insert(key, visible.value(key));
     return merged;
+}
+inline RouteDefaultsPolicy::Preview defaultsPreview(const QJsonObject &current,
+        const NekoGui::Routing &preset, RouteDefaultsPolicy::Mode mode,
+        const QString &globalRules = {}) {
+    // Empty defaults must clear custom values during an explicitly chosen reset.
+    return RouteDefaultsPolicy::preview(current, completeSnapshot(preset), mode, globalRules);
 }
 // FromJson updates present keys only. Start from the empty schema for every
 // saved snapshot, so absent keys cannot retain the previously active rules.

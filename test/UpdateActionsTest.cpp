@@ -90,9 +90,12 @@ int main(int argc, char **argv) {
     }
     {
         Fixture f; f.client.checked.set_error("fixture TLS error");
+        auto *retry = new QTimer(&f.window); retry->setObjectName("grUpdateTimer");
         f.window.CheckUpdate(true); drain();
         check("an automatic failed check remains quiet", fixtureWarnings == 0 && fixtureInfos == 0 && f.offered == 0);
         check("an automatic network error does not request an exit", f.window.exits == 0 && f.client.downloads == 0);
+        check("a quiet network failure is visible and retries without waiting a full day", f.window.fixtureShell.checkFailed && retry->isActive() && retry->interval() == GreenRhythm::Update::kRetryCheckMs);
+        check("a failed check releases update controls", !f.window.fixtureShell.busy && !f.window.property("grUpdateInProgress").toBool());
     }
     {
         Fixture f; f.client.checkOK = false; f.window.fixtureShell.available = true;
@@ -121,9 +124,10 @@ int main(int argc, char **argv) {
         check("retry installs only after the successful response", fixtureWarnings == 1 && f.ready == 1 && fixtureStarts == 1 && f.window.exits == 1);
     }
     {
-        Fixture f; f.offer(); f.window.CheckUpdate(true); drain();
+        Fixture f; f.offer(); f.client.checked.set_release_note("fixture release notes"); f.window.CheckUpdate(true); drain();
         check("an automatic successful check updates the version indication", f.window.fixtureShell.available && f.window.fixtureShell.version == "9.0.0");
         check("an automatic check never starts a download or opens a prompt", f.client.downloads == 0 && f.offered == 0 && f.ready == 0);
+        check("a quiet check forwards release notes and releases controls", f.window.fixtureShell.notes == "fixture release notes" && !f.window.fixtureShell.busy);
     }
     {
         Fixture f; f.window.fixtureShell.available = true; f.window.CheckUpdate(true); drain();
@@ -154,6 +158,8 @@ int main(int argc, char **argv) {
         QElapsedTimer timer; timer.start();
         while (client.downloads == 0 && timer.elapsed() < 2000) { QCoreApplication::processEvents(); QThread::msleep(1); }
         check("a controlled stalled download leaves GUI events available", client.downloads == 1 && !window->findChildren<QProgressDialog *>().isEmpty());
+        window->CheckUpdate(); window->CheckUpdate(true); QCoreApplication::processEvents();
+        check("repeated manual and quiet actions cannot start a second check during download", client.checks == 1 && client.downloads == 1 && window->fixtureShell.busy);
         delete window; gate.release(); drain();
         check("a late response after window deletion cannot show readiness or request exit", fixtureWorkers == 0 && !QApplication::activeModalWidget() && fixtureWarnings == 0);
     }

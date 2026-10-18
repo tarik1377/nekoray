@@ -16,6 +16,7 @@
 #include <QWidget>
 #include <atomic>
 #include <functional>
+#include <memory>
 
 inline int fixtureWarnings = 0, fixtureInfos = 0;
 inline QString fixtureLastWarning;
@@ -58,7 +59,11 @@ namespace GreenRhythm {
 struct MainShell {
     bool available = false;
     QString version;
-    void setUpdateAvailable(bool value, const QString &found = {}) { available = value; version = found; }
+    QString notes;
+    bool busy = false, checkFailed = false;
+    void setUpdateAvailable(bool value, const QString &found = {}, const QString &text = {}) { available = value; version = found; notes = text; checkFailed = false; }
+    void setUpdateBusy(bool value) { busy = value; }
+    void setUpdateCheckFailed() { checkFailed = true; }
 };
 }
 class MainWindow : public QWidget {
