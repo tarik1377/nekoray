@@ -73,6 +73,7 @@ void run(ServiceHealth &health, const HealthContext &context, const QList<Health
 }
 int main(int argc,char **argv) {
     qputenv("QT_QPA_PLATFORM","offscreen"); QApplication app(argc,argv);
+    std::fprintf(stderr,"TLS backend: %s; available: %s\n",qPrintable(QSslSocket::activeBackend()),qPrintable(QSslSocket::availableBackends().join(',')));
     Server system, profile;
     check(system.isListening() && profile.isListening(),"owned HTTP endpoints listen on loopback");
     HealthContext context; context.version="fixture"; context.protocol="vless"; context.profileRunning=true; context.tunEnabled=true;

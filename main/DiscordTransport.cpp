@@ -177,9 +177,12 @@ void DiscordTransport::sendUdpRound() {
     }
 }
 void DiscordTransport::udpRead() {
-    while (udp.hasPendingDatagrams()) {
+    int budget = 64;
+    while (udp.hasPendingDatagrams() && budget-- > 0) {
         QByteArray packet(4096, Qt::Uninitialized); QHostAddress sender; quint16 port;
-        const auto length = udp.readDatagram(packet.data(), packet.size(), &sender, &port); packet.resize(std::max<qint64>(0, length));
+        const auto length = udp.readDatagram(packet.data(), packet.size(), &sender, &port);
+        if (length < 0) { udpFinish("network"); return; }
+        packet.resize(int(length));
         if (!running || udpState != "pending" || sender != relay || port != relayPort || packet.size() < 22
             || packet.left(4) != QByteArray::fromHex("00000001") || read16(packet, 8) != options.resolverPort) continue;
         const auto resolver = QHostAddress(qFromBigEndian<quint32>(packet.constData() + 4));
@@ -191,6 +194,7 @@ void DiscordTransport::udpRead() {
         question->answered = true; ++received;
         if (sent == 6 && received == 6) { udpFinish("replies"); return; }
     }
+    if (running && udpState == "pending" && udp.hasPendingDatagrams()) QTimer::singleShot(0, this, &DiscordTransport::udpRead);
 }
 void DiscordTransport::wsFinish(const QString &state) {
     if (!running || wsState != "pending") return;

@@ -15,7 +15,10 @@
 using namespace GreenRhythm;
 namespace {
 int failures = 0, checks = 0;
-void check(bool value, const char *message) { ++checks; if (!value) { ++failures; std::fprintf(stderr, "FAIL %s\n", message); } }
+void check(bool value, const char *message) {
+    ++checks; if (!value) ++failures;
+    std::fprintf(stderr, "%s %d %s\n", value ? "PASS" : "FAIL", checks, message); std::fflush(stderr);
+}
 void wait(QObject *object, const char *signal, int deadline = 4000) {
     QEventLoop loop; QObject::connect(object, signal, &loop, SLOT(quit()));
     QTimer::singleShot(deadline, &loop, &QEventLoop::quit); loop.exec();
@@ -61,9 +64,12 @@ struct Proxy : QTcpServer {
     Proxy() {
         relay.bind(QHostAddress::LocalHost, 0); listen(QHostAddress::LocalHost, 0);
         QObject::connect(&relay, &QUdpSocket::readyRead, this, [this] {
-            while (relay.hasPendingDatagrams()) {
+            int budget = 64;
+            while (relay.hasPendingDatagrams() && budget-- > 0) {
                 QByteArray data(4096, Qt::Uninitialized); QHostAddress sender; quint16 port;
-                data.resize(int(relay.readDatagram(data.data(), data.size(), &sender, &port))); ++packets;
+                const auto count = relay.readDatagram(data.data(), data.size(), &sender, &port);
+                if (count < 0) { relay.close(); break; }
+                data.resize(int(count)); ++packets;
                 if (udpMode == "drop" || data.size() < 30) continue;
                 if (udpMode == "partial" && quint8(data[4]) == 8) continue;
                 data[12] = char(quint8(data[12]) | 128); // DNS QR
@@ -159,6 +165,7 @@ int main(int argc, char **argv) {
         wait(&probe, SIGNAL(completed()), 25000); std::puts(QJsonDocument(probe.report()).toJson().constData());
         return probe.report().value("state") == "complete" ? 0 : 1;
     }
+    std::fprintf(stderr, "TLS backend: %s; available: %s\n", qPrintable(QSslSocket::activeBackend()), qPrintable(QSslSocket::availableBackends().join(','))); std::fflush(stderr);
     Gateway gateway; Proxy proxy; proxy.gatewayPort = gateway.serverPort();
     const auto savedTls = QSslConfiguration::defaultConfiguration(); auto trusted = savedTls;
     auto authorities = trusted.caCertificates(); authorities.append(QSslCertificate(healthFixtureCertificate)); trusted.setCaCertificates(authorities);

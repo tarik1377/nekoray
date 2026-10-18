@@ -1069,6 +1069,12 @@ endif ()
 
 foreach (gr_test IN LISTS GR_TEST_TARGETS)
     add_test(NAME ${gr_test} COMMAND ${gr_test})
+    set_tests_properties(${gr_test} PROPERTIES TIMEOUT 90)
+    if (APPLE)
+        # The loopback TLS fixtures must not import their public test identities
+        # into the runner's login keychain or wait for a keychain prompt.
+        set_tests_properties(${gr_test} PROPERTIES ENVIRONMENT "QT_SSL_USE_TEMPORARY_KEYCHAIN=1")
+    endif ()
     if (GR_TEST_QT_BIN)
         if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.22)
             # Дописывает к существующему PATH, ничего не затирая.

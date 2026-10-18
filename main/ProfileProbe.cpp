@@ -30,7 +30,9 @@ ProfileProbe::ProfileProbe(QObject *parent) : QObject(parent) {
     connect(&roundTimer, &QTimer::timeout, this, &ProfileProbe::nextRound);
     connect(&process, &QProcess::readyReadStandardOutput, this, [this] {
         while (process.bytesAvailable()) {
-            output += process.read(4096);
+            const auto chunk = process.read(4096);
+            if (chunk.isEmpty()) break;
+            output += chunk;
             if (running && !ready && output.contains(readyMarker)) {
                 ready = true; output.clear(); deadline.start(18000);
                 if (discord) {
