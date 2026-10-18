@@ -1,6 +1,6 @@
 #pragma once
 // Public, non-production certificate/key pair for owned loopback TLS tests only.
-inline constexpr char healthFixtureCertificate[] = R"PEM(-----BEGIN CERTIFICATE-----
+inline constexpr char healthFixtureCaCertificate[] = R"PEM(-----BEGIN CERTIFICATE-----
 MIIDCTCCAfGgAwIBAgIDApgiMA0GCSqGSIb3DQEBCwUAMC0xKzApBgNVBAMMIkdy
 ZWVuUmh5dGhtIG9mZmxpbmUgaGVhbHRoIGZpeHR1cmUwHhcNMjAwMTAxMDAwMDAw
 WhcNNDAwMTAxMDAwMDAwWjAtMSswKQYDVQQDDCJHcmVlblJoeXRobSBvZmZsaW5l
@@ -20,7 +20,7 @@ vFhNFb+orPonjrEUbms5rGkOZonL4d6oZcKFM9Tqw1e/CB+8yh9TjMbd996/0ZTu
 qfKojm7vLP972c9ygg==
 -----END CERTIFICATE-----
 )PEM";
-inline constexpr char healthFixtureKey[] = R"PEM(-----BEGIN PRIVATE KEY-----
+inline constexpr char healthFixtureCaKey[] = R"PEM(-----BEGIN PRIVATE KEY-----
 MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCTwr71jZnMui4z
 Za8lG/dxYZAWcqXL34otZ6BLH1ATp+yP82XdOzX+M+fzFErkQANt8mRKr5007qUE
 bxUgvCl26cLfURF3dB9z2dLvtIuZCKfFX2d+R/jlvaToXOK5YNei3cE3wrwxOnJ4
@@ -49,3 +49,4 @@ gqOhIg59YJU5cDiOUu7I4EcUIpfhGkgQFw1wkHsEUZ8qK+3qZxVlop4qVoZ2vPSt
 i0m4eQUPC+6VM92tflm1oA==
 -----END PRIVATE KEY-----
 )PEM";
+#include <HealthGeneratedFixture.hpp>

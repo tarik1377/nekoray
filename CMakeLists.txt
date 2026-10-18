@@ -827,12 +827,31 @@ target_link_libraries(macos_mode_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 # собирает и гоняет всё; CI зовёт то же самое.
 enable_testing()
 
+find_package(Python3 COMPONENTS Interpreter QUIET)
+find_program(GR_FIXTURE_OPENSSL NAMES openssl HINTS
+        "$ENV{ProgramFiles}/OpenSSL-Win64/bin" "$ENV{ProgramFiles}/OpenSSL/bin"
+        "$ENV{ProgramFiles}/Git/usr/bin" /usr/bin)
+set(GR_HEALTH_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/health")
+if (Python3_Interpreter_FOUND)
+    add_custom_target(health_tls_fixture
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/generate_health_fixture.py"
+                "${CMAKE_SOURCE_DIR}/test/ServiceHealthFixture.hpp"
+                "${GR_HEALTH_FIXTURE_DIR}/HealthGeneratedFixture.hpp" --openssl "${GR_FIXTURE_OPENSSL}"
+            BYPRODUCTS "${GR_HEALTH_FIXTURE_DIR}/HealthGeneratedFixture.hpp"
+            VERBATIM)
+else ()
+    add_custom_target(health_tls_fixture
+            COMMAND ${CMAKE_COMMAND} -E echo "build-tests needs Python 3 to create its public TLS fixture"
+            COMMAND ${CMAKE_COMMAND} -E false)
+endif ()
+
 add_executable(service_health_test EXCLUDE_FROM_ALL test/ServiceHealthTest.cpp
         main/ServiceHealth.cpp main/ServiceHealth.hpp main/BrowserNetworkHints.cpp main/BrowserNetworkHints.hpp
         main/ProfileProbe.cpp main/ProfileProbe.hpp main/DiscordTransport.cpp main/DiscordTransport.hpp
         ui/dialog_service_health.cpp ui/dialog_service_health.h)
 set_target_properties(service_health_test PROPERTIES AUTOMOC ON)
-target_include_directories(service_health_test PRIVATE ${CMAKE_SOURCE_DIR})
+add_dependencies(service_health_test health_tls_fixture)
+target_include_directories(service_health_test PRIVATE ${CMAKE_SOURCE_DIR} ${GR_HEALTH_FIXTURE_DIR})
 target_link_libraries(service_health_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
 if (WIN32)
     target_link_libraries(service_health_test PRIVATE wininet)
@@ -841,7 +860,8 @@ add_executable(profile_diagnostics_test EXCLUDE_FROM_ALL test/ProfileDiagnostics
         main/ProfileProbe.cpp main/ProfileProbe.hpp main/DiscordTransport.cpp main/DiscordTransport.hpp
         main/ServiceHealth.cpp main/ServiceHealth.hpp main/BrowserNetworkHints.cpp main/BrowserNetworkHints.hpp)
 set_target_properties(profile_diagnostics_test PROPERTIES AUTOMOC ON)
-target_include_directories(profile_diagnostics_test PRIVATE ${CMAKE_SOURCE_DIR})
+add_dependencies(profile_diagnostics_test health_tls_fixture)
+target_include_directories(profile_diagnostics_test PRIVATE ${CMAKE_SOURCE_DIR} ${GR_HEALTH_FIXTURE_DIR})
 target_link_libraries(profile_diagnostics_test PRIVATE Qt${QT_VERSION_MAJOR}::Network)
 if (WIN32)
     target_link_libraries(profile_diagnostics_test PRIVATE wininet)

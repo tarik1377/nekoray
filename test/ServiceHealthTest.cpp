@@ -74,6 +74,9 @@ void run(ServiceHealth &health, const HealthContext &context, const QList<Health
 int main(int argc,char **argv) {
     qputenv("QT_QPA_PLATFORM","offscreen"); QApplication app(argc,argv);
     std::fprintf(stderr,"TLS backend: %s; available: %s\n",qPrintable(QSslSocket::activeBackend()),qPrintable(QSslSocket::availableBackends().join(',')));
+    const auto catalog=healthTargets("discord");
+    check(std::any_of(catalog.begin(),catalog.end(),[](const HealthTarget &target){return target.id=="ip_control" && !QHostAddress(target.url.host()).isNull() && target.url.scheme()=="https";}),
+          "default diagnostics include a TLS-verified IP control independent of destination DNS");
     Server system, profile;
     check(system.isListening() && profile.isListening(),"owned HTTP endpoints listen on loopback");
     HealthContext context; context.version="fixture"; context.protocol="vless"; context.profileRunning=true; context.tunEnabled=true;
@@ -114,7 +117,7 @@ int main(int argc,char **argv) {
     check(report.value("subscription_state")=="tls" && validations==0,"subscription TLS errors are not ignored or fed to the parser");
     check(!QJsonDocument(report).toJson().contains("secret-query"),"failed subscription report still never exposes its key");
     const auto savedTls = QSslConfiguration::defaultConfiguration();
-    auto trustedTls = savedTls; trustedTls.addCaCertificate(QSslCertificate(healthFixtureCertificate));
+    auto trustedTls = savedTls; trustedTls.addCaCertificate(QSslCertificate(healthFixtureCaCertificate));
     QSslConfiguration::setDefaultConfiguration(trustedTls);
     TlsServer subscription;
     context.subscription=subscription.url();
