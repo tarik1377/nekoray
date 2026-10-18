@@ -181,6 +181,7 @@ void DialogWhatBroke::inspect(const QString &name) {
     program = name;
     watch.clear();
     observing = true;
+    observationStarted = QDateTime::currentDateTimeUtc();
     watchTitle->setText(tr("Смотрю, что делает «%1»").arg(program));
     watchCount->setText(tr("Пока ничего не замечено."));
     pages->setCurrentIndex(1);
@@ -194,7 +195,14 @@ void DialogWhatBroke::stopWatch() {
 
 void DialogWhatBroke::feed(const QList<GreenRhythm::Seen> &batch) {
     if (!observing) return;
-    watch.add(batch);
+    QList<GreenRhythm::Seen> current;
+    for (const auto &seen : batch) {
+        // The core retains closed connections for two minutes. They are not
+        // evidence of this user's new attempt; still-live older sockets are.
+        if (seen.end > 0 && seen.end < observationStarted.toSecsSinceEpoch()) continue;
+        current.append(seen);
+    }
+    watch.add(current);
     const auto f = watch.finish(program);
     const int mine = f.viaTunnel + f.direct;
     QString status = mine == 0
@@ -220,6 +228,20 @@ void DialogWhatBroke::conclude() {
     fixButton->setEnabled(true);
     applied = false;
 
+    const auto executable = program.section('\\', -1).section('/', -1).toLower();
+    if (QStringList{"discord", "discord.exe", "discordptb.exe", "discordcanary.exe"}.contains(executable)) {
+        verdictTitle->setText(tr("Наблюдение за Discord: причина ещё не установлена"));
+        verdictBody->setText(tr("Замечено соединений через VPN: %1; напрямую: %2; UDP через VPN: %3. "
+            "Это сведения о маршруте, а не доказательство доставки пакетов или успешного голосового подключения.\n\n"
+            "Если Discord застревает на «Подключение» и отключается от голоса, сохраните время сбоя и отчёт проверки сервисов. "
+            "Успешный HTTPS не подтверждает работу голосового UDP и WebSocket. Автоматически выводить Discord напрямую по этим данным нельзя.")
+            .arg(f.viaTunnel).arg(f.direct).arg(f.udpViaTunnel));
+        if (limited) verdictBody->setText(verdictBody->text() + tr("\n\nДостигнут предел наблюдения; часть соединений не учтена."));
+        emit discordObserved(f.viaTunnel, f.direct, f.udpViaTunnel, limited, observationStarted, QDateTime::currentDateTimeUtc());
+        pages->setCurrentIndex(2);
+        return;
+    }
+
     switch (f.verdict) {
         case GreenRhythm::Verdict::NotSeen: {
             verdictTitle->setText(tr("Ничего не увидел"));
@@ -235,29 +257,26 @@ void DialogWhatBroke::conclude() {
             break;
         }
         case GreenRhythm::Verdict::Direct: {
-            verdictTitle->setText(tr("С нашей стороны всё в порядке"));
+            verdictTitle->setText(tr("Замечен прямой маршрут"));
             verdictBody->setText(
                 tr("«%1» и так выходит в интернет напрямую, минуя нас: %2 попыток, и ни одна "
-                   "не шла через VPN. Значит причина не в подключении — стоит проверить саму "
-                   "программу, её сервер или интернет.")
+                   "не шла через VPN. Доставка данных и причина сбоя этим наблюдением не установлены.")
                     .arg(program)
                     .arg(f.direct));
             break;
         }
         case GreenRhythm::Verdict::ThroughTunnel:
         case GreenRhythm::Verdict::Mixed: {
-            verdictTitle->setText(tr("Нашёл причину"));
+            verdictTitle->setText(tr("Замечен маршрут через VPN"));
             QString body = tr("«%1» выходит в интернет через VPN — %2 попыток из %3. "
-                              "Её пакеты идут кругом через другую страну, и службы, которым важен "
-                              "постоянный адрес, на это отвечают плохо.")
+                              "По маршруту нельзя определить, дошли ли данные и чем вызван сбой.")
                                .arg(program)
                                .arg(f.viaTunnel)
                                .arg(f.viaTunnel + f.direct);
             if (f.udpViaTunnel > 0) {
                 // Для игр решает именно это: их живой обмен идёт по UDP, и когда
                 // в туннель уходит он, ломается ровно то, на что жалуются.
-                body += tr("\n\nПричём через VPN идёт и живой обмен с сервером (%1) — "
-                           "у игр от этого не грузится список серверов и не считается пинг.")
+                body += tr("\n\nЗамечены UDP-соединения через VPN: %1. Наличие записи не подтверждает получение ответа.")
                             .arg(f.udpViaTunnel);
             }
             if (!canFix) {

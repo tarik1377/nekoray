@@ -186,6 +186,14 @@ int main(int argc, char **argv) {
               .value("mldsa65_verify").toString() == pqv,
           "native core config retains the post-quantum verifier");
 
+    const auto profilesBeforeAudit = NekoGui::profileManager->profiles.size();
+    const auto filesBeforeAudit = QDir("profiles").entryList(QDir::Files);
+    NekoGui_sub::RawUpdater audit; audit.collect_only = true;
+    audit.update(QString::fromUtf8((fixture("audit-a") + "\n" + fixture("audit-b")).toUtf8().toBase64()));
+    check(audit.updated_order.size() == 2 && NekoGui::profileManager->profiles.size() == profilesBeforeAudit
+          && QDir("profiles").entryList(QDir::Files) == filesBeforeAudit,
+          "diagnostic subscription validation parses real profiles without changing the store or profile files");
+
     NekoGui_sub::RawUpdater raw;
     raw.update(QString::fromUtf8((fixture("base64-a") + "\n" + fixture("base64-b")).toUtf8().toBase64()));
     check(raw.updated_order.size() == 2, "base64 subscription imports both profiles");

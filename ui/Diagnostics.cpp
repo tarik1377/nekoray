@@ -1,4 +1,6 @@
 #include "ui/mainwindow_common.hpp"
+#include "ui/dialog_service_health.h"
+#include <QCryptographicHash>
 
 /**
  * Диагностика: что собрать и показать, когда «не работает».
@@ -14,181 +16,79 @@
  */
 
 void MainWindow::run_diagnostics() {
-    QString host;
-    int port = 0;
-    {
-        std::shared_ptr<NekoGui::ProxyEntity> ent;
-        auto sel = get_now_selected_list();
-        if (!sel.isEmpty()) {
-            ent = sel.first();
-        } else if (NekoGui::dataStore->started_id >= 0) {
-            ent = NekoGui::profileManager->GetProfile(NekoGui::dataStore->started_id);
-        } else {
-            auto cg = NekoGui::profileManager->CurrentGroup();
-            if (cg != nullptr) {
-                auto ps = cg->ProfilesWithOrder();
-                if (!ps.isEmpty()) ent = ps.first();
-            }
-        }
-        if (ent != nullptr && ent->bean != nullptr) {
-            host = ent->bean->serverAddress;
-            port = ent->bean->serverPort;
-        }
+    if (auto *existing = findChild<DialogServiceHealth *>("grServiceHealth")) {
+        ActivateWindow(existing); return;
     }
-
-    // Whether the tunnel is up, and where to reach it, are UI-thread facts — capture them
-    // before the worker so it can probe THROUGH the tunnel, not just around it.
-    const bool up = (running != nullptr);
-    const QString proxyAddr = NekoGui::dataStore->inbound_address;
-    const quint16 proxyPort = quint16(NekoGui::dataStore->inbound_socks_port);
-    const QString header = diagnostics_header();
-
-    auto *dlg = new QProgressDialog(tr("Проверка соединения…"), QString(), 0, 0, this);
-    dlg->setWindowTitle(tr("Диагностика соединения"));
-    dlg->setWindowModality(Qt::WindowModal);
-    dlg->setCancelButton(nullptr);
-    dlg->setMinimumDuration(0);
-    dlg->show();
-
-    runOnNewThread([this, host, port, up, proxyAddr, proxyPort, header, dlg] {
-        // Чужие туннели ищутся ЗДЕСЬ, в рабочем потоке: поиск запускает
-        // powershell и ждёт его, а в потоке интерфейса эти секунды выглядят
-        // как «программа не отвечает».
-        const QString foreign = foreign_tunnels_line();
-        // Состояние туннеля спрашивается здесь же: внутри powershell/ifconfig,
-        // и в потоке интерфейса эти секунды выглядели бы как зависание.
-        const QString tunAdapter = NekoGui_sys::DescribeTunAdapter();
-
-        bool net, dns, tcp = false, tls = false;
-        {
-            QTcpSocket s;
-            s.connectToHost(QStringLiteral("1.1.1.1"), 443);
-            net = s.waitForConnected(4000);
-            s.abort();
+    auto *dialog = new DialogServiceHealth(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    struct Snapshot { int profile = -1; quint64 core = 0, connection = 0; bool tun = false; };
+    auto snapshot = std::make_shared<Snapshot>();
+    dialog->captureContext = [this, snapshot] {
+        GreenRhythm::HealthContext context;
+        context.version = QString(NKR_VERSION);
+        context.profileRunning = running != nullptr;
+        context.tunEnabled = NekoGui::dataStore->spmode_vpn;
+        context.tunStack = Preset::SingBox::VpnImplementation.value(NekoGui::dataStore->vpn_implementation);
+        context.mtu = NekoGui::dataStore->vpn_mtu;
+        QString address = NekoGui::dataStore->inbound_address;
+        if (address == "0.0.0.0" || address.isEmpty()) address = "127.0.0.1";
+        if (address == "::") address = "::1";
+        // Match the subscription updater/browser probe's HTTP mixed inbound.
+        context.profileProxy = QNetworkProxy(QNetworkProxy::HttpProxy, address,
+            quint16(NekoGui::dataStore->inbound_socks_port), NekoGui::dataStore->inbound_auth->username,
+            NekoGui::dataStore->inbound_auth->password);
+        auto group = running ? NekoGui::profileManager->GetGroup(running->gid) : NekoGui::profileManager->CurrentGroup();
+        if (group) {
+            context.subscription = QUrl(group->url);
+            context.cachedProfiles = group->Profiles().size();
+            context.lastUpdateOutcome = group->last_update_outcome.load();
+            context.lastUpdateUtc = group->sub_last_update;
         }
-        {
-            auto hi = QHostInfo::fromName(QStringLiteral("www.google.com"));
-            dns = hi.error() == QHostInfo::NoError && !hi.addresses().isEmpty();
+        context.subscriptionViaProfile = NekoGui::dataStore->sub_use_proxy;
+        context.subscriptionUserAgent = NekoGui::dataStore->GetUserAgent();
+        if (running && running->bean) {
+            context.protocol = running->type;
+            const auto identity = running->type + ':' + running->bean->serverAddress.toLower()
+                + ':' + QString::number(running->bean->serverPort);
+            context.nodeId = QString::fromLatin1(QCryptographicHash::hash(identity.toUtf8(), QCryptographicHash::Sha256).toHex().left(20));
         }
-        if (!host.isEmpty() && port > 0) {
-            {
-                QTcpSocket s;
-                s.connectToHost(host, port);
-                tcp = s.waitForConnected(5000);
-                s.abort();
-            }
-            if (tcp) {
-                QSslSocket ss;
-                ss.setPeerVerifyMode(QSslSocket::VerifyNone); // Reality/self-signed nodes
-                ss.connectToHostEncrypted(host, port);
-                tls = ss.waitForEncrypted(6000);
-                ss.abort();
-            }
-        }
-
-        // The decisive test support could never run: does real traffic actually pass THROUGH
-        // the running tunnel, and what exit IP does the world see? A 204 through the local
-        // inbound proves the whole path; cloudflare's trace gives the exit IP for free.
-        bool tunnelTested = false, tunnelOk = false;
-        QString exitIp;
-        if (up) {
-            tunnelTested = true;
-            QNetworkProxy proxy(QNetworkProxy::Socks5Proxy, proxyAddr, proxyPort);
-            QNetworkAccessManager nam;
-            nam.setProxy(proxy);
-            {
-                auto *r = nam.get(QNetworkRequest(QUrl(QStringLiteral("http://cp.cloudflare.com/generate_204"))));
-                QEventLoop loop;
-                QTimer::singleShot(7000, r, &QNetworkReply::abort);
-                QObject::connect(r, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-                loop.exec();
-                tunnelOk = r->error() == QNetworkReply::NoError;
-                r->deleteLater();
-            }
-            if (tunnelOk) {
-                auto *r = nam.get(QNetworkRequest(QUrl(QStringLiteral("https://cp.cloudflare.com/cdn-cgi/trace"))));
-                QEventLoop loop;
-                QTimer::singleShot(7000, r, &QNetworkReply::abort);
-                QObject::connect(r, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-                loop.exec();
-                if (r->error() == QNetworkReply::NoError) {
-                    for (const auto &ln: QString::fromUtf8(r->readAll()).split('\n')) {
-                        if (ln.startsWith("ip=")) { exitIp = ln.mid(3).trimmed(); break; }
-                    }
-                }
-                r->deleteLater();
-            }
-        }
-
-        runOnUiThread([=] {
-            dlg->close();
-            dlg->deleteLater();
-
-            QString verdict;
-            if (!net)
-                verdict = tr("Нет интернета — проверьте подключение к сети.");
-            else if (!dns)
-                verdict = tr("Интернет есть, но DNS не отвечает — попробуйте сменить DNS-сервер.");
-            else if (host.isEmpty())
-                verdict = tr("Сеть в порядке. Сервер не выбран — импортируйте подписку и выберите сервер.");
-            else if (!tcp)
-                verdict = tr("Сервер недоступен из вашей сети — возможно, блокировка провайдера или сервер выключен. Попробуйте другой сервер.");
-            else if (!tls)
-                verdict = tr("Сервер отвечает, но TLS не проходит — вероятна фильтрация (DPI). Попробуйте другой сервер или порт 443.");
-            else if (tunnelTested && !tunnelOk)
-                verdict = tr("VPN подключён, но трафик через него не проходит. Частые причины: QUIC/DoH "
-                             "в браузере или посторонний перехватчик (Zapret/GoodbyeDPI/WARP).")
-#ifdef Q_OS_WIN
-                          // Только на Windows: вне её этого пункта в меню нет.
-                          + tr(" Нажмите «Починить сеть Windows» в меню «Зелёный Ритм».")
-#else
-                          + tr(" Проверьте, не запущен ли рядом другой VPN, и отключите его.")
+        const auto routes = QJsonDocument(NekoGui::dataStore->routing->ToJson()).toJson(QJsonDocument::Compact)
+            + NekoGui::dataStore->custom_route_global.toUtf8() + NekoGui::dataStore->vpn_rule_process.toUtf8();
+        context.routeFingerprint = QString::fromLatin1(QCryptographicHash::hash(routes, QCryptographicHash::Sha256).toHex().left(20));
+        snapshot->profile = NekoGui::dataStore->started_id;
+#ifndef NKR_NO_GRPC
+        snapshot->core = core_process ? core_process->generation() : 0;
 #endif
-                    ;
-            else if (tunnelTested && tunnelOk)
-                verdict = tr("Всё работает — трафик идёт через VPN, внешний IP: %1.").arg(exitIp.isEmpty() ? "—" : exitIp);
-            else
-                verdict = tr("Сеть и сервер доступны. Нажмите «Подключиться», чтобы пустить трафик через VPN.");
-
-            auto mark = [](bool b) { return b ? QString::fromUtf8("\xE2\x9C\x94") : QString::fromUtf8("\xE2\x9C\x95"); }; // ✔ / ✕
-            QStringList rows;
-            rows << tr("Интернет: %1").arg(mark(net));
-            rows << tr("DNS: %1").arg(mark(dns));
-            if (!host.isEmpty()) {
-                rows << tr("Сервер (TCP): %1").arg(mark(tcp));
-                rows << tr("TLS-соединение: %1").arg(mark(tls));
-            }
-            if (tunnelTested) {
-                rows << tr("Трафик через VPN: %1").arg(mark(tunnelOk));
-                if (tunnelOk) rows << tr("Внешний IP: %1").arg(exitIp.isEmpty() ? "—" : exitIp);
-            }
-
-            // Support report — no secrets: server host:port is public and helps support,
-            // but the subscription token / keys are never included.
-            QString report = header + tun_diagnostics_block(tunAdapter) + foreign;
-            report += QStringLiteral("Internet: %1\nDNS: %2\n").arg(net ? "OK" : "FAIL", dns ? "OK" : "FAIL");
-            if (!host.isEmpty()) {
-                report += QStringLiteral("Server %1:%2 TCP: %3\nTLS: %4\n")
-                              .arg(host).arg(port).arg(tcp ? "OK" : "FAIL", tls ? "OK" : "FAIL");
-            }
-            if (tunnelTested) {
-                report += QStringLiteral("Tunnel: %1\nExitIP: %2\n").arg(tunnelOk ? "OK" : "FAIL", exitIp.isEmpty() ? "-" : exitIp);
-            }
-            report += QStringLiteral("Verdict: %1\n").arg(verdict);
-
-            QMessageBox box(QMessageBox::Information, tr("Диагностика соединения"),
-                            rows.join("\n") + "\n\n" + verdict, QMessageBox::Ok, GetMessageBoxParent());
-            auto *copyBtn = box.addButton(tr("Скопировать отчёт"), QMessageBox::ActionRole);
-            auto *tgBtn = box.addButton(tr("Написать в поддержку"), QMessageBox::ActionRole);
-            box.exec();
-            if (box.clickedButton() == copyBtn) {
-                QApplication::clipboard()->setText(report);
-            } else if (box.clickedButton() == tgBtn) {
-                QApplication::clipboard()->setText(report); // report is on the clipboard to paste
-                QDesktopServices::openUrl(QUrl(GreenRhythm::kTelegramUrl));
-            }
-        });
+        snapshot->connection = connection_lifecycle.token();
+        snapshot->tun = context.tunEnabled;
+        return context;
+    };
+    dialog->contextStillCurrent = [this, snapshot] {
+        return snapshot->profile == NekoGui::dataStore->started_id
+#ifndef NKR_NO_GRPC
+            && snapshot->core == (core_process ? core_process->generation() : 0)
+#endif
+            && snapshot->connection == connection_lifecycle.token() && snapshot->tun == NekoGui::dataStore->spmode_vpn;
+    };
+    dialog->health->validateSubscription = [](const QByteArray &body) {
+        NekoGui_sub::RawUpdater parser; parser.collect_only = true;
+        parser.update(QString::fromUtf8(body));
+        return parser.updated_order.size();
+    };
+    connect(dialog, &DialogServiceHealth::observeDiscordRequested, this, [this, dialog] {
+        if (!dialog->contextStillCurrent()) { dialog->health->invalidate(); return; }
+        open_what_broke();
+        if (what_broke) {
+            QObject::disconnect(what_broke, nullptr, dialog->health, nullptr);
+            connect(what_broke, &DialogWhatBroke::discordObserved, dialog->health,
+                [dialog](int via, int direct, int udp, bool limited, const QDateTime &from, const QDateTime &to) {
+                    if (!dialog->contextStillCurrent()) { dialog->health->invalidate(); return; }
+                    dialog->health->recordDiscordObservation(via, direct, udp, limited, from, to);
+                });
+            what_broke->inspect(QStringLiteral("Discord.exe"));
+        }
     });
+    dialog->show();
 }
 
 // A short, secret-free preamble for the copyable report and the saved log: what version,

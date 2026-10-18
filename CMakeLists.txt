@@ -152,6 +152,10 @@ set(PROJECT_SOURCES
         main/HTTPRequestHelper.cpp
         main/BrowserNetworkHints.cpp
         main/BrowserNetworkHints.hpp
+        main/ServiceHealth.cpp
+        main/ServiceHealth.hpp
+        ui/dialog_service_health.cpp
+        ui/dialog_service_health.h
         main/RelayTrace.cpp
         main/RelayTrace.hpp
         main/DeviceCredentials.cpp
@@ -820,6 +824,16 @@ target_link_libraries(macos_mode_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 # собирает и гоняет всё; CI зовёт то же самое.
 enable_testing()
 
+add_executable(service_health_test EXCLUDE_FROM_ALL test/ServiceHealthTest.cpp
+        main/ServiceHealth.cpp main/ServiceHealth.hpp main/BrowserNetworkHints.cpp main/BrowserNetworkHints.hpp
+        ui/dialog_service_health.cpp ui/dialog_service_health.h)
+set_target_properties(service_health_test PROPERTIES AUTOMOC ON)
+target_include_directories(service_health_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(service_health_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
+if (WIN32)
+    target_link_libraries(service_health_test PRIVATE wininet)
+endif ()
+
 add_executable(browser_network_hints_test EXCLUDE_FROM_ALL
         test/BrowserNetworkHintsTest.cpp main/BrowserNetworkHints.cpp main/BrowserNetworkHints.hpp
         ui/dialog_web_diagnostics.cpp ui/dialog_web_diagnostics.h
@@ -926,6 +940,7 @@ target_include_directories(program_watch_lifetime_test PRIVATE ${CMAKE_SOURCE_DI
 target_link_libraries(program_watch_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
 set(GR_TEST_TARGETS
+        service_health_test
         browser_network_hints_test
         connection_lifecycle_test
         rollback_action_test

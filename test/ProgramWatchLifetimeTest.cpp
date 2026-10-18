@@ -79,6 +79,22 @@ int main(int argc, char **argv) {
     dialog.accept();
     check("accept also releases observation", dialog.watching().isEmpty());
 
+    dialog.inspect("Discord.exe");
+    auto voice = connection(1); voice.process="Discord.exe"; voice.network="udp";
+    auto oldVoice=voice; oldVoice.dest="old-fixture"; oldVoice.end=QDateTime::currentSecsSinceEpoch()-10;
+    int observedUdp=0;
+    QObject::connect(&dialog,&DialogWhatBroke::discordObserved,[&](int,int,int udp,bool,const QDateTime &,const QDateTime &) { observedUdp=udp; });
+    dialog.feed({voice,oldVoice}); dialog.conclude();
+    check("Discord report excludes previously closed connections retained by the core",observedUdp==1);
+    QString voiceText; bool directOffer=false;
+    for (auto *label: dialog.findChildren<QLabel *>()) voiceText+=label->text();
+    dialog.show(); app.processEvents();
+    for (auto *button: dialog.findChildren<QPushButton *>())
+        directOffer |= button->isVisible() && button->text()==QStringLiteral("Пустить эту программу напрямую");
+    check("Discord UDP observations do not declare a cause or propose a blind direct-route fix", !directOffer
+        && voiceText.contains(QStringLiteral("причина ещё не установлена"))
+        && voiceText.contains(QStringLiteral("не доказательство доставки")));
+
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }
