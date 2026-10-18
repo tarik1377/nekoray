@@ -75,7 +75,7 @@ int main(int argc,char **argv) {
     qputenv("QT_QPA_PLATFORM","offscreen"); QApplication app(argc,argv);
     std::fprintf(stderr,"TLS backend: %s; available: %s\n",qPrintable(QSslSocket::activeBackend()),qPrintable(QSslSocket::availableBackends().join(',')));
     const auto catalog=healthTargets("discord");
-    check(std::any_of(catalog.begin(),catalog.end(),[](const HealthTarget &target){return target.id=="ip_control" && !QHostAddress(target.url.host()).isNull() && target.url.scheme()=="https";}),
+    check(std::any_of(catalog.begin(),catalog.end(),[](const HealthTarget &target){return target.id=="ip_control" && !QHostAddress(target.url.host()).isNull() && target.url.scheme()=="https" && target.expectedStatus==302;}),
           "default diagnostics include a TLS-verified IP control independent of destination DNS");
     Server system, profile;
     check(system.isListening() && profile.isListening(),"owned HTTP endpoints listen on loopback");

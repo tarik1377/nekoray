@@ -161,7 +161,7 @@ int main(int argc, char **argv) {
         candidate.outbound = QJsonDocument::fromJson(file.readAll()).object();
         ProfileProbe probe;
         probe.start(candidate, "C:/GreenRhythm/greenrhythm_core.exe", {{"cloudflare", QUrl("https://cp.cloudflare.com/generate_204"), 204},
-            {"google", QUrl("https://www.gstatic.com/generate_204"), 204}, {"ip_control", QUrl("https://1.1.1.1/cdn-cgi/trace"), 200},
+            {"google", QUrl("https://www.gstatic.com/generate_204"), 204}, {"ip_control", QUrl("https://1.1.1.1/cdn-cgi/trace"), 302},
             {"discord", QUrl("https://discord.com/api/v10/gateway"), 200}}, true);
         wait(&probe, SIGNAL(completed()), 25000); std::puts(QJsonDocument(probe.report()).toJson().constData());
         return probe.report().value("state") == "complete" ? 0 : 1;

@@ -13,7 +13,7 @@ QList<HealthTarget> healthTargets(const QString &service) {
     QList<HealthTarget> targets{
         {"cloudflare", QObject::tr("Контроль Cloudflare"), QUrl("https://cp.cloudflare.com/generate_204"), 204, true},
         {"google", QObject::tr("Контроль Google"), QUrl("https://www.gstatic.com/generate_204"), 204, true},
-        {"ip_control", QObject::tr("HTTPS по IP, без DNS назначения"), QUrl("https://1.1.1.1/cdn-cgi/trace"), 200, true}};
+        {"ip_control", QObject::tr("HTTPS по IP, без DNS назначения"), QUrl("https://1.1.1.1/cdn-cgi/trace"), 302, true}};
     if (service == "discord") targets.append({"discord", QObject::tr("Discord HTTPS"), QUrl("https://discord.com/api/v10/gateway"), 200, false});
     return targets;
 }
