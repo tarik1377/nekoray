@@ -3,6 +3,7 @@
 #include "main/ProgramTrouble.hpp"
 
 #include <QDialog>
+#include <QDateTime>
 
 class QLabel;
 class QListWidget;
@@ -81,6 +82,7 @@ public:
     void setAlreadyDirect(const QStringList &names) { alreadyDirect = names; }
 
 signals:
+    void discordObserved(int viaTunnel, int direct, int udp, bool limited, const QDateTime &from, const QDateTime &to);
     /** Увести программу мимо туннеля. Сохраняет главное окно. */
     void fixRequested(const QString &program);
 
@@ -114,4 +116,5 @@ private:
     bool canFix = true;
     QString cannotFixWhy;
     QString systemNote;
+    QDateTime observationStarted;
 };

@@ -293,6 +293,7 @@ jobs:
   # там же. Пока она в бете, её поломка не имеет права задержать выпуск под
   # Windows, которым пользуются сегодня.
   build-macos:
+    timeout-minutes: 20
     strategy:
       matrix:
         include:

@@ -62,6 +62,7 @@ struct WebCheckOptions {
     QNetworkProxy greenRhythmProxy = QNetworkProxy(QNetworkProxy::HttpProxy, QStringLiteral("127.0.0.1"), 2080);
     QNetworkProxy systemProxy = QNetworkProxy(QNetworkProxy::DefaultProxy);
     bool profileRunning = false;
+    bool checkSystemPath = true;
     int timeoutMs = 4000;
 };
 

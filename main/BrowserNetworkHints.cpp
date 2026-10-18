@@ -5,6 +5,7 @@
 #include "sys/windows/WindowsProxyApi.hpp"
 #endif
 #include "BrowserNetworkHints.hpp"
+#include <QAuthenticator>
 #include "WindowsProxyController.hpp"
 
 #include <QDir>
@@ -283,12 +284,21 @@ bool BrowserNetworkProbe::start(const QUrl &url, const WebCheckOptions &options)
     QUrl validated;
     if (!parseWebCheckUrl(url.toString(), &validated, nullptr)) return false;
     abortPending(false);
-    pending = 2;
+    pending = options.checkSystemPath ? 2 : 1;
     const auto session = generation;
     for (const auto path : {WebCheckPath::System, WebCheckPath::GreenRhythm}) {
+        if (path == WebCheckPath::System && !options.checkSystemPath) continue;
         auto job = std::make_shared<Job>(); job->path = path; job->generation = session; job->elapsed.start(); jobs.append(job);
         if (path == WebCheckPath::GreenRhythm && !options.profileRunning) { finish(job, WebCheckKind::Unavailable); continue; }
         job->manager = new QNetworkAccessManager(this);
+        if (path == WebCheckPath::GreenRhythm) {
+            auto supplied = std::make_shared<bool>(false);
+            connect(job->manager, &QNetworkAccessManager::proxyAuthenticationRequired, job->manager,
+                [credentials = options.greenRhythmProxy, supplied](const QNetworkProxy &proxy, QAuthenticator *authenticator) {
+                    if (*supplied || proxy.hostName() != credentials.hostName() || proxy.port() != credentials.port()) return;
+                    *supplied = true; authenticator->setUser(credentials.user()); authenticator->setPassword(credentials.password());
+                });
+        }
         if (path == WebCheckPath::GreenRhythm) job->manager->setProxy(options.greenRhythmProxy);
         else if (options.systemProxy.type() != QNetworkProxy::DefaultProxy) job->manager->setProxy(options.systemProxy);
         else {
@@ -299,7 +309,8 @@ bool BrowserNetworkProbe::start(const QUrl &url, const WebCheckOptions &options)
         request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
         request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
         request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
-        request.setAttribute(QNetworkRequest::AuthenticationReuseAttribute, QNetworkRequest::Manual);
+        // A fresh manager has no site credential cache. Allow Qt's HTTP proxy
+        // challenge retry; Manual also suppresses its Basic proxy header.
         request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("GreenRhythm connectivity check"));
         // HEAD checks DNS/TCP/TLS/HTTP without requesting document bodies.
         // A GET 401 may be held by Qt until its body is complete while deciding
@@ -311,7 +322,9 @@ bool BrowserNetworkProbe::start(const QUrl &url, const WebCheckOptions &options)
         connect(job->reply, &QNetworkReply::sslErrors, this, [job](const QList<QSslError> &errors) { job->tlsError = !errors.isEmpty(); job->tlsIssue = webTlsIssue(errors); });
         connect(job->reply, &QNetworkReply::metaDataChanged, this, [this, job] {
             const int status = job->reply ? job->reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() : 0;
-            if (status > 0) finish(job, WebCheckKind::Http, status);
+            // 407 is the intermediate local-proxy authentication challenge.
+            // Let Qt retry using the proxy credentials before classifying it.
+            if (status > 0 && status != 407) finish(job, WebCheckKind::Http, status);
         });
         connect(job->reply, &QNetworkReply::finished, this, [this, job] {
             if (!job->reply) return;

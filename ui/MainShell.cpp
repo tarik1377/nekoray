@@ -551,7 +551,7 @@ namespace GreenRhythm {
         addRow(tr("Поддержка в Telegram"), tr("Напишите нам, если что-то не работает или непонятно."), "gr-chat", support);
         auto *diagnostics = new QPushButton(tr("Проверить"), page); diagnostics->setObjectName("grDiagnostics"); diagnostics->setAccessibleName(tr("Диагностика соединения"));
         connect(diagnostics, &QPushButton::clicked, this, &MainShell::diagnosticsRequested);
-        addRow(tr("Диагностика соединения"), tr("Проверит интернет, DNS и доступность сервера и скажет, что не так."), "gr-help", diagnostics);
+        addRow(tr("Диагностика соединения"), tr("Подписка, повторные проверки подключения и Discord, отчёт для поддержки."), "gr-help", diagnostics);
         auto *about = new QPushButton(tr("Открыть"), page); about->setObjectName("grAbout"); about->setAccessibleName(tr("О программе"));
         connect(about, &QPushButton::clicked, this, &MainShell::aboutRequested);
         addRow(tr("О программе"), tr("Версия, сайт, лицензия и исходный код."), "gr-info", about);
