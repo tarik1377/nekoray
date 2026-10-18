@@ -791,8 +791,9 @@ void MainWindow::CheckUpdate(bool quiet) {
         const auto note_pre_release = response.is_pre_release() ? " (Pre-release)" : "";
         QMessageBox box(QMessageBox::Question, QObject::tr("Update") + note_pre_release,
             QObject::tr("Update found: %1\nRelease note:\n%2").arg(
-                QString::fromStdString(response.assets_name()), QString::fromStdString(response.release_note())),
+                QString::fromStdString(response.assets_name()), QString::fromStdString(response.release_note()).left(16000)),
             QMessageBox::NoButton, window);
+        box.setTextFormat(Qt::PlainText);
         QAbstractButton *install = nullptr;
         if (allow_updater) install = box.addButton(QObject::tr("Update"), QMessageBox::AcceptRole);
         auto *browser = box.addButton(QObject::tr("Open in browser"), QMessageBox::AcceptRole);

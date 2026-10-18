@@ -24,6 +24,7 @@ struct Fixture {
     int offered = 0, ready = 0;
     bool downloadDone = false;
     bool retryDownload = false;
+    bool plainReleaseNotes = false;
     Fixture() {
         fixtureWarnings = fixtureInfos = 0; fixtureLastWarning.clear();
         fixtureStarts = 0; fixtureStartOK = true;
@@ -33,6 +34,7 @@ struct Fixture {
             auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
             if (!box) return;
             if (box->text().contains("Update found:")) {
+                plainReleaseNotes = box->textFormat() == Qt::PlainText && box->text().size() < 17000;
                 ++offered;
                 for (auto *button : box->buttons()) if (box->buttonRole(button) == QMessageBox::AcceptRole && button->text() == "Update") { button->click(); return; }
                 box->reject();
@@ -105,8 +107,10 @@ int main(int argc, char **argv) {
     }
     {
         Fixture f; f.offer();
+        f.client.checked.set_release_note((QStringLiteral("<img src=file:///fixture-not-present>\n") + QString(20000, 'x')).toStdString());
         f.window.CheckUpdate(); f.finishDownload();
         check("a verified successful download still offers installation", f.ready == 1 && f.client.downloads == 1);
+        check("the actual update prompt also bounds notes and renders them as plain text", f.plainReleaseNotes);
         check("a confirmed update starts its helper before requesting normal exit", fixtureStarts == 1 && f.window.exits == 1 && f.window.exit_reason == 0 && fixtureWarnings == 0);
     }
     {
