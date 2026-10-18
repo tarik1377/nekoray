@@ -228,7 +228,9 @@ namespace GreenRhythm {
          *
          * @param version номер; пусто при available — «новая версия» без номера
          */
-        void setUpdateAvailable(bool available, const QString &version = QString());
+        void setUpdateAvailable(bool available, const QString &version = QString(), const QString &notes = QString());
+        void setUpdateBusy(bool busy);
+        void setUpdateCheckFailed();
 
     signals:
         void connectToggled();
@@ -268,6 +270,7 @@ namespace GreenRhythm {
         void interferenceRequested();
         void updateSubscriptionRequested();
         void checkUpdateRequested();
+        void downloadAppRequested();
 
         /** Выбор сервера под кнопкой. -1 — автовыбор. */
         void serverChosen(int id);
@@ -355,6 +358,12 @@ namespace GreenRhythm {
         QLabel *shareToLanDetail = nullptr;
         QWidget *updateNotice = nullptr;
         QLabel *updateNoticeText = nullptr;
+        QWidget *updateBanner = nullptr;
+        QLabel *updateBannerTitle = nullptr;
+        QLabel *updateBannerDetail = nullptr;
+        QPushButton *bannerUpdateButton = nullptr;
+        QString releaseNotes, dismissedUpdateVersion, lastUpdateCheck;
+        bool updateBusy = false, updateCheckFailed = false;
         QPushButton *checkUpdatesButton = nullptr;
         QString installedVersion;
         QString availableVersion;

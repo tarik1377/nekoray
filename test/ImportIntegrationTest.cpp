@@ -143,6 +143,33 @@ int main(int argc, char **argv) {
         check(mergedClears.contains(field) && mergedClears.value(field).isString() && mergedClears.value(field).toString().isEmpty(),
               "route-editor clearing remains an explicit empty saved value");
     check(mergedClears.value("future") == savedRoute.value("future"), "route-editor merging retains unknown saved fields");
+    // Use the same preview entry point as the real dialog, with the actual
+    // factory preset. Its JsonStore serialization omits empty string defaults.
+    NekoGui::Routing standard(1);
+    auto customized = GreenRhythm::RouteState::completeSnapshot(standard);
+    for (const auto &field : {"proxy_domain", "proxy_ip", "block_ip", "dns_object"})
+        customized.insert(field, QStringLiteral("user-choice"));
+    customized.insert("future", savedRoute.value("future"));
+    customized.insert("local_dns_server", QStringLiteral("10.60.0.53"));
+    const auto fullReset = GreenRhythm::RouteState::defaultsPreview(customized, standard,
+        GreenRhythm::RouteDefaultsPolicy::Mode::ResetRoutes);
+    for (const auto &field : {"proxy_domain", "proxy_ip", "block_ip", "dns_object"})
+        check(fullReset.changedFields.contains(field) && fullReset.after.value(field).isString()
+              && fullReset.after.value(field).toString().isEmpty(),
+              "real preset reset clears custom values whose defaults serialize as absent");
+    check(fullReset.after.value("local_dns_server") == customized.value("local_dns_server")
+          && fullReset.after.value("future") == customized.value("future"),
+          "full preset reset preserves local work DNS and unknown settings");
+    const auto alreadyStandard = GreenRhythm::RouteState::completeSnapshot(standard);
+    check(GreenRhythm::RouteState::defaultsPreview(alreadyStandard, standard,
+          GreenRhythm::RouteDefaultsPolicy::Mode::ResetRoutes).changedFields.isEmpty(),
+          "complete factory preset produces no spurious reset changes");
+    const auto safeDefaults = GreenRhythm::RouteState::defaultsPreview(customized, standard,
+        GreenRhythm::RouteDefaultsPolicy::Mode::SafeUpgrade);
+    check(safeDefaults.after.value("proxy_domain") == customized.value("proxy_domain")
+          && safeDefaults.after.value("proxy_ip") == customized.value("proxy_ip")
+          && safeDefaults.after.value("block_ip") == customized.value("block_ip"),
+          "safe defaults preview still preserves explicit user lists");
     auto restoredMemory = std::make_unique<NekoGui::Routing>(1);
     restoredMemory->FromJson(savedRoute);
     const QJsonObject absentFields{{"def_outbound", "proxy"}, {"future", QJsonObject{{"keep", 7}}}};

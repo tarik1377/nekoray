@@ -11,6 +11,8 @@
 
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDateTime>
+#include <QPlainTextEdit>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
@@ -253,9 +255,60 @@ namespace GreenRhythm {
         pages = new QStackedWidget(this);
         pages->setObjectName("grPages");
         pages->setStyleSheet(QStringLiteral("QStackedWidget#grPages { background: %1; }").arg(kSurface));
-        row->addWidget(pages, 1);
+        auto *content = new QVBoxLayout;
+        content->setContentsMargins(0, 0, 0, 0); content->setSpacing(0);
+        updateBanner = new QWidget(this); updateBanner->setObjectName("grUpdateBanner");
+        updateBanner->setStyleSheet(QStringLiteral("QWidget#grUpdateBanner { background:%1; border-bottom:1px solid %2; }").arg(kSurfaceUp, kAccentDim));
+        auto *banner = new QVBoxLayout(updateBanner); banner->setContentsMargins(20, 12, 20, 12); banner->setSpacing(8);
+        auto *bannerHeading = new QHBoxLayout;
+        updateBannerTitle = new QLabel(updateBanner); updateBannerTitle->setObjectName("grUpdateBannerTitle");
+        updateBannerTitle->setTextFormat(Qt::PlainText); updateBannerTitle->setWordWrap(true);
+        updateBannerTitle->setStyleSheet(QStringLiteral("color:%1; font-weight:600;").arg(kAccent));
+        bannerHeading->addWidget(updateBannerTitle, 1);
+        auto *later = new QPushButton(QString::fromUtf8("×"), updateBanner); later->setObjectName("grUpdateLater");
+        later->setAccessibleName(tr("Напомнить об обновлении при следующем запуске")); later->setToolTip(tr("Позже. Кнопка обновления останется в боковой колонке."));
+        later->setFixedSize(30, 30); later->setStyleSheet(linkStyle(kMuted));
+        connect(later, &QPushButton::clicked, this, [this] {
+            dismissedUpdateVersion = availableVersion.isEmpty() ? QStringLiteral("unknown") : availableVersion; paintUpdates();
+        });
+        bannerHeading->addWidget(later); banner->addLayout(bannerHeading);
+        updateBannerDetail = new QLabel(updateBanner); updateBannerDetail->setObjectName("grUpdateBannerDetail");
+        updateBannerDetail->setWordWrap(true); updateBannerDetail->setTextFormat(Qt::PlainText);
+        updateBannerDetail->setStyleSheet(QStringLiteral("color:%1;").arg(kMuted)); banner->addWidget(updateBannerDetail);
+        auto *bannerActions = new QHBoxLayout; bannerActions->setSpacing(8);
+        const auto bannerButton = [&](const QString &name, const QString &title) {
+            auto *button = new QPushButton(title, updateBanner); button->setObjectName(name);
+            button->setMinimumHeight(32); button->setCursor(Qt::PointingHandCursor);
+            button->setStyleSheet(QStringLiteral("QPushButton { padding:4px 10px; border:1px solid %1; border-radius:8px; color:%2; background:%3; } QPushButton:hover { border-color:%4; } QPushButton:disabled { color:%1; }").arg(kMuted, kText, kSurface, kAccent));
+            bannerActions->addWidget(button); return button;
+        };
+        bannerUpdateButton = bannerButton("grBannerUpdate", tr("Обновить…"));
+        bannerUpdateButton->setStyleSheet(QStringLiteral("QPushButton { padding:4px 12px; border:1px solid %1; border-radius:8px; color:%2; background:%1; font-weight:600; } QPushButton:hover { background:%3; } QPushButton:disabled { color:%4; background:%5; border-color:%5; }").arg(kAccent, kSidebar, kAccentDim, kMuted, kSurface));
+        connect(bannerUpdateButton, &QPushButton::clicked, this, &MainShell::checkUpdateRequested);
+        auto *site = bannerButton("grBannerDownload", tr("Скачать с сайта"));
+        connect(site, &QPushButton::clicked, this, &MainShell::downloadAppRequested);
+        auto *notes = bannerButton("grUpdateReleaseNotes", tr("Что нового"));
+        connect(notes, &QPushButton::clicked, this, [this] {
+            QDialog dialog(this); dialog.setObjectName("grReleaseNotesDialog"); dialog.setWindowTitle(tr("Что нового в GreenRhythm")); dialog.resize(560, 420);
+            auto *layout = new QVBoxLayout(&dialog);
+            auto *text = new QPlainTextEdit(&dialog); text->setReadOnly(true);
+            text->setPlainText(releaseNotes.isEmpty() ? tr("Список изменений доступен на странице приложения на официальном сайте.") : releaseNotes);
+            layout->addWidget(text);
+            auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+            auto *download = buttons->addButton(tr("Открыть сайт"), QDialogButtonBox::ActionRole);
+            connect(download, &QPushButton::clicked, this, &MainShell::downloadAppRequested);
+            connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject); layout->addWidget(buttons); dialog.exec();
+        });
+        bannerActions->addStretch(); banner->addLayout(bannerActions); updateBanner->hide();
+        content->addWidget(updateBanner); content->addWidget(pages, 1); row->addLayout(content, 1);
 
-        pages->addWidget(buildConnectPage()); // 0 — подключение
+        auto *connectScroll = new QScrollArea(this); connectScroll->setObjectName("grConnectScroll");
+        connectScroll->setWidgetResizable(true); connectScroll->setFrameShape(QFrame::NoFrame);
+        auto *connectPage = buildConnectPage();
+        auto pagePalette = connectPage->palette(); pagePalette.setColor(QPalette::Window, QColor(kSurface));
+        connectPage->setPalette(pagePalette); connectScroll->viewport()->setPalette(pagePalette);
+        connectScroll->setWidget(connectPage);
+        pages->addWidget(connectScroll); // 0 — подключение; banner cannot push actions below the window
         pages->addWidget(buildSettingsPage()); // moved to 3 when legacy pages are adopted
         selectPage(0);
     }
@@ -348,6 +401,8 @@ namespace GreenRhythm {
             QMenu menu(this);
             menu.addAction(Icons::icon("gr-nav-log", QColor(kText), QColor(kAccent), 18), tr("Журнал и соединения"), this, [this] { selectPage(2); });
             menu.addAction(tr("Проверить обновления"), this, &MainShell::checkUpdateRequested);
+            menu.addAction(tr("Скачать с официального сайта"), this, &MainShell::downloadAppRequested);
+            menu.addAction(tr("Диагностика подписки и Discord"), this, &MainShell::diagnosticsRequested);
             menu.addAction(tr("Помощь с подключением"), this, &MainShell::troubleRequested);
             menu.addSeparator();
             menu.addAction(tr("Все команды"), this, [this] { emit moreRequested(moreButton->mapToGlobal(QPoint(0, moreButton->height()))); });
@@ -434,6 +489,9 @@ namespace GreenRhythm {
         metrics->addWidget(tile(body, tr("получено / отправлено"), &liveTraffic, kText, 0.95), 2);
         box->addLayout(metrics);
         outer->addWidget(body, 0, Qt::AlignHCenter); outer->addStretch(2);
+        auto *health = new QPushButton(tr("Проверить подписку и Discord"), page); health->setObjectName("grQuickServiceHealth");
+        health->setStyleSheet(linkStyle(kAccent)); health->setCursor(Qt::PointingHandCursor);
+        connect(health, &QPushButton::clicked, this, &MainShell::diagnosticsRequested); outer->addWidget(health, 0, Qt::AlignCenter);
         troubleLink = new QPushButton(tr("Нужна помощь с подключением?"), page); troubleLink->setStyleSheet(linkStyle(kMuted));
         troubleLink->setCursor(Qt::PointingHandCursor); connect(troubleLink, &QPushButton::clicked, this, &MainShell::troubleRequested);
         outer->addWidget(troubleLink, 0, Qt::AlignCenter);
@@ -724,10 +782,20 @@ namespace GreenRhythm {
     }
     bool MainShell::maintenanceVisible() const { return maintenance && maintenance->isVisible(); }
 
-    void MainShell::setUpdateAvailable(bool available, const QString &version) {
+    void MainShell::setUpdateAvailable(bool available, const QString &version, const QString &notes) {
         updateAvailable = available;
         availableVersion = version;
+        releaseNotes = notes.left(16000);
+        lastUpdateCheck = QDateTime::currentDateTime().toString(QStringLiteral("dd.MM HH:mm"));
+        updateCheckFailed = false;
+        if (!available) dismissedUpdateVersion.clear();
         paintUpdates();
+    }
+
+    void MainShell::setUpdateBusy(bool busy) { updateBusy = busy; paintUpdates(); }
+    void MainShell::setUpdateCheckFailed() {
+        updateCheckFailed = true;
+        lastUpdateCheck = QDateTime::currentDateTime().toString(QStringLiteral("dd.MM HH:mm")); paintUpdates();
     }
 
     void MainShell::paintUpdates() {
@@ -736,7 +804,16 @@ namespace GreenRhythm {
             updateNoticeText->setText(tr("Доступна %1").arg(fresh));
             updateNotice->setVisible(updateAvailable);
         }
+        if (updateBanner != nullptr) {
+            updateBannerTitle->setText(tr("Доступна %1 GreenRhythm").arg(fresh));
+            updateBannerDetail->setText((installedVersion.isEmpty() ? QString() : tr("Установлена %1. ").arg(installedVersion))
+                + tr("Пока вы работаете, можно скачать обновление. Для установки потребуется перезапуск."));
+            updateBanner->setVisible(updateAvailable && dismissedUpdateVersion != (availableVersion.isEmpty() ? QStringLiteral("unknown") : availableVersion));
+            bannerUpdateButton->setEnabled(!updateBusy);
+        }
+        if (auto *button = findChild<QPushButton *>("grUpdateNoticeButton")) button->setEnabled(!updateBusy);
         if (checkUpdatesButton != nullptr) checkUpdatesButton->setText(updateAvailable ? tr("Обновить…") : tr("Проверить обновления"));
+        if (checkUpdatesButton != nullptr) checkUpdatesButton->setEnabled(!updateBusy);
         if (updatesDetail == nullptr) return;
         if (updateAvailable) {
             updatesDetail->setText(installedVersion.isEmpty() ? tr("Доступна %1.").arg(fresh)
@@ -745,6 +822,9 @@ namespace GreenRhythm {
             updatesDetail->setText(installedVersion.isEmpty() ? tr("Проверить, не вышла ли новая версия.")
                                                               : tr("Установлена версия %1.").arg(installedVersion));
         }
+        if (!lastUpdateCheck.isEmpty()) updatesDetail->setText(updatesDetail->text() + '\n'
+            + (updateCheckFailed ? tr("Проверка %1 не удалась. Повторим автоматически; можно скачать с сайта.")
+                                 : tr("Последняя успешная проверка: %1.")).arg(lastUpdateCheck));
     }
 
     void MainShell::setConnectionOptions(bool connectOnStart, bool autopilot, bool shareToLan,

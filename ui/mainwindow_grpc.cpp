@@ -13,6 +13,7 @@
 #include "ui/MainShell.hpp"
 
 #include <QTimer>
+#include <memory>
 #include <QThread>
 #include <QInputDialog>
 #include <QPushButton>
@@ -721,34 +722,52 @@ void MainWindow::neko_stop(bool crash, bool sem, bool keep_tunnel) {
 
 void MainWindow::CheckUpdate(bool quiet) {
 #ifndef NKR_NO_GRPC
+    if (property("grUpdateInProgress").toBool()) return;
+    setProperty("grUpdateInProgress", true);
+    const auto generation = property("grUpdateGeneration").toULongLong() + 1;
+    setProperty("grUpdateGeneration", QVariant::fromValue(generation));
+    if (shell) shell->setUpdateBusy(true);
     const auto window = QPointer<MainWindow>(this);
     const auto includePreRelease = NekoGui::dataStore->check_include_pre;
     // The application outlives its window during shutdown. Results target this
     // context and only inspect the weak window reference on the GUI thread.
-    const auto post = [](const std::function<void()> &callback) {
+    const auto dispatch = [](const std::function<void()> &callback) {
         auto *app = QCoreApplication::instance();
         if (app && !QCoreApplication::closingDown())
             QMetaObject::invokeMethod(app, callback, Qt::QueuedConnection);
     };
-    runOnNewThread([window, quiet, includePreRelease, post] {
-    const auto checkFailed = [window, quiet] {
-        if (quiet || !window) return;
-        MessageBoxWarning(QObject::tr("Update"),
-            QObject::tr("Не удалось проверить обновления. Программа продолжает работать; повторите попытку позже."));
+    // All queued dialogs and download workers hold the same lease. Only this
+    // operation may release its buttons, including after retry or window close.
+    const auto lease = std::shared_ptr<int>(new int(0), [window, generation, dispatch](int *value) {
+        delete value;
+        dispatch([window, generation] {
+            if (!window || window->property("grUpdateGeneration").toULongLong() != generation) return;
+            window->setProperty("grUpdateInProgress", false);
+            if (window->shell) window->shell->setUpdateBusy(false);
+        });
+    });
+    const auto post = [dispatch, lease](const std::function<void()> &callback) {
+        dispatch([callback, lease] { callback(); });
     };
-    if (NekoGui_rpc::defaultClient == nullptr) { post(checkFailed); return; }
+    runOnNewThread([window, quiet, includePreRelease, post] {
+    const auto checkFailed = [window, quiet](const QString &reason = QString()) {
+        if (!window) return;
+        if (window->shell) window->shell->setUpdateCheckFailed();
+        if (auto *timer = window->findChild<QTimer *>("grUpdateTimer")) timer->start(GreenRhythm::Update::kRetryCheckMs);
+        if (!quiet) MessageBoxWarning(QObject::tr("Update"), reason.isEmpty()
+            ? QObject::tr("Не удалось проверить обновления. Программа продолжает работать; повторите попытку позже.") : reason);
+    };
+    if (NekoGui_rpc::defaultClient == nullptr) { post([checkFailed] { checkFailed(); }); return; }
     bool ok = false;
     libcore::UpdateReq request;
     request.set_action(libcore::UpdateAction::Check);
     request.set_check_pre_release(includePreRelease);
     const auto response = NekoGui_rpc::defaultClient->Update(&ok, request);
-    if (!ok) { post(checkFailed); return; }
+    if (!ok) { post([checkFailed] { checkFailed(); }); return; }
 
     const auto err = response.error();
     if (!err.empty()) {
-        if (!quiet) post([window, err] {
-            if (window) MessageBoxWarning(QObject::tr("Update"), QString::fromStdString(err));
-        });
+        post([checkFailed, err] { checkFailed(QString::fromStdString(err)); });
         return;
     }
     if (response.download_url().empty()) {
@@ -760,8 +779,9 @@ void MainWindow::CheckUpdate(bool quiet) {
         return;
     }
     const auto found = GreenRhythm::Update::versionFromAsset(QString::fromStdString(response.assets_name()));
-    post([window, found] {
-        if (window && window->shell) window->shell->setUpdateAvailable(true, found);
+    const auto notes = QString::fromStdString(response.release_note());
+    post([window, found, notes] {
+        if (window && window->shell) window->shell->setUpdateAvailable(true, found, notes);
     });
     if (quiet) return;
 
@@ -771,8 +791,9 @@ void MainWindow::CheckUpdate(bool quiet) {
         const auto note_pre_release = response.is_pre_release() ? " (Pre-release)" : "";
         QMessageBox box(QMessageBox::Question, QObject::tr("Update") + note_pre_release,
             QObject::tr("Update found: %1\nRelease note:\n%2").arg(
-                QString::fromStdString(response.assets_name()), QString::fromStdString(response.release_note())),
+                QString::fromStdString(response.assets_name()), QString::fromStdString(response.release_note()).left(16000)),
             QMessageBox::NoButton, window);
+        box.setTextFormat(Qt::PlainText);
         QAbstractButton *install = nullptr;
         if (allow_updater) install = box.addButton(QObject::tr("Update"), QMessageBox::AcceptRole);
         auto *browser = box.addButton(QObject::tr("Open in browser"), QMessageBox::AcceptRole);
@@ -811,7 +832,10 @@ void MainWindow::CheckUpdate(bool quiet) {
                             QObject::tr("Обновление не установлено. Программа продолжает работать.\n\n%1").arg(reason),
                             QMessageBox::Retry | QMessageBox::Close, window);
                         failure.setButtonText(QMessageBox::Retry, QObject::tr("Повторить"));
-                        if (failure.exec() == QMessageBox::Retry && window) window->CheckUpdate(false);
+                        if (failure.exec() == QMessageBox::Retry && window) {
+                            window->setProperty("grUpdateInProgress", false);
+                            window->CheckUpdate(false);
+                        }
                         return;
                     }
                     const auto answer = QMessageBox::question(window, QObject::tr("Update"),

@@ -917,7 +917,7 @@ target_include_directories(local_dns_test PRIVATE ${CMAKE_SOURCE_DIR})
 
 add_executable(import_integration_test EXCLUDE_FROM_ALL
         test/ImportIntegrationTest.cpp
-        main/NekoGui.cpp main/NekoGui_Utils.cpp main/VideoRoutes.cpp main/DefaultRoutes.cpp main/LocalDns.cpp
+        main/NekoGui.cpp main/NekoGui_Utils.cpp main/VideoRoutes.cpp main/DefaultRoutes.cpp main/RouteDefaultsPolicy.cpp main/LocalDns.cpp
         main/HealthProfiles.cpp
         main/HTTPRequestHelper.cpp main/DeviceCredentials.cpp main/RelayTrace.cpp main/TunHelper.cpp
         main/RelayComponent.cpp main/RelayComponentParse.cpp main/RelayActivation.cpp main/RelayActivationParse.cpp

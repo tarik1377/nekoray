@@ -9,6 +9,7 @@
 namespace GreenRhythm {
     inline const QString kServiceName    = QStringLiteral("Зелёный Ритм");
     inline const QString kSiteUrl        = QStringLiteral("https://verdantvibe.ru");
+    inline const QString kAppsUrl        = QStringLiteral("https://verdantvibe.ru/apps");
     inline const QString kBuyUrl         = QStringLiteral("https://verdantvibe.ru/subscriptions");
     inline const QString kRenewUrl       = QStringLiteral("https://verdantvibe.ru/subscriptions/my");
     inline const QString kTelegramUrl    = QStringLiteral("https://t.me/VerdantVibeBot");
