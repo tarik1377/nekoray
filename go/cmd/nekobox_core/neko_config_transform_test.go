@@ -99,7 +99,10 @@ func TestTransformGeoRules(t *testing.T) {
 		},
 	})
 
-	rule := firstRule(t, m)
+	if firstRule(t, m)["action"] != "resolve" {
+		t.Fatal("destination GeoIP needs DNS before IP matching")
+	}
+	rule := m["route"].(map[string]interface{})["rules"].([]interface{})[1].(map[string]interface{})
 	if _, ok := rule["geoip"]; ok {
 		t.Error("geoip key should be removed from rule")
 	}
