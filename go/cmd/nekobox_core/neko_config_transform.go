@@ -30,6 +30,11 @@ func transformConfigBytes(configJSON []byte) ([]byte, error) {
 		return configJSON, nil
 	}
 
+	// HTTP CONNECT and SOCKS requests commonly contain a domain, not an IP.
+	// IP rules cannot classify those destinations until DNS has run. Keep the
+	// user's rule order and DNS policy; resolve only when reaching an IP rule.
+	resolveBeforeDestinationIPRules(config)
+
 	ruleSets := make([]interface{}, 0)
 	tags := make(map[string]bool)
 
