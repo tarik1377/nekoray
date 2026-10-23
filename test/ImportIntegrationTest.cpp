@@ -431,10 +431,6 @@ int main(int argc, char **argv) {
                 check(routeFor(rules, name) == "bypass", "actual internal TUN keeps CS2 and Steam direct with games on/off");
             for (const auto &name : GreenRhythm::GameVoiceRouting::voiceProcesses())
                 check(routeFor(rules, name) == "proxy", "actual internal TUN forces Discord voice before country and QUIC rules");
-            const auto external = QJsonDocument::fromJson(read(NekoGui::WriteVPNSingBoxConfig())).object();
-            const auto helperRules = external.value("route").toObject().value("rules").toArray();
-            check(routeFor(helperRules, "cs2.exe") == "direct" && routeFor(helperRules, "steam.exe") == "direct"
-                  && routeFor(helperRules, "Discord.exe") == "neko-socks", "external Windows TUN applies the same game/voice defaults");
         }
         // Exercise a profile saved before CS2 was added to the preset.
         auto legacy = QJsonDocument::fromJson(factoryCustom.toUtf8()).object();

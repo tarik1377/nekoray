@@ -1181,38 +1181,6 @@ namespace NekoGui {
             auto document = QJsonDocument::fromJson(config.toUtf8(), &error);
             if (error.error == QJsonParseError::NoError && document.isObject()) {
                 auto object = document.object();
-#ifdef Q_OS_WIN
-                if (!dataStore->vpn_rule_white && configFn == QStringLiteral(":/neko/vpn/sing-box-vpn.json")) {
-                    const Routing factory(1);
-                    auto route = object.value("route").toObject();
-                    QJsonArray dnsRules, otherRules;
-                    for (const auto &value : route.value("rules").toArray()) {
-                        const auto rule = value.toObject();
-                        if (rule.value("outbound") == "dns-out") dnsRules.append(value);
-                        else otherRules.append(value);
-                    }
-                    auto first = dnsRules;
-                    const auto bypass = SplitLinesSkipSharp(dataStore->vpn_rule_process);
-                    const auto proxy = SplitLinesSkipSharp(dataStore->vpn_rule_process_proxy);
-                    if (!bypass.isEmpty()) first.append(QJsonObject{{"process_name", QList2QJsonArray(bypass)}, {"outbound", "direct"}});
-                    if (!proxy.isEmpty()) first.append(QJsonObject{{"process_name", QList2QJsonArray(proxy)}, {"outbound", "neko-socks"}});
-                    const auto cidrs = SplitLinesSkipSharp(dataStore->vpn_rule_cidr);
-                    if (!cidrs.isEmpty()) first.append(QJsonObject{{"ip_cidr", QList2QJsonArray(cidrs)}, {"outbound", "direct"}});
-                    const auto defaults = GreenRhythm::GameVoiceRouting::defaults(
-                        QString2QJsonObject(dataStore->routing->custom)["rules"].toArray(),
-                        QString2QJsonObject(factory.custom)["rules"].toArray(),
-                        QString2QJsonObject(dataStore->custom_route_global)["rules"].toArray(),
-                        dataStore->routing_defaults_choice);
-                    for (const auto &value : defaults) {
-                        auto rule = value.toObject();
-                        rule["outbound"] = rule.value("outbound") == "proxy" ? "neko-socks" : "direct";
-                        first.append(rule);
-                    }
-                    QJSONARRAY_ADD(first, otherRules)
-                    route["rules"] = first;
-                    object["route"] = route;
-                }
-#endif
                 if (preserveWorkVPN) {
                     auto route = object.value("route").toObject();
                     if (route.value("default_interface").toString().isEmpty()) {
