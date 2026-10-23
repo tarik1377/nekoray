@@ -11,12 +11,14 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"io"
 	"math/big"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"testing"
 	"time"
 
@@ -127,6 +129,11 @@ func TestUDPTransportThroughProfile(t *testing.T) {
 							packet := []byte{0, 0, 0, 1, 127, 0, 0, 1, byte(target.Port >> 8), byte(target.Port)}
 							pending[string(payload)] = target.Port
 							if _, err := udp.Write(append(packet, payload...)); err != nil {
+								// Linux can report the relay's rejection as ICMP on
+								// the next write; Windows commonly waits for a timeout.
+								if kind == "http-no-udp" && (errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET)) {
+									return
+								}
 								t.Fatal(err)
 							}
 						}
