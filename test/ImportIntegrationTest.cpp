@@ -13,6 +13,7 @@
 #include "main/HTTPRequestHelper.hpp"
 #include "main/RouteState.hpp"
 #include "main/RuRoutingPolicy.hpp"
+#include "main/GameVoiceRouting.hpp"
 #include "main/HealthProfiles.hpp"
 #include "sub/GroupUpdater.hpp"
 
@@ -389,6 +390,79 @@ int main(int argc, char **argv) {
     check(ruleIndex(externalRules, explicitProcesses) < 0 && ruIndex(externalRules) >= 0
           && ruleIndex(externalRules, standardProcessProxy) > ruIndex(externalRules),
           "external TUN mode excludes internal-only process settings without losing RU and application fallback rules");
+#ifdef Q_OS_WIN
+    {
+        const auto beforeRoute = GreenRhythm::RouteState::completeSnapshot(*NekoGui::dataStore->routing);
+        const auto previousBypass = NekoGui::dataStore->vpn_rule_process;
+        const auto previousGames = NekoGui::dataStore->games_via_tunnel;
+        const auto previousWhite = NekoGui::dataStore->vpn_rule_white;
+        NekoGui::dataStore->vpn_internal_tun = true;
+        NekoGui::dataStore->vpn_rule_process.clear();
+        NekoGui::dataStore->vpn_rule_process_proxy.clear();
+        NekoGui::dataStore->vpn_rule_white = false;
+        const auto originalGlobals = NekoGui::dataStore->custom_route_global;
+        NekoGui::dataStore->custom_route_global.clear();
+        const auto routeFor = [](const QJsonArray &rules, const QString &process) {
+            for (const auto &value : rules) {
+                const auto rule = value.toObject();
+                if (rule.value("process_name").toArray().contains(process)) return rule.value("outbound").toString();
+            }
+            return QString();
+        };
+        for (bool games : {false, true}) {
+            NekoGui::dataStore->games_via_tunnel = games;
+            const auto built = buildCurrent();
+            const auto rules = runtimeRules(built);
+            // The serialization fixture has no packaged geo databases. A new
+            // process policy must not introduce an error beyond that baseline.
+            check(built->error == defaultConfig->error, "game/voice policy introduces no additional builder errors");
+            const auto guards = GreenRhythm::GameVoiceRouting::defaults(
+                QJsonDocument::fromJson(factoryCustom.toUtf8()).object().value("rules").toArray(),
+                QJsonDocument::fromJson(factoryCustom.toUtf8()).object().value("rules").toArray(), {});
+            for (const auto &guard : guards)
+                check(ruleIndex(rules, guard.toObject()) >= 0 && ruleIndex(rules, guard.toObject()) < ruIndex(rules),
+                      "actual game and voice guards precede broad country rules");
+            int udpBlock = -1;
+            for (int i = 0; i < rules.size(); ++i)
+                if (rules[i].toObject().value("outbound") == "block" && rules[i].toObject().value("port").toInt() == 443) { udpBlock = i; break; }
+            check(udpBlock >= 0 && ruleIndex(rules, guards.last().toObject()) < udpBlock,
+                  "Discord UDP/443 reaches the VPN before the general QUIC restriction");
+            for (const auto &name : GreenRhythm::GameVoiceRouting::directProcesses())
+                check(routeFor(rules, name) == "bypass", "actual internal TUN keeps CS2 and Steam direct with games on/off");
+            for (const auto &name : GreenRhythm::GameVoiceRouting::voiceProcesses())
+                check(routeFor(rules, name) == "proxy", "actual internal TUN forces Discord voice before country and QUIC rules");
+            const auto external = QJsonDocument::fromJson(read(NekoGui::WriteVPNSingBoxConfig())).object();
+            const auto helperRules = external.value("route").toObject().value("rules").toArray();
+            check(routeFor(helperRules, "cs2.exe") == "direct" && routeFor(helperRules, "steam.exe") == "direct"
+                  && routeFor(helperRules, "Discord.exe") == "neko-socks", "external Windows TUN applies the same game/voice defaults");
+        }
+        // Exercise a profile saved before CS2 was added to the preset.
+        auto legacy = QJsonDocument::fromJson(factoryCustom.toUtf8()).object();
+        auto legacyRules = legacy.value("rules").toArray();
+        auto oldGames = legacyRules.first().toObject();
+        auto oldNames = oldGames.value("process_name").toArray();
+        QJsonArray filtered;
+        for (const auto &name : oldNames) if (name != "cs2.exe" && name != "csgo.exe") filtered.append(name);
+        oldGames["process_name"] = filtered; legacyRules[0] = oldGames;
+        legacy["rules"] = legacyRules;
+        NekoGui::dataStore->routing->custom = QString::fromUtf8(QJsonDocument(legacy).toJson(QJsonDocument::Compact));
+        const auto savedLegacy = NekoGui::dataStore->routing->custom;
+        check(routeFor(runtimeRules(buildCurrent()), "cs2.exe") == "bypass"
+              && NekoGui::dataStore->routing->custom == savedLegacy, "existing schemes acquire CS2 policy without a migration or route rewrite");
+        NekoGui::dataStore->vpn_rule_process = "Discord.exe";
+        NekoGui::dataStore->vpn_rule_process_proxy = "cs2.exe";
+        const auto explicitRules = runtimeRules(buildCurrent());
+        check(routeFor(explicitRules, "Discord.exe") == "bypass" && routeFor(explicitRules, "cs2.exe") == "proxy",
+              "explicit per-app user choices beat game and voice defaults");
+        NekoGui::dataStore->routing->custom = factoryCustom;
+        NekoGui::dataStore->vpn_rule_process = previousBypass;
+        NekoGui::dataStore->games_via_tunnel = previousGames;
+        NekoGui::dataStore->vpn_rule_white = previousWhite;
+        NekoGui::dataStore->custom_route_global = originalGlobals;
+        check(GreenRhythm::RouteState::completeSnapshot(*NekoGui::dataStore->routing) == beforeRoute,
+              "building all game/voice configurations leaves every route field untouched");
+    }
+#endif
     NekoGui::dataStore->vpn_rule_process_proxy = previousProxyProcesses;
     NekoGui::dataStore->vpn_internal_tun = previousTun;
     NekoGui::dataStore->spmode_vpn = previousVpn;

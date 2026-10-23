@@ -306,7 +306,7 @@ int main(int argc, char **argv) {
     // Разворачивать можно только правила ПО ПРОЦЕССУ: перевёрнутая блокировка
     // QUIC стала бы правилом «QUIC — в туннель», ровно наоборот к замыслу.
     is(QStringLiteral("разворот отбирает только правила по процессу"),
-       gamesFlip >= 0 && src.mid(gamesFlip, 700).contains(QStringLiteral("process_path_regex")));
+       gamesFlip >= 0 && src.mid(gamesFlip, 700).contains(QStringLiteral("GameVoiceRouting::gameTunnelRule")));
     is(QStringLiteral("обратный список сохраняется в настройки"),
        gui.contains(QStringLiteral("configItem(\"vpn_proxy_process\"")));
     is(QStringLiteral("переключатель игр сохраняется в настройки"),
