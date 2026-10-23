@@ -556,7 +556,11 @@ namespace GreenRhythm {
         box->addWidget(caption(page, tr("МАРШРУТИЗАЦИЯ")));
         gamesToggle = toggle(page, tr("Включить")); gamesToggle->setAccessibleName(tr("Игры через VPN"));
         connect(gamesToggle, &QPushButton::clicked, this, &MainShell::gamesViaTunnelToggled);
+#ifdef Q_OS_WIN
+        addRow(tr("Игры через VPN"), tr("Для игр из стандартного списка. Во встроенном туннеле CS2 и Steam по умолчанию идут напрямую; отдельные правила программ имеют приоритет."), "gr-routes", gamesToggle);
+#else
         addRow(tr("Игры через VPN"), tr("Обычно игры подключаются напрямую. Включите, если игровые серверы недоступны."), "gr-routes", gamesToggle);
+#endif
         bypassLine = new QPushButton(tr("Настроить"), page); connect(bypassLine, &QPushButton::clicked, this, &MainShell::bypassListRequested);
         addRow(tr("Исключения"), tr("Приложения и адреса, которые подключаются напрямую."), "gr-list", bypassLine);
         box->addWidget(caption(page, tr("ОБХОД ФИЛЬТРАЦИИ")));
