@@ -1,4 +1,6 @@
 #include "DiscordTransport.hpp"
+#include "StunProbe.hpp"
+#include <QJsonArray>
 #include <QCryptographicHash>
 #include <QJsonDocument>
 #include <QRandomGenerator>
@@ -24,7 +26,7 @@ QString stateText(const QString &state) {
     if (state == "cancelled") return QObject::tr("отменено");
     if (state == "pending") return QObject::tr("проверяется");
     if (state == "proxy") return QObject::tr("локальный прокси недоступен или отказал");
-    if (state == "network") return QObject::tr("соединение не установлено или закрыто до Hello");
+    if (state == "network") return QObject::tr("соединение не установлено или закрыто");
     return QObject::tr("не проверено");
 }
 }
@@ -63,11 +65,18 @@ void DiscordTransport::start(const DiscordProbeOptions &value) {
     running = false; stop(); options = value;
     wsState = udpState = "pending"; wsBuffer.clear(); wsText.clear(); socksBuffer.clear(); questions.clear();
     upgraded = fragmented = false; socksStage = round = sent = received = 0; running = true;
+    rtts[0].clear(); rtts[1].clear(); probeClock.start();
     QHostAddress proxyAddress(options.proxy.hostName());
     if (!proxyAddress.isLoopback() || !options.proxy.port() || options.gateway.scheme() != "wss"
-        || !options.gateway.userInfo().isEmpty() || options.resolvers.size() != 2
+        || !options.gateway.userInfo().isEmpty() || options.udpEndpoints.size() != 2
         || options.proxy.user().toUtf8().size() > 255 || options.proxy.password().toUtf8().size() > 255) {
         wsFinish("proxy"); udpFinish("proxy"); return;
+    }
+    for (const auto &endpoint : options.udpEndpoints) {
+        const auto host = QUrl::toAce(endpoint.host);
+        if ((QHostAddress(endpoint.host).isNull() && (host.isEmpty() || host.size() > 253)) || !endpoint.port || endpoint.port == 53) {
+            wsFinish("protocol"); udpFinish("protocol"); return;
+        }
     }
     ws.setReadBufferSize(32768); socks.setReadBufferSize(512);
     ws.setProxy(options.proxy);
@@ -161,19 +170,25 @@ void DiscordTransport::socksRead() {
 void DiscordTransport::sendUdpRound() {
     if (!running || udpState != "pending" || round >= 3) { udpRound.stop(); return; }
     ++round;
-    for (const auto &resolver : options.resolvers) {
-        quint16 id; do { id = quint16(QRandomGenerator::system()->generate()); } while (questions.contains(id));
-        const auto label = randomBytes(8).toHex();
-        QByteArray question; question.append(char(label.size())); question += label;
-        question += QByteArray::fromHex("076578616d706c6503636f6d0000010001");
-        questions.insert(id, {question, resolver, false});
-        QByteArray dns; append16(dns, id); dns += QByteArray::fromHex("01000001000000000000"); dns += question;
-        if (resolver.protocol() != QAbstractSocket::IPv4Protocol) { udpFinish("protocol"); return; }
-        QByteArray packet = QByteArray::fromHex("00000001");
-        const auto address = resolver.toIPv4Address();
-        for (int shift = 24; shift >= 0; shift -= 8) packet.append(char(address >> shift));
-        append16(packet, options.resolverPort); packet += dns; ++sent;
-        udp.writeDatagram(packet, relay, relayPort);
+    for (int index = 0; index < options.udpEndpoints.size(); ++index) {
+        const auto &endpoint = options.udpEndpoints[index];
+        QByteArray transaction; do { transaction = randomBytes(12); } while (questions.contains(transaction));
+        questions.insert(transaction, {index, probeClock.elapsed(), false});
+        QByteArray packet = QByteArray::fromHex("000000");
+        const QHostAddress address(endpoint.host);
+        if (address.protocol() == QAbstractSocket::IPv4Protocol) {
+            packet.append(char(1)); const auto ipv4 = address.toIPv4Address();
+            for (int shift = 24; shift >= 0; shift -= 8) packet.append(char(ipv4 >> shift));
+        } else if (address.protocol() == QAbstractSocket::IPv6Protocol) {
+            packet.append(char(4)); const auto ipv6 = address.toIPv6Address();
+            packet.append(reinterpret_cast<const char *>(ipv6.c), 16);
+        } else {
+            const auto host = QUrl::toAce(endpoint.host);
+            packet.append(char(3)); packet.append(char(host.size())); packet += host;
+        }
+        append16(packet, endpoint.port); packet += StunProbe::request(transaction);
+        if (udp.writeDatagram(packet, relay, relayPort) != packet.size()) { udpFinish("network"); return; }
+        ++sent;
     }
 }
 void DiscordTransport::udpRead() {
@@ -183,15 +198,28 @@ void DiscordTransport::udpRead() {
         const auto length = udp.readDatagram(packet.data(), packet.size(), &sender, &port);
         if (length < 0) { udpFinish("network"); return; }
         packet.resize(int(length));
-        if (!running || udpState != "pending" || sender != relay || port != relayPort || packet.size() < 22
-            || packet.left(4) != QByteArray::fromHex("00000001") || read16(packet, 8) != options.resolverPort) continue;
-        const auto resolver = QHostAddress(qFromBigEndian<quint32>(packet.constData() + 4));
-        const auto dns = packet.mid(10); const auto id = read16(dns, 0);
-        auto question = questions.find(id);
-        if (question == questions.end() || question->answered || question->resolver != resolver || !(quint8(dns[2]) & 128)
-            || (quint8(dns[2]) & 0x7a) || (quint8(dns[3]) & 15) > 3 || ((quint8(dns[3]) & 15) != 0 && (quint8(dns[3]) & 15) != 3)
-            || read16(dns, 4) != 1 || dns.mid(12, question->bytes.size()) != question->bytes) continue;
+        if (!running || udpState != "pending" || sender != relay || port != relayPort || packet.size() < 4
+            || packet.left(3) != QByteArray::fromHex("000000")) continue;
+        int offset = 4; QHostAddress source; QString sourceName;
+        const auto type = quint8(packet[3]);
+        if (type == 1 && packet.size() >= 10) { source = QHostAddress(qFromBigEndian<quint32>(packet.constData() + 4)); offset = 8; }
+        else if (type == 4 && packet.size() >= 22) {
+            Q_IPV6ADDR address; std::copy_n(reinterpret_cast<const quint8 *>(packet.constData() + 4), 16, address.c);
+            source = QHostAddress(address); offset = 20;
+        } else if (type == 3 && packet.size() >= 5) {
+            const int size = quint8(packet[4]); if (!size || packet.size() < 7 + size) continue;
+            sourceName = QString::fromLatin1(packet.mid(5, size)); offset = 5 + size;
+        } else continue;
+        if (packet.size() < offset + 22) continue;
+        const auto sourcePort = read16(packet, offset); const auto message = packet.mid(offset + 2);
+        const auto transaction = message.mid(8, 12); auto question = questions.find(transaction);
+        if (question == questions.end() || question->answered) continue;
+        const auto &endpoint = options.udpEndpoints[question->endpoint]; const QHostAddress expected(endpoint.host);
+        if (sourcePort != endpoint.port || (!expected.isNull() && source != expected)
+            || (!sourceName.isEmpty() && sourceName.compare(endpoint.host, Qt::CaseInsensitive) != 0)
+            || !StunProbe::validReply(message, transaction)) continue;
         question->answered = true; ++received;
+        rtts[question->endpoint].append(probeClock.elapsed() - question->sentAt);
         if (sent == 6 && received == 6) { udpFinish("replies"); return; }
     }
     if (running && udpState == "pending" && udp.hasPendingDatagrams()) QTimer::singleShot(0, this, &DiscordTransport::udpRead);
@@ -210,11 +238,28 @@ void DiscordTransport::maybeFinish() {
 void DiscordTransport::stop() { wsDeadline.stop(); udpDeadline.stop(); udpRound.stop(); ws.abort(); socks.abort(); udp.close(); }
 void DiscordTransport::cancel() { if (!running) return; wsFinish("cancelled"); udpFinish("cancelled"); }
 QJsonObject DiscordTransport::report() const {
+    QJsonArray endpoints;
+    for (int index = 0; index < 2; ++index) {
+        auto times = rtts[index]; std::sort(times.begin(), times.end());
+        QJsonObject result{{"id", index + 1}, {"received", times.size()}};
+        if (!times.isEmpty()) {
+            result["rtt_min_ms"] = times.first(); result["rtt_max_ms"] = times.last();
+            result["rtt_median_ms"] = times.size() % 2 ? times[times.size()/2] : (times[times.size()/2-1] + times[times.size()/2])/2;
+        }
+        endpoints.append(result);
+    }
     return {{"gateway_wss", wsState}, {"udp_control", udpState}, {"udp_sent", sent}, {"udp_received", received},
-        {"voice_verified", false}, {"udp_resolvers", 2}};
+        {"voice_verified", false}, {"udp_probe", "stun_binding"}, {"udp_endpoints", endpoints}};
 }
 QString DiscordTransport::details() const {
-    return tr("Discord Gateway WebSocket: %1.\nКонтроль UDP: %2; ответы %3/%4. Это не проверка голосовой сессии Discord.")
+    auto text = tr("Discord Gateway WebSocket: %1.\nКонтроль UDP через STUN: %2; ответы %3/%4. Используются порты 3478 и 19302; DNS не подменяет эту проверку. Это не проверка голосовой сессии Discord.")
         .arg(stateText(wsState), stateText(udpState)).arg(received).arg(sent);
+    for (const auto &value : report().value("udp_endpoints").toArray()) {
+        const auto endpoint = value.toObject();
+        if (endpoint.contains("rtt_median_ms")) text += tr("\nUDP-сервер %1: медиана RTT %2 мс, минимум %3, максимум %4.")
+            .arg(endpoint.value("id").toInt()).arg(endpoint.value("rtt_median_ms").toInt())
+            .arg(endpoint.value("rtt_min_ms").toInt()).arg(endpoint.value("rtt_max_ms").toInt());
+    }
+    return text;
 }
 } // namespace GreenRhythm

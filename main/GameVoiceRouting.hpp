@@ -92,6 +92,32 @@ inline QJsonArray defaults(const QJsonArray &scheme, const QJsonArray &factory,
     return result;
 }
 
+// Only unqualified process routes already ahead of the preset can skip full
+// UDP protocol discovery. DNS is still recognized for the mandatory DNS rule.
+// An earlier unfamiliar condition or scoped work-DNS policy disables guessing.
+inline QJsonArray tunSniffRules(const QJsonArray &first, bool optimize) {
+    QJsonArray names;
+    if (optimize) for (const auto &value : first) {
+        const auto rule = value.toObject();
+        if (rule.size() != 2 || !rule.contains("outbound")
+            || (!rule.contains("process_name") && !rule.contains("ip_cidr"))) break;
+        for (const auto &entry : values(rule.value("process_name"))) {
+            const auto name = entry.toString();
+            if ((contains(directProcesses(), name) || contains(voiceProcesses(), name)) && !names.contains(entry)) names.append(entry);
+        }
+    }
+    const QJsonObject inbound{{"inbound", QJsonArray{"tun-in"}}};
+    if (names.isEmpty()) return {QJsonObject{{"inbound", QJsonArray{"tun-in"}}, {"action", "sniff"}}};
+    return {
+        QJsonObject{{"inbound", QJsonArray{"tun-in"}}, {"network", "udp"}, {"process_name", names},
+                    {"action", "sniff"}, {"sniffer", QJsonArray{"dns"}}},
+        QJsonObject{{"type", "logical"}, {"mode", "and"}, {"action", "sniff"}, {"rules", QJsonArray{
+            inbound, QJsonObject{{"type", "logical"}, {"mode", "and"}, {"invert", true}, {"rules", QJsonArray{
+                QJsonObject{{"network", "udp"}}, QJsonObject{{"process_name", names}}
+            }}}}}}
+    };
+}
+
 // The games switch must not tunnel the launcher or communication software.
 // Explicit per-application VPN choices are assembled before these defaults.
 inline QJsonObject gameTunnelRule(QJsonObject rule, const QString &choice = {}) {

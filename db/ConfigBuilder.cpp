@@ -551,10 +551,12 @@ namespace NekoGui {
                 if (!extra.trimmed().isEmpty()) excludes += extra.trimmed();
             }
             inboundObj["route_exclude_address"] = excludes;
+#ifndef Q_OS_WIN
             if (dataStore->routing->sniffing_mode != SniffingMode::DISABLE) {
                 inboundObj["sniff"] = true;
                 inboundObj["sniff_override_destination"] = dataStore->routing->sniffing_mode == SniffingMode::FOR_DESTINATION;
             }
+#endif
             inboundObj["domain_strategy"] = dataStore->routing->domain_strategy;
             status->inbounds += inboundObj;
         }
@@ -965,6 +967,16 @@ namespace NekoGui {
             dataStore->routing->direct_ip, dataStore->routing->def_outbound,
             dataStore->routing_defaults_choice);
         auto routingRules = status->routingRulesDns;
+#ifdef Q_OS_WIN
+        if (UseInternalTun() && dataStore->spmode_vpn && !status->forTest
+            && dataStore->routing->sniffing_mode != SniffingMode::DISABLE) {
+            auto sniffRules = GreenRhythm::GameVoiceRouting::tunSniffRules(status->routingRulesFirst,
+                localHosts.isEmpty() && localDnsDomains.isEmpty()
+                && dataStore->routing_defaults_choice != "keep" && dataStore->routing_defaults_choice != "restored");
+            QJSONARRAY_ADD(sniffRules, routingRules)
+            routingRules = sniffRules;
+        }
+#endif
         QJSONARRAY_ADD(routingRules, status->routingRulesFirst)
         QJSONARRAY_ADD(routingRules, schemeRules.primary)
         if (status->forTest) routingRules = {};

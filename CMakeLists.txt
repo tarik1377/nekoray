@@ -532,6 +532,7 @@ add_executable(game_voice_routing_test EXCLUDE_FROM_ALL test/GameVoiceRoutingTes
 target_include_directories(game_voice_routing_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(game_voice_routing_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 target_compile_definitions(game_voice_routing_test PRIVATE GR_GAME_VOICE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/go/cmd/nekobox_core/testdata/game_voice_rules.json")
+target_compile_definitions(game_voice_routing_test PRIVATE GR_GAME_VOICE_SNIFF_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/go/cmd/nekobox_core/testdata/game_voice_sniff.json")
 
 add_executable(tun_report_test EXCLUDE_FROM_ALL
         test/TunReportTest.cpp

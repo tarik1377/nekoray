@@ -1,0 +1,10 @@
+[
+  {"inbound":["tun-in"],"network":"udp","process_name":["cs2.exe","csgo.exe","steam.exe","steamwebhelper.exe","steamservice.exe","SteamService.exe","Discord.exe","discord.exe","DiscordPTB.exe","DiscordCanary.exe"],"action":"sniff","sniffer":["dns"]},
+  {"type":"logical","mode":"and","action":"sniff","rules":[
+    {"inbound":["tun-in"]},
+    {"type":"logical","mode":"and","invert":true,"rules":[
+      {"network":"udp"},
+      {"process_name":["cs2.exe","csgo.exe","steam.exe","steamwebhelper.exe","steamservice.exe","SteamService.exe","Discord.exe","discord.exe","DiscordPTB.exe","DiscordCanary.exe"]}
+    ]}
+  ]}
+]

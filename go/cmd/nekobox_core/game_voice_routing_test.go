@@ -89,6 +89,15 @@ func TestGameVoiceUDPAndTCPRoutes(t *testing.T) {
 					rule["override_port"] = targets[tag]
 				}
 			}
+			sniffFixture, err := os.ReadFile(filepath.Join("testdata", "game_voice_sniff.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var sniffRules []map[string]interface{}
+			if err = json.Unmarshal(sniffFixture, &sniffRules); err != nil {
+				t.Fatal(err)
+			}
+			rules = append(sniffRules, rules...)
 			config := map[string]interface{}{
 				"log":       map[string]interface{}{"disabled": true},
 				"outbounds": []interface{}{map[string]interface{}{"type": "direct", "tag": "bypass"}, map[string]interface{}{"type": "direct", "tag": "proxy"}, map[string]interface{}{"type": "block", "tag": "block"}},
@@ -111,7 +120,7 @@ func TestGameVoiceUDPAndTCPRoutes(t *testing.T) {
 							want = "bypass"
 						}
 						blocked := process == "other.exe" && network == "udp" && strings.HasSuffix(host, ":443")
-						metadata := adapter.InboundContext{Network: network, Destination: M.ParseSocksaddr(host), ProcessInfo: &adapter.ConnectionOwner{ProcessPath: "C:/fixture/" + process}}
+						metadata := adapter.InboundContext{Inbound: "tun-in", Network: network, Destination: M.ParseSocksaddr(host), ProcessInfo: &adapter.ConnectionOwner{ProcessPath: "C:/fixture/" + process}}
 						if network == "tcp" {
 							client, server := net.Pipe()
 							defer client.Close()

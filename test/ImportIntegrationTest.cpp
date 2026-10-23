@@ -405,7 +405,7 @@ int main(int argc, char **argv) {
         const auto routeFor = [](const QJsonArray &rules, const QString &process) {
             for (const auto &value : rules) {
                 const auto rule = value.toObject();
-                if (rule.value("process_name").toArray().contains(process)) return rule.value("outbound").toString();
+                if (rule.contains("outbound") && rule.value("process_name").toArray().contains(process)) return rule.value("outbound").toString();
             }
             return QString();
         };
@@ -413,6 +413,15 @@ int main(int argc, char **argv) {
             NekoGui::dataStore->games_via_tunnel = games;
             const auto built = buildCurrent();
             const auto rules = runtimeRules(built);
+            bool legacyTunSniff = false;
+            for (const auto &value : built->coreConfig.value("inbounds").toArray()) {
+                const auto inbound = value.toObject();
+                if (inbound.value("tag") == "tun-in") legacyTunSniff |= inbound.value("sniff").toBool();
+            }
+            check(!legacyTunSniff && std::any_of(rules.begin(), rules.end(), [](const QJsonValue &value) {
+                const auto rule = value.toObject();
+                return rule.value("action") == "sniff" && rule.value("inbound").toArray().contains("tun-in");
+            }), "actual TUN config scopes sniffing without a legacy global action");
             // The serialization fixture has no packaged geo databases. A new
             // process policy must not introduce an error beyond that baseline.
             check(built->error == defaultConfig->error, "game/voice policy introduces no additional builder errors");

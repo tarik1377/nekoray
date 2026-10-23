@@ -141,14 +141,23 @@ func transformInbounds(config map[string]interface{}) {
 		return
 	}
 
-	needSniff := false
-	for _, ib := range inbounds {
+	var sniffRules []interface{}
+	for index, ib := range inbounds {
 		ibMap, ok := ib.(map[string]interface{})
 		if !ok {
 			continue
 		}
 		if sniff, ok := ibMap["sniff"].(bool); ok && sniff {
-			needSniff = true
+			tag, _ := ibMap["tag"].(string)
+			if tag == "" {
+				// box.New uses the inbound index for an omitted tag.
+				tag = fmt.Sprint(index)
+			}
+			rule := map[string]interface{}{"inbound": []interface{}{tag}, "action": "sniff"}
+			if timeout, exists := ibMap["sniff_timeout"]; exists && timeout != "" && timeout != nil {
+				rule["timeout"] = timeout
+			}
+			sniffRules = append(sniffRules, rule)
 		}
 		// All legacy InboundOptions fields — removed in 1.13
 		delete(ibMap, "sniff")
@@ -195,12 +204,13 @@ func transformInbounds(config map[string]interface{}) {
 		}
 	}
 
-	if needSniff {
+	if len(sniffRules) > 0 {
 		route := ensureMap(config, "route")
 		rules, _ := route["rules"].([]interface{})
-		// Prepend sniff action
-		newRules := make([]interface{}, 0, len(rules)+1)
-		newRules = append(newRules, map[string]interface{}{"action": "sniff"})
+		// A legacy option belongs to its inbound, not every connection in the
+		// core. Keep separate deadlines and leave explicit modern actions alone.
+		newRules := make([]interface{}, 0, len(rules)+len(sniffRules))
+		newRules = append(newRules, sniffRules...)
 		newRules = append(newRules, rules...)
 		route["rules"] = newRules
 	}

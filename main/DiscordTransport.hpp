@@ -8,17 +8,18 @@
 #include <QTimer>
 #include <QUrl>
 #include <QHash>
+#include <QElapsedTimer>
 
 namespace GreenRhythm {
 struct DiscordProbeOptions {
+    struct UdpEndpoint { QString host; quint16 port; };
     QNetworkProxy proxy;
     QUrl gateway = QUrl("wss://gateway.discord.gg/?v=10&encoding=json");
-    QList<QHostAddress> resolvers{QHostAddress("1.1.1.1"), QHostAddress("8.8.8.8")};
-    quint16 resolverPort = 53;
+    QList<UdpEndpoint> udpEndpoints{{"stun.cloudflare.com", 3478}, {"stun.l.google.com", 19302}};
     int timeoutMs = 5000, udpIntervalMs = 1200;
 };
 // No login, voice/session tokens, cookies or application data. Gateway Hello
-// checks WSS; nonce-matched DNS responses check a separate, generic UDP path.
+// checks WSS; nonce-matched STUN replies check non-DNS UDP through the proxy.
 class DiscordTransport final : public QObject {
     Q_OBJECT
 public:
@@ -51,7 +52,9 @@ private:
     int socksStage = 0, round = 0, sent = 0, received = 0;
     quint16 relayPort = 0;
     QHostAddress relay;
-    struct Question { QByteArray bytes; QHostAddress resolver; bool answered = false; };
-    QHash<quint16, Question> questions;
+    struct Question { int endpoint; qint64 sentAt; bool answered = false; };
+    QHash<QByteArray, Question> questions;
+    QElapsedTimer probeClock;
+    QList<qint64> rtts[2];
 };
 } // namespace GreenRhythm

@@ -39,6 +39,16 @@ int main(int argc, char **argv) {
     const auto fixtureRules = QJsonDocument::fromJson(fixture.readAll()).array();
     check(fixtureRules.size() >= 2 && Policy::defaults(legacy, factory, {}) == QJsonArray{fixtureRules.at(0), fixtureRules.at(1)},
           "C++ application policy is identical to the rules exercised by real core UDP/TCP tests");
+    QFile sniffFixture(QString::fromUtf8(GR_GAME_VOICE_SNIFF_FIXTURE));
+    check(sniffFixture.open(QIODevice::ReadOnly), "shared UDP sniff fixture opens");
+    const auto sniffRules = QJsonDocument::fromJson(sniffFixture.readAll()).array();
+    check(Policy::tunSniffRules(Policy::defaults(legacy, factory, {}), true) == sniffRules,
+          "actual core exercises the same DNS-only UDP and ordinary TCP sniff rules as the builder");
+    const auto fullSniff = QJsonArray{QJsonObject{{"inbound", QJsonArray{"tun-in"}}, {"action", "sniff"}}};
+    check(Policy::tunSniffRules(Policy::defaults(legacy, factory, {}), false) == fullSniff,
+          "scoped work-DNS and kept route policies retain full sniffing");
+    check(Policy::tunSniffRules(QJsonArray{QJsonObject{{"protocol", "quic"}, {"outbound", "block"}}, game}, true) == fullSniff,
+          "an earlier protocol rule prevents skipping discovery");
     for (const auto &scheme : {factory, legacy}) {
         const auto rules = Policy::defaults(scheme, factory, {});
         for (const auto &name : Policy::directProcesses())
@@ -54,6 +64,8 @@ int main(int argc, char **argv) {
     check(Policy::defaults(QJsonArray{}, factory, {}).isEmpty(), "custom schemes without factory rules are not guessed into a preset");
 
     const QJsonObject explicitCS{{"process_name", "CS2.EXE"}, {"outbound", "proxy"}, {"network", "udp"}};
+    check(Policy::tunSniffRules(QJsonArray{explicitCS}, true) == fullSniff,
+          "qualified process rules do not acquire an unqualified UDP fast path");
     const QJsonObject explicitVoice{{"process_path", "C:\\Apps\\Discord.exe"}, {"outbound", "block"}};
     auto custom = legacy; custom.append(explicitCS); custom.append(explicitVoice);
     auto rules = Policy::defaults(custom, factory, {});
