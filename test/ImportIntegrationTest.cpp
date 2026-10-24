@@ -401,7 +401,12 @@ int main(int argc, char **argv) {
         QJsonArray excluded;
         for (const auto &value : gatewayBuild->coreConfig.value("inbounds").toArray())
             if (value.toObject().value("type") == "tun") excluded = value.toObject().value("route_exclude_address").toArray();
-        check(gatewayBuild->error.isEmpty() && excluded.contains("10.20.0.0/16") && excluded.contains("mks-racceess.rtk-it.ru")
+        // This serialization fixture deliberately has no packaged geo databases.
+        // Compare against the existing baseline and check the generated routes
+        // independently, rather than mistaking that fixture limitation for a
+        // gateway build error.
+        check(gatewayBuild->error == defaultConfig->error, "gateway policy introduces no error beyond the known geo fixture baseline");
+        check(excluded.contains("10.20.0.0/16") && excluded.contains("mks-racceess.rtk-it.ru")
               && excluded.contains("212.164.137.29/32") && excluded.contains("192.168.0.0/16"),
               "real builder puts saved gateway names and IPs into OS exclusions while retaining existing LAN ranges");
         check(GreenRhythm::RouteState::completeSnapshot(*NekoGui::dataStore->routing) == beforeScheme
