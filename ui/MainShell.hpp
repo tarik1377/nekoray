@@ -258,6 +258,7 @@ namespace GreenRhythm {
 
         /** Инструменты, переехавшие из верхнего ряда. */
         void routesRequested();
+        void gameProgramsRequested();
         void routeDefaultsRequested();
         void restoreRoutesRequested();
         void geoDataRefreshRequested();

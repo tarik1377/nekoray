@@ -55,8 +55,8 @@ int main(int argc, char **argv) {
             check(selected(rules, name) == "bypass", "factory and existing presets send CS2 and Steam directly");
         for (const auto &name : Policy::voiceProcesses())
             check(selected(rules, name) == "proxy", "stable/PTB/Canary Discord use the VPN by default");
-        check(selected(rules, "Telegram.exe").isEmpty() && selected(rules, "Squad.exe").isEmpty(),
-              "unrelated apps and game rules keep their existing policy");
+        check(selected(rules, "Telegram.exe").isEmpty() && selected(rules, "not-a-game.exe").isEmpty(),
+              "unrelated applications keep their existing policy");
     }
     check(QJsonDocument(legacy).toJson() == original, "assembling defaults never rewrites stored route JSON");
     for (const auto &choice : {QStringLiteral("keep"), QStringLiteral("restored")})
@@ -83,8 +83,21 @@ int main(int argc, char **argv) {
     check(Policy::defaults(duplicate, factory, {}).isEmpty(), "duplicate factory-looking rules are not mistaken for inherited defaults");
     const auto flipped = Policy::gameTunnelRule(game);
     check(selected(QJsonArray{flipped}, "Squad.exe") == "proxy", "games switch still tunnels other factory games");
-    for (const auto &name : Policy::directProcesses())
+    for (const auto &name : GreenRhythm::GameCatalog::alwaysDirect())
         check(selected(QJsonArray{flipped}, name).isEmpty(), "games switch cannot put CS2 or Steam back in the VPN");
+    const auto viaVPN = Policy::defaults(legacy, factory, {}, {}, true);
+    for (const auto &name : Policy::directProcesses()) {
+        const auto expected = Policy::contains(GreenRhythm::GameCatalog::alwaysDirect(), name) ? "bypass" : "proxy";
+        check(selected(viaVPN, name) == expected, "legacy games switch preserves its meaning for other games");
+    }
+    check(selected(Policy::defaults(legacy, factory, {}), "dota2.exe") == "bypass",
+          "Dota is direct by default on existing factory schemes without rewriting them");
+    const QJsonObject own{{"process_name", QJsonArray{"my-owned-game.exe"}}, {"outbound", "bypass"}};
+    const auto customSniff = Policy::tunSniffRules({own}, true, {"my-owned-game.exe"}, false);
+    check(customSniff.size() == 2 && customSniff.first().toObject().value("sniffer").toArray() == QJsonArray{"dns"},
+          "a game explicitly added by the user gets DNS-only UDP even with kept default routes");
+    check(Policy::tunSniffRules({own}, false, {"my-owned-game.exe"}) == fullSniff,
+          "scoped corporate DNS still disables UDP discovery shortcuts for custom games");
     check(Policy::gameTunnelRule(QJsonObject{{"process_name", "steam.exe"}, {"outbound", "bypass"}}).isEmpty(),
           "an all-launcher rule is not inverted into an empty catch-all");
     check(Policy::gameTunnelRule(QJsonObject{{"process_name", "Discord.exe"}, {"outbound", "bypass"}}).isEmpty(),

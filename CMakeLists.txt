@@ -300,6 +300,8 @@ set(PROJECT_SOURCES
         main/AppFont.cpp
         ui/dialog_interference.cpp
         ui/dialog_greenrhythm.cpp
+        ui/GameProgramsDialog.cpp
+        ui/GameProgramsDialog.hpp
         ui/dialog_manage_routes.cpp
         ui/dialog_manage_routes.h
         ui/dialog_manage_routes.ui
@@ -533,6 +535,10 @@ target_include_directories(game_voice_routing_test PRIVATE ${CMAKE_CURRENT_SOURC
 target_link_libraries(game_voice_routing_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 target_compile_definitions(game_voice_routing_test PRIVATE GR_GAME_VOICE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/go/cmd/nekobox_core/testdata/game_voice_rules.json")
 target_compile_definitions(game_voice_routing_test PRIVATE GR_GAME_VOICE_SNIFF_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/go/cmd/nekobox_core/testdata/game_voice_sniff.json")
+
+add_executable(game_programs_test EXCLUDE_FROM_ALL test/GameProgramsTest.cpp ui/GameProgramsDialog.cpp)
+target_include_directories(game_programs_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(game_programs_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
 add_executable(tun_report_test EXCLUDE_FROM_ALL
         test/TunReportTest.cpp
@@ -1007,6 +1013,7 @@ set(GR_TEST_TARGETS
         geodata_status_test
         ru_routing_policy_test
         game_voice_routing_test
+        game_programs_test
         program_trouble_test
         program_watch_lifetime_test
         port_health_test

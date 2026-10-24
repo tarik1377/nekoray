@@ -6,6 +6,7 @@
 #include "main/RouteDefaultsPolicy.hpp"
 #include "ui/GeoDataStatus.hpp"
 #include "ui/RollbackAction.hpp"
+#include "ui/GameProgramsAction.hpp"
 
 #include <QDateTime>
 #include <QDir>
@@ -504,6 +505,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         shell->setAppVersion(appVersion);
         connect(shell, &GreenRhythm::MainShell::routesRequested, this,
                 [this] { on_menu_routing_settings_triggered(); });
+        connect(shell, &GreenRhythm::MainShell::gameProgramsRequested, this,
+                [this] { GreenRhythm::openGamePrograms(this); });
         connect(shell, &GreenRhythm::MainShell::routeDefaultsRequested, this, [this] { open_route_review(false); });
         connect(shell, &GreenRhythm::MainShell::restoreRoutesRequested, this, [this] { open_route_review(true); });
         connect(shell, &GreenRhythm::MainShell::maintenanceShown, this, [this] { refresh_maintenance(true); });

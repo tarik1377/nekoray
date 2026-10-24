@@ -557,7 +557,11 @@ namespace GreenRhythm {
         gamesToggle = toggle(page, tr("Включить")); gamesToggle->setAccessibleName(tr("Игры через VPN"));
         connect(gamesToggle, &QPushButton::clicked, this, &MainShell::gamesViaTunnelToggled);
 #ifdef Q_OS_WIN
-        addRow(tr("Игры через VPN"), tr("Для игр из стандартного списка. Во встроенном туннеле CS2 и Steam по умолчанию идут напрямую; отдельные правила программ имеют приоритет."), "gr-routes", gamesToggle);
+        auto *programs = new QPushButton(tr("Настроить"), page); programs->setObjectName("grGamePrograms");
+        programs->setAccessibleName(tr("Игры и программы"));
+        connect(programs, &QPushButton::clicked, this, &MainShell::gameProgramsRequested);
+        addRow(tr("Игры и программы"), tr("Dota 2, CS2 и другие игры — напрямую, Discord — через VPN. Можно добавить свою игру из запущенных или выбрать файл."), "gr-routes", programs);
+        addRow(tr("Игры через VPN"), tr("Для остальных игр стандартного списка. CS2, Dota 2 и Steam по умолчанию идут напрямую; выбор в «Игры и программы» имеет приоритет."), "gr-routes", gamesToggle);
 #else
         addRow(tr("Игры через VPN"), tr("Обычно игры подключаются напрямую. Включите, если игровые серверы недоступны."), "gr-routes", gamesToggle);
 #endif
