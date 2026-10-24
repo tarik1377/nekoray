@@ -3,6 +3,7 @@ package tun
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -14,7 +15,11 @@ import (
 )
 
 func fixWindowsFirewall() error {
-	absPath, err := filepath.Abs(os.Args[0])
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	absPath, err := firewallExecutablePath(executable)
 	if err != nil {
 		return err
 	}
@@ -39,6 +44,28 @@ func fixWindowsFirewall() error {
 		}
 	}
 	return err
+}
+
+// Windows Firewall validates the full image path. Go and portable launchers
+// can supply an 8.3 path (e.g. RUNNER~1); expand it before building the rule.
+func firewallExecutablePath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	p, err := windows.UTF16PtrFromString(abs)
+	if err != nil {
+		return "", err
+	}
+	buffer := make([]uint16, 32768)
+	n, err := windows.GetLongPathName(p, &buffer[0], uint32(len(buffer)))
+	if err != nil {
+		return "", err
+	}
+	if n == 0 || int(n) >= len(buffer) {
+		return "", fmt.Errorf("invalid expanded firewall executable path length: %d", n)
+	}
+	return windows.UTF16ToString(buffer[:n]), nil
 }
 
 func retryableListenError(err error) bool {
