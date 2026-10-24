@@ -419,7 +419,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         });
         connect(shell, &GreenRhythm::MainShell::gamesViaTunnelToggled, this, [this](bool on) {
             NekoGui::dataStore->games_via_tunnel = on;
-            show_log_impl(on ? tr("Игры пойдут через туннель. Пинг будет выше, адрес — зарубежный; "
+            show_log_impl(on ? tr("Остальные игры пойдут через туннель. Пинг будет выше, адрес — зарубежный; "
                                   "если игра фильтруется у провайдера, иначе она не работает.")
                              : tr("Игры снова идут мимо туннеля: адрес российский, пинг ниже."));
             // RouteChanged: сохранить и, если подключены, предложить перезапуск —

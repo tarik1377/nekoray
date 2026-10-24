@@ -1,3 +1,10 @@
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 #include "main/GameAppRules.hpp"
 #include "main/GameVoiceRouting.hpp"
 #include "ui/GameProgramsDialog.hpp"
@@ -54,6 +61,17 @@ int main(int argc, char **argv) {
     check(after == settings && read(routesPath) == routeBytes, "unknown settings, old process lists and route files are unchanged");
     const auto savedBytes = read(settingsPath);
     check(!Rules::saveSetting(settingsPath, {}, empty, &error) && read(settingsPath) == savedBytes, "stale dialog cannot overwrite a newer choice");
+#ifdef _WIN32
+    const auto native = settingsPath.toStdWString();
+    HANDLE held = CreateFileW(native.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    check(held != INVALID_HANDLE_VALUE, "Windows fixture holds the settings file against replacement");
+    if (held != INVALID_HANDLE_VALUE) {
+        check(!Rules::saveSetting(settingsPath, changed, empty, &error) && read(settingsPath) == savedBytes,
+              "failed real atomic replacement preserves the previous preference and settings");
+        CloseHandle(held);
+        check(Rules::saveSetting(settingsPath, changed, empty, &error), "saving retries successfully after releasing the file lock");
+    }
+#endif
     check(!Rules::saveSetting(files.path(), {}, changed, &error), "write/read failure is reported instead of claiming success");
     write(settingsPath, "not JSON");
     check(!Rules::saveSetting(settingsPath, {}, changed, &error) && read(settingsPath) == "not JSON", "damaged unrelated settings are not replaced");
