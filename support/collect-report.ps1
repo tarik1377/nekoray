@@ -83,7 +83,7 @@ $foreign = Get-NetAdapter | Where-Object {
 }
 if ($foreign) {
     foreach ($f in $foreign) { Add " ЕСТЬ: $($f.Name) - $($f.InterfaceDescription) [$($f.Status)]" }
-    Add " Эти адаптеры конфликтуют с нашим туннелем - их нужно отключить или удалить."
+    Add " Наличие других VPN не доказывает конфликт. Не отключайте рабочие VPN по одному этому списку."
 } else { Add " не найдено" }
 
 Sec "IP и шлюзы"
@@ -131,6 +131,12 @@ try {
 Sec "Процессы VPN"
 Get-Process | Where-Object { $_.ProcessName -match 'greenrhythm|sing-box|xray|winws|warp' } |
     Select-Object Id, ProcessName | Format-Table -AutoSize | Out-String | ForEach-Object { Add $_ }
+
+Sec "Состояния TCP и события исчерпания портов"
+try {
+    Import-Module (Join-Path $PSScriptRoot 'NetworkPressure.psm1') -Force -ErrorAction Stop
+    Get-GreenRhythmNetworkPressure | ConvertTo-Json -Depth 7 | ForEach-Object { Add $_ }
+} catch { Add ("Счётчики недоступны: " + $_.Exception.Message) }
 
 $lines | Out-File -FilePath $out -Encoding UTF8
 Write-Host ""
