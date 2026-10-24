@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	ole "github.com/go-ole/go-ole"
 	"github.com/sagernet/sing-tun/internal/winfw"
 
 	"golang.org/x/sys/windows"
@@ -29,6 +30,13 @@ func fixWindowsFirewall() error {
 	_, err = winfw.FirewallRuleAddAdvanced(rule)
 	if err != nil {
 		log.Printf("System TUN: Windows Firewall setup failed: %v", err)
+		var detail *ole.OleError
+		if errors.As(err, &detail) {
+			log.Printf("System TUN: firewall HRESULT=%#x program=%q", detail.Code(), absPath)
+			if info, ok := detail.SubError().(ole.EXCEPINFO); ok {
+				log.Printf("System TUN: firewall exception SCODE=%#x", info.SCODE())
+			}
+		}
 	}
 	return err
 }

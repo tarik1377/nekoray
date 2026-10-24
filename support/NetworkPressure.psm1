@@ -48,11 +48,16 @@ function Get-GreenRhythmNetworkPressure {
     $dumpMode = $null
     try { $dumpMode = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CrashControl' -Name CrashDumpEnabled -ErrorAction Stop).CrashDumpEnabled }
     catch { $failures.Add('Crash dump setting unavailable: ' + $_.Exception.Message) }
+    $processes = @(Get-Process greenrhythm,greenrhythm_core -ErrorAction SilentlyContinue | ForEach-Object {
+        [pscustomobject]@{ Pid = $_.Id; Name = $_.ProcessName; Handles = $_.HandleCount;
+            Threads = $_.Threads.Count; PrivateBytes = $_.PrivateMemorySize64; WorkingSetBytes = $_.WorkingSet64 }
+    })
     [pscustomobject]@{
         CapturedUtc = (Get-Date).ToUniversalTime().ToString('o')
         Tcp = $tcp
         RecentTcpipEvents = $events
         CrashDumpEnabled = $dumpMode
+        Processes = $processes
         Errors = @($failures)
         Scope = 'Read-only snapshot; a past connection burst or kernel lock owner cannot be recovered from this snapshot.'
     }

@@ -71,8 +71,12 @@ TUN, доступные события Tcpip 4227/4231/4266 за семь дне
 ## Граница вывода о DPC watchdog
 
 Дамп 24.10.2026 подтверждает `0x133`, single DPC timeout и ожидание spinlock
-в `tcpip → nt!KeAcquireSpinLockAtDpcLevel → nt!KxWaitForSpinLockAndAcquire`.
-Подходящие символы ядра загружены; символы tcpip в первичном разборе отсутствовали.
+в `tcpip!TcpProcessExpiredTcbTimers+0x102 → nt!KeAcquireSpinLockAtDpcLevel →
+nt!KxWaitForSpinLockAndAcquire`. Вызывающий обработчик:
+`tcpip!TcpPeriodicTimeoutHandler+0xfc`. Это обработка истёкших таймеров TCP.
+Подходящие публичные символы nt и tcpip загружены и проверены по образам
+10.0.26100.8246. Дамп на серверы не передавался; CI использован только для
+получения публичного PDB Microsoft, временное задание затем удалено.
 Малый дамп не содержит читаемого контекста остальных процессоров и владельца
 блокировки. Наличие Wintun/OpenVPN/фильтров виртуализации не устанавливает виновника.
 

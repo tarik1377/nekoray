@@ -26,6 +26,9 @@ func TestWindowsRealTunDNSLoopGuard(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
 		t.Fatal("real adapter tests require a disposable CI runner")
 	}
+	if exe, err := os.Executable(); err == nil {
+		t.Logf("test program: %s; argv0: %s", exe, os.Args[0])
+	}
 	packet, err := net.ListenPacket("udp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +81,7 @@ func TestWindowsRealTunDNSLoopGuard(t *testing.T) {
 	for _, network := range []string{"udp", "tcp"} {
 		a, _, err := (&dns.Client{Net: network, Timeout: 3 * time.Second}).Exchange(q, "198.18.253.2:53")
 		if err != nil || len(a.Answer) != 1 || a.Answer[0].(*dns.A).A.String() != "198.51.100.7" {
-			t.Fatalf("real %s TUN DNS failed: %v %v", network, a, err)
+			t.Errorf("real %s TUN DNS failed: %v %v", network, a, err)
 		}
 	}
 	// Above the default 50-reject flood threshold, with a real Windows SYN/RST
