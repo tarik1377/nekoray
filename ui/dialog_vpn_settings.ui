@@ -163,10 +163,10 @@ This needs GreenRhythm to be run with administrator privileges.</string>
      <item>
       <widget class="QGroupBox" name="gb_route_exclude">
        <property name="title">
-        <string>Маршруты ОС мимо туннеля</string>
+         <string>Маршруты ОС мимо туннеля: IP и сети</string>
        </property>
        <property name="toolTip">
-        <string>Сети, которые останутся доступны в обход туннеля: домашний VPN, рабочая сеть, NAS. Это таблица маршрутов системы, а не правило внутри туннеля.</string>
+         <string>Прежние исключения IP и CIDR с новой строки. Для доменов шлюзов используется отдельная кнопка «Рабочие VPN и виртуальные машины»: она дополняет этот список.</string>
        </property>
        <layout class="QVBoxLayout" name="verticalLayout_5">
         <item>

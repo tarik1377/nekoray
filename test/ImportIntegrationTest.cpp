@@ -127,6 +127,18 @@ int main(int argc, char **argv) {
     for (const auto &dir : {"groups", "profiles", "temp", "routes_box"}) QDir().mkdir(dir);
     MW_show_log = [](QString) {};
     MW_dialog_message = [](QString, QString) {};
+    {
+        JsonStore legacy;
+        QString oldCIDRs;
+        legacy._add(new configItem("vpn_route_exclude_extra", &oldCIDRs, itemType::string));
+        const QJsonObject newerSettings{{"vpn_route_exclude_extra", "10.20.0.0/16\n"}, {"vpn_gateway_exclusions", "gateway.example.org"}};
+        legacy.FromJson(newerSettings);
+        check(oldCIDRs == "10.20.0.0/16\n", "a CIDR-only settings reader never receives new gateway DNS syntax");
+        const auto retained = legacy.ToJson();
+        check(retained.value("vpn_gateway_exclusions") == newerSettings.value("vpn_gateway_exclusions")
+              && retained.value("vpn_route_exclude_extra") == newerSettings.value("vpn_route_exclude_extra"),
+              "older settings serialization preserves the separate unknown gateway preference");
+    }
     NekoGui::dataStore->current_group = 0;
     NekoGui::dataStore->routing = std::make_unique<NekoGui::Routing>();
     NekoGui::profileManager->LoadManager();
@@ -390,6 +402,40 @@ int main(int argc, char **argv) {
     check(ruleIndex(externalRules, explicitProcesses) < 0 && ruIndex(externalRules) >= 0
           && ruleIndex(externalRules, standardProcessProxy) > ruIndex(externalRules),
           "external TUN mode excludes internal-only process settings without losing RU and application fallback rules");
+#ifdef Q_OS_WIN
+    {
+        const auto previousExclusions = NekoGui::dataStore->vpn_route_exclude_extra;
+        const auto previousGateways = NekoGui::dataStore->vpn_gateway_exclusions;
+        const auto previousInternal = NekoGui::dataStore->vpn_internal_tun;
+        const auto beforeScheme = GreenRhythm::RouteState::completeSnapshot(*NekoGui::dataStore->routing);
+        NekoGui::dataStore->vpn_internal_tun = true;
+        NekoGui::dataStore->vpn_route_exclude_extra = "10.20.0.0/16";
+        NekoGui::dataStore->vpn_gateway_exclusions = "mks-racceess.rtk-it.ru\n212.164.137.29";
+        check(NekoGui::dataStore->ToJson().value("vpn_gateway_exclusions").toString() == NekoGui::dataStore->vpn_gateway_exclusions,
+              "normal settings save registers and retains the gateway preference independently of old CIDRs");
+        const auto gatewayBuild = buildCurrent();
+        QJsonArray excluded;
+        for (const auto &value : gatewayBuild->coreConfig.value("inbounds").toArray())
+            if (value.toObject().value("type") == "tun") excluded = value.toObject().value("route_exclude_address").toArray();
+        // This serialization fixture deliberately has no packaged geo databases.
+        // Compare against the existing baseline and check the generated routes
+        // independently, rather than mistaking that fixture limitation for a
+        // gateway build error.
+        check(gatewayBuild->error == defaultConfig->error, "gateway policy introduces no error beyond the known geo fixture baseline");
+        check(excluded.contains("10.20.0.0/16") && excluded.contains("mks-racceess.rtk-it.ru")
+              && excluded.contains("212.164.137.29/32") && excluded.contains("192.168.0.0/16"),
+              "real builder puts saved gateway names and IPs into OS exclusions while retaining existing LAN ranges");
+        check(GreenRhythm::RouteState::completeSnapshot(*NekoGui::dataStore->routing) == beforeScheme
+              && NekoGui::dataStore->vpn_gateway_exclusions.endsWith("212.164.137.29")
+              && NekoGui::dataStore->vpn_route_exclude_extra == "10.20.0.0/16",
+              "building a gateway exclusion never rewrites the saved scheme or preference");
+        NekoGui::dataStore->vpn_gateway_exclusions = "*.invalid";
+        check(!buildCurrent()->error.isEmpty(), "invalid gateway entry is rejected before starting any core");
+        NekoGui::dataStore->vpn_route_exclude_extra = previousExclusions;
+        NekoGui::dataStore->vpn_gateway_exclusions = previousGateways;
+        NekoGui::dataStore->vpn_internal_tun = previousInternal;
+    }
+#endif
 #ifdef Q_OS_WIN
     {
         const auto beforeRoute = GreenRhythm::RouteState::completeSnapshot(*NekoGui::dataStore->routing);

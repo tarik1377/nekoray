@@ -228,7 +228,7 @@ jobs:
           cd go/cmd/nekobox_core
           MODFILE=$(bash _overlay/prepare.sh)
           CORE_TAGS="with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api"
-          go test -modfile "$MODFILE" -tags "$CORE_TAGS" -timeout 5m -v -run 'TestTunDNSGuard|TestWindowsRealTunDNSLoopGuard|TestProcessNamePlatformCaseMatching|TestGameVoiceUDPAndTCPRoutes' . 2>&1 | tee tun-regression.log
+          go test -modfile "$MODFILE" -tags "$CORE_TAGS" -timeout 5m -v -run 'TestTunDNSGuard|TestWindowsRealTunDNSLoopGuard|TestProcessNamePlatformCaseMatching|TestGameVoiceUDPAndTCPRoutes|TestTunExclusions|TestWindowsRealTunGatewayExclusion' . 2>&1 | tee tun-regression.log
           go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/route -run 'TestAutoDetect|TestPrivateDestinationInterface'
           go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-tun -run 'TestFirewallExecutablePath|TestSystemResetPacket'
       - name: Stop test capture

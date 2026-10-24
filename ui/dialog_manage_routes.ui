@@ -81,6 +81,7 @@
                </property>
               </widget>
              </item>
+             <item><widget class="QPushButton" name="tunBypass"><property name="text"><string>Рабочие VPN и виртуальные машины…</string></property></widget></item>
              <item>
               <widget class="QLabel" name="label_5">
                <property name="text">

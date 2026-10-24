@@ -4,6 +4,7 @@
 #include "fmt/Preset.hpp"
 #include "main/TunHelper.hpp"
 #include "main/LocalDns.hpp"
+#include "main/TunBypass.hpp"
 #include "main/RuRoutingPolicy.hpp"
 #include "main/GameVoiceRouting.hpp"
 #include "main/GameAppRules.hpp"
@@ -548,9 +549,18 @@ namespace NekoGui {
             // Дописанное человеком идёт СВЕРХ встроенного, а не вместо: список
             // выше защищает домашнюю сеть, и позволить его случайно затереть
             // одной строчкой в настройках значило бы отдать эту защиту опечатке.
-            for (const auto &extra: SplitLinesSkipSharp(dataStore->vpn_route_exclude_extra)) {
-                if (!extra.trimmed().isEmpty()) excludes += extra.trimmed();
+            QStringList gatewayExclusions;
+            QString gatewayError;
+            if (!GreenRhythm::TunBypass::parse(dataStore->vpn_route_exclude_extra, &gatewayExclusions, &gatewayError)) {
+                status->result->error = gatewayError;
+                return;
             }
+            for (const auto &extra : gatewayExclusions) excludes += extra;
+            if (!GreenRhythm::TunBypass::parse(dataStore->vpn_gateway_exclusions, &gatewayExclusions, &gatewayError)) {
+                status->result->error = gatewayError;
+                return;
+            }
+            for (const auto &extra : gatewayExclusions) excludes += extra;
             inboundObj["route_exclude_address"] = excludes;
 #ifndef Q_OS_WIN
             if (dataStore->routing->sniffing_mode != SniffingMode::DISABLE) {
@@ -1157,11 +1167,18 @@ namespace NekoGui {
         // списка в шаблоне — затирать защиту домашней сети одной строчкой в
         // настройках нельзя. Запятая ведущая: список в шаблоне уже непустой.
         QString route_exclude_extra;
-        for (const auto &extra: SplitLinesSkipSharp(dataStore->vpn_route_exclude_extra)) {
-            const auto one = extra.trimmed();
-            if (one.isEmpty()) continue;
-            route_exclude_extra += ",\"" + one + "\"";
+        QStringList gatewayExclusions;
+        QString gatewayError;
+        if (!GreenRhythm::TunBypass::parse(dataStore->vpn_route_exclude_extra, &gatewayExclusions, &gatewayError)) {
+            qWarning().noquote() << gatewayError;
+            return {};
         }
+        for (const auto &extra : gatewayExclusions) route_exclude_extra += ",\"" + extra + "\"";
+        if (!GreenRhythm::TunBypass::parse(dataStore->vpn_gateway_exclusions, &gatewayExclusions, &gatewayError)) {
+            qWarning().noquote() << gatewayError;
+            return {};
+        }
+        for (const auto &extra : gatewayExclusions) route_exclude_extra += ",\"" + extra + "\"";
 
         // TODO bypass ext core process path?
 

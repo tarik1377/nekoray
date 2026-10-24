@@ -11,6 +11,7 @@
 #include "ui/RouteDefaultsReview.hpp"
 #include "ui/GameProgramsAction.hpp"
 #include "fmt/Preset.hpp"
+#include "ui/TunBypassAction.hpp"
 
 #include <QFile>
 #include <QMessageBox>
@@ -101,6 +102,11 @@ DialogManageRoutes::DialogManageRoutes(QWidget *parent) : QDialog(parent), ui(ne
     connect(ui->defaultsKeep, &QPushButton::clicked, this, &DialogManageRoutes::keepOwnRoutes);
     connect(ui->defaultsRestore, &QLabel::linkActivated, this, [this] { restorePreviousRoutes(); });
     refreshDefaultsReview();
+#ifdef Q_OS_WIN
+    connect(ui->tunBypass, &QPushButton::clicked, this, [this] { GreenRhythm::openTunBypass(this); });
+#else
+    ui->tunBypass->hide();
+#endif
 
 #ifdef Q_OS_WIN
     connect(ui->gamePrograms, &QPushButton::clicked, this, [this] { GreenRhythm::openGamePrograms(this); });

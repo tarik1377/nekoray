@@ -65,7 +65,7 @@ void MainWindow::run_diagnostics() {
         const auto routes = QJsonDocument(NekoGui::dataStore->routing->ToJson()).toJson(QJsonDocument::Compact)
             + NekoGui::dataStore->custom_route_global.toUtf8() + NekoGui::dataStore->vpn_rule_process.toUtf8()
             + NekoGui::dataStore->game_app_rules.toUtf8();
-        context.routeFingerprint = QString::fromLatin1(QCryptographicHash::hash(routes, QCryptographicHash::Sha256).toHex().left(20));
+        context.routeFingerprint = QString::fromLatin1(QCryptographicHash::hash(routes + NekoGui::dataStore->vpn_route_exclude_extra.toUtf8() + NekoGui::dataStore->vpn_gateway_exclusions.toUtf8(), QCryptographicHash::Sha256).toHex().left(20));
         snapshot->profile = NekoGui::dataStore->started_id;
 #ifndef NKR_NO_GRPC
         snapshot->core = core_process ? core_process->generation() : 0;
@@ -73,7 +73,7 @@ void MainWindow::run_diagnostics() {
         snapshot->connection = connection_lifecycle.token();
         snapshot->tun = context.tunEnabled;
         snapshot->candidate = context.currentCandidate;
-        snapshot->settings = QCryptographicHash::hash(routes + (group ? group->url.toUtf8() : QByteArray()), QCryptographicHash::Sha256);
+        snapshot->settings = QCryptographicHash::hash(routes + NekoGui::dataStore->vpn_route_exclude_extra.toUtf8() + NekoGui::dataStore->vpn_gateway_exclusions.toUtf8() + (group ? group->url.toUtf8() : QByteArray()), QCryptographicHash::Sha256);
         return context;
     };
     dialog->contextStillCurrent = [this, snapshot] {
@@ -81,7 +81,7 @@ void MainWindow::run_diagnostics() {
         const auto settings = QJsonDocument(NekoGui::dataStore->routing->ToJson()).toJson(QJsonDocument::Compact)
             + NekoGui::dataStore->custom_route_global.toUtf8() + NekoGui::dataStore->vpn_rule_process.toUtf8()
             + NekoGui::dataStore->game_app_rules.toUtf8()
-            + (group ? group->url.toUtf8() : QByteArray());
+            + NekoGui::dataStore->vpn_route_exclude_extra.toUtf8() + NekoGui::dataStore->vpn_gateway_exclusions.toUtf8() + (group ? group->url.toUtf8() : QByteArray());
         return snapshot->profile == NekoGui::dataStore->started_id
 #ifndef NKR_NO_GRPC
             && snapshot->core == (core_process ? core_process->generation() : 0)

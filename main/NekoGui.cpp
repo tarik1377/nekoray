@@ -287,6 +287,7 @@ namespace NekoGui {
         _add(new configItem("vpn_strict_route", &vpn_strict_route, itemType::boolean));
         _add(new configItem("macos_mode_explained", &macos_mode_explained, itemType::boolean));
         _add(new configItem("vpn_route_exclude_extra", &vpn_route_exclude_extra, itemType::string));
+        _add(new configItem("vpn_gateway_exclusions", &vpn_gateway_exclusions, itemType::string));
         _add(new configItem("vpn_bypass_process", &vpn_rule_process, itemType::string));
         _add(new configItem("vpn_bypass_cidr", &vpn_rule_cidr, itemType::string));
         _add(new configItem("vpn_proxy_process", &vpn_rule_process_proxy, itemType::string));

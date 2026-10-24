@@ -6,6 +6,7 @@
 #include "main/RouteDefaultsPolicy.hpp"
 #include "ui/GeoDataStatus.hpp"
 #include "ui/RollbackAction.hpp"
+#include "ui/TunBypassAction.hpp"
 #include "ui/GameProgramsAction.hpp"
 
 #include <QDateTime>
@@ -503,6 +504,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         QString appVersion = QString(NKR_VERSION);
         if (appVersion.startsWith('v')) appVersion.remove(0, 1);
         shell->setAppVersion(appVersion);
+#ifdef Q_OS_WIN
+        connect(shell, &GreenRhythm::MainShell::tunBypassRequested, this,
+                [this] { GreenRhythm::openTunBypass(this); });
+#endif
         connect(shell, &GreenRhythm::MainShell::routesRequested, this,
                 [this] { on_menu_routing_settings_triggered(); });
         connect(shell, &GreenRhythm::MainShell::gameProgramsRequested, this,
