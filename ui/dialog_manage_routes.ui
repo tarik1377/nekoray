@@ -14,6 +14,7 @@
    <string>Routes</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
+   <item><widget class="QPushButton" name="gamePrograms"><property name="text"><string>Игры и программы…</string></property><property name="accessibleName"><string>Настроить игры и программы</string></property></widget></item>
    <item>
     <widget class="QGroupBox" name="defaultsReviewBox">
      <property name="title"><string>Стандартные маршруты</string></property>

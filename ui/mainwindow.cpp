@@ -7,6 +7,7 @@
 #include "ui/GeoDataStatus.hpp"
 #include "ui/RollbackAction.hpp"
 #include "ui/TunBypassAction.hpp"
+#include "ui/GameProgramsAction.hpp"
 
 #include <QDateTime>
 #include <QDir>
@@ -419,7 +420,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         });
         connect(shell, &GreenRhythm::MainShell::gamesViaTunnelToggled, this, [this](bool on) {
             NekoGui::dataStore->games_via_tunnel = on;
-            show_log_impl(on ? tr("Игры пойдут через туннель. Пинг будет выше, адрес — зарубежный; "
+            show_log_impl(on ? tr("Остальные игры пойдут через туннель. Пинг будет выше, адрес — зарубежный; "
                                   "если игра фильтруется у провайдера, иначе она не работает.")
                              : tr("Игры снова идут мимо туннеля: адрес российский, пинг ниже."));
             // RouteChanged: сохранить и, если подключены, предложить перезапуск —
@@ -509,6 +510,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 #endif
         connect(shell, &GreenRhythm::MainShell::routesRequested, this,
                 [this] { on_menu_routing_settings_triggered(); });
+        connect(shell, &GreenRhythm::MainShell::gameProgramsRequested, this,
+                [this] { GreenRhythm::openGamePrograms(this); });
         connect(shell, &GreenRhythm::MainShell::routeDefaultsRequested, this, [this] { open_route_review(false); });
         connect(shell, &GreenRhythm::MainShell::restoreRoutesRequested, this, [this] { open_route_review(true); });
         connect(shell, &GreenRhythm::MainShell::maintenanceShown, this, [this] { refresh_maintenance(true); });

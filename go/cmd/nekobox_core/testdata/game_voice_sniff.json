@@ -1,10 +1,98 @@
 [
-  {"inbound":["tun-in"],"network":"udp","process_name":["cs2.exe","csgo.exe","steam.exe","steamwebhelper.exe","steamservice.exe","SteamService.exe","Discord.exe","discord.exe","DiscordPTB.exe","DiscordCanary.exe"],"action":"sniff","sniffer":["dns"]},
-  {"type":"logical","mode":"and","action":"sniff","rules":[
-    {"inbound":["tun-in"]},
-    {"type":"logical","mode":"and","invert":true,"rules":[
-      {"network":"udp"},
-      {"process_name":["cs2.exe","csgo.exe","steam.exe","steamwebhelper.exe","steamservice.exe","SteamService.exe","Discord.exe","discord.exe","DiscordPTB.exe","DiscordCanary.exe"]}
-    ]}
-  ]}
+  {
+    "inbound": [
+      "tun-in"
+    ],
+    "network": "udp",
+    "process_name": [
+      "steam.exe",
+      "steamwebhelper.exe",
+      "steamservice.exe",
+      "SteamService.exe",
+      "cs2.exe",
+      "csgo.exe",
+      "dota2.exe",
+      "r5apex.exe",
+      "VALORANT.exe",
+      "VALORANT-Win64-Shipping.exe",
+      "League of Legends.exe",
+      "LeagueClient.exe",
+      "LeagueClientUx.exe",
+      "LeagueClientUxRenderer.exe",
+      "FortniteClient-Win64-Shipping.exe",
+      "FortniteClient-Win64-Shipping_BE.exe",
+      "FortniteClient-Win64-Shipping_EAC.exe",
+      "FortniteLauncher.exe",
+      "SquadGame-Win64-Shipping.exe",
+      "SquadGame.exe",
+      "Squad.exe",
+      "SoTGame.exe",
+      "SoTLauncher.exe",
+      "EscapeFromTarkov.exe",
+      "BsgLauncher.exe",
+      "Discord.exe",
+      "discord.exe",
+      "DiscordPTB.exe",
+      "DiscordCanary.exe"
+    ],
+    "action": "sniff",
+    "sniffer": [
+      "dns"
+    ]
+  },
+  {
+    "type": "logical",
+    "mode": "and",
+    "action": "sniff",
+    "rules": [
+      {
+        "inbound": [
+          "tun-in"
+        ]
+      },
+      {
+        "type": "logical",
+        "mode": "and",
+        "invert": true,
+        "rules": [
+          {
+            "network": "udp"
+          },
+          {
+            "process_name": [
+              "steam.exe",
+              "steamwebhelper.exe",
+              "steamservice.exe",
+              "SteamService.exe",
+              "cs2.exe",
+              "csgo.exe",
+              "dota2.exe",
+              "r5apex.exe",
+              "VALORANT.exe",
+              "VALORANT-Win64-Shipping.exe",
+              "League of Legends.exe",
+              "LeagueClient.exe",
+              "LeagueClientUx.exe",
+              "LeagueClientUxRenderer.exe",
+              "FortniteClient-Win64-Shipping.exe",
+              "FortniteClient-Win64-Shipping_BE.exe",
+              "FortniteClient-Win64-Shipping_EAC.exe",
+              "FortniteLauncher.exe",
+              "SquadGame-Win64-Shipping.exe",
+              "SquadGame.exe",
+              "Squad.exe",
+              "SoTGame.exe",
+              "SoTLauncher.exe",
+              "EscapeFromTarkov.exe",
+              "BsgLauncher.exe",
+              "Discord.exe",
+              "discord.exe",
+              "DiscordPTB.exe",
+              "DiscordCanary.exe"
+            ]
+          }
+        ]
+      }
+    ]
+  }
 ]

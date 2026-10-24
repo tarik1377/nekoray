@@ -9,6 +9,7 @@
 #include "main/RouteDefaultsPolicy.hpp"
 #include "main/RouteState.hpp"
 #include "ui/RouteDefaultsReview.hpp"
+#include "ui/GameProgramsAction.hpp"
 #include "fmt/Preset.hpp"
 #include "ui/TunBypassAction.hpp"
 
@@ -107,6 +108,11 @@ DialogManageRoutes::DialogManageRoutes(QWidget *parent) : QDialog(parent), ui(ne
     ui->tunBypass->hide();
 #endif
 
+#ifdef Q_OS_WIN
+    connect(ui->gamePrograms, &QPushButton::clicked, this, [this] { GreenRhythm::openGamePrograms(this); });
+#else
+    ui->gamePrograms->hide();
+#endif
     ADD_ASTERISK(this)
 }
 

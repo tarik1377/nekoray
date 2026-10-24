@@ -7,6 +7,7 @@
 #include "main/TunBypass.hpp"
 #include "main/RuRoutingPolicy.hpp"
 #include "main/GameVoiceRouting.hpp"
+#include "main/GameAppRules.hpp"
 
 #include <QApplication>
 #include <QFile>
@@ -862,8 +863,25 @@ namespace NekoGui {
             {"outbound", "block"},
         };
 
+        QStringList gameUdpPrograms;
         // tun user rule
         if (UseInternalTun() && dataStore->spmode_vpn && !status->forTest) {
+#ifdef Q_OS_WIN
+            QJsonObject gamePrograms;
+            QString gameError;
+            if (!GreenRhythm::GameAppRules::parse(dataStore->game_app_rules, &gamePrograms, &gameError)) {
+                status->result->error = gameError;
+                return;
+            }
+            gameUdpPrograms = gamePrograms.keys();
+            // Explicit choices are independent of whitelist mode. The legacy
+            // lists and route schemes remain intact behind these overrides.
+            for (const auto &value : GreenRhythm::GameAppRules::rules(gamePrograms)) {
+                auto rule = value.toObject();
+                if (rule.value("outbound") == "proxy") rule["outbound"] = tagProxy;
+                status->routingRulesFirst += rule;
+            }
+#endif
             auto match_out = dataStore->vpn_rule_white ? "proxy" : "bypass";
 
             // КУДА кладём — зависит от смысла списка, и это не мелочь.
@@ -917,7 +935,7 @@ namespace NekoGui {
                     QString2QJsonObject(dataStore->routing->custom)["rules"].toArray(),
                     QString2QJsonObject(factory.custom)["rules"].toArray(),
                     QString2QJsonObject(dataStore->custom_route_global)["rules"].toArray(),
-                    dataStore->routing_defaults_choice);
+                    dataStore->routing_defaults_choice, dataStore->games_via_tunnel);
                 for (const auto &value : defaults) {
                     auto rule = value.toObject();
                     if (rule.value("outbound") == "proxy") rule["outbound"] = tagProxy;
@@ -981,8 +999,8 @@ namespace NekoGui {
         if (UseInternalTun() && dataStore->spmode_vpn && !status->forTest
             && dataStore->routing->sniffing_mode != SniffingMode::DISABLE) {
             auto sniffRules = GreenRhythm::GameVoiceRouting::tunSniffRules(status->routingRulesFirst,
-                localHosts.isEmpty() && localDnsDomains.isEmpty()
-                && dataStore->routing_defaults_choice != "keep" && dataStore->routing_defaults_choice != "restored");
+                localHosts.isEmpty() && localDnsDomains.isEmpty(), gameUdpPrograms,
+                dataStore->routing_defaults_choice != "keep" && dataStore->routing_defaults_choice != "restored");
             QJSONARRAY_ADD(sniffRules, routingRules)
             routingRules = sniffRules;
         }

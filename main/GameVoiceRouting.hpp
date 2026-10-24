@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RuRoutingPolicy.hpp"
+#include "GameCatalog.hpp"
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QStringList>
@@ -8,7 +9,7 @@
 namespace GreenRhythm::GameVoiceRouting {
 
 inline QStringList directProcesses() {
-    return {"cs2.exe", "csgo.exe", "steam.exe", "steamwebhelper.exe", "steamservice.exe", "SteamService.exe"};
+    return GameCatalog::processes();
 }
 inline QStringList voiceProcesses() {
     return {"Discord.exe", "discord.exe", "DiscordPTB.exe", "DiscordCanary.exe"};
@@ -54,7 +55,7 @@ inline bool namesProcess(const QJsonObject &rule, const QString &name) {
 }
 
 inline QJsonArray defaults(const QJsonArray &scheme, const QJsonArray &factory,
-                           const QJsonArray &global, const QString &choice = {}) {
+                           const QJsonArray &global, const QString &choice = {}, bool gamesViaTunnel = false) {
     if (choice == "keep" || choice == "restored") return {};
     bool inherited = false;
     QJsonArray explicitRules = global;
@@ -85,8 +86,12 @@ inline QJsonArray defaults(const QJsonArray &scheme, const QJsonArray &factory,
         return result;
     };
     QJsonArray result;
-    const auto direct = remaining(directProcesses());
-    const auto voice = remaining(voiceProcesses());
+    QJsonArray direct;
+    auto voice = remaining(voiceProcesses());
+    for (const auto &value : remaining(directProcesses())) {
+        if (gamesViaTunnel && !contains(GameCatalog::alwaysDirect(), value.toString())) voice.append(value);
+        else direct.append(value);
+    }
     if (!direct.isEmpty()) result.append(QJsonObject{{"process_name", direct}, {"outbound", "bypass"}});
     if (!voice.isEmpty()) result.append(QJsonObject{{"process_name", voice}, {"outbound", "proxy"}});
     return result;
@@ -95,7 +100,8 @@ inline QJsonArray defaults(const QJsonArray &scheme, const QJsonArray &factory,
 // Only unqualified process routes already ahead of the preset can skip full
 // UDP protocol discovery. DNS is still recognized for the mandatory DNS rule.
 // An earlier unfamiliar condition or scoped work-DNS policy disables guessing.
-inline QJsonArray tunSniffRules(const QJsonArray &first, bool optimize) {
+inline QJsonArray tunSniffRules(const QJsonArray &first, bool optimize,
+                               const QStringList &customPrograms = {}, bool includeDefaults = true) {
     QJsonArray names;
     if (optimize) for (const auto &value : first) {
         const auto rule = value.toObject();
@@ -103,7 +109,9 @@ inline QJsonArray tunSniffRules(const QJsonArray &first, bool optimize) {
             || (!rule.contains("process_name") && !rule.contains("ip_cidr"))) break;
         for (const auto &entry : values(rule.value("process_name"))) {
             const auto name = entry.toString();
-            if ((contains(directProcesses(), name) || contains(voiceProcesses(), name)) && !names.contains(entry)) names.append(entry);
+            const bool eligible = contains(customPrograms, name)
+                || (includeDefaults && (contains(directProcesses(), name) || contains(voiceProcesses(), name)));
+            if (eligible && !names.contains(entry)) names.append(entry);
         }
     }
     const QJsonObject inbound{{"inbound", QJsonArray{"tun-in"}}};
@@ -128,7 +136,7 @@ inline QJsonObject gameTunnelRule(QJsonObject rule, const QString &choice = {}) 
         QJsonArray names;
         for (const auto &value : values(rule.value("process_name"))) {
             const auto name = value.toString();
-            if (!contains(directProcesses(), name) && !contains(voiceProcesses(), name)) names.append(value);
+            if (!contains(GameCatalog::alwaysDirect(), name) && !contains(voiceProcesses(), name)) names.append(value);
         }
         if (names.isEmpty()) return {};
         rule.insert("process_name", names);
