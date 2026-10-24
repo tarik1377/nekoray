@@ -92,6 +92,7 @@ jobs:
         run: |
           node --test tools/sign-release.test.mjs
           python3 tools/geodata_bootstrap_test.py
+          pwsh -NoProfile -File tools/network-pressure.test.ps1
           (cd go/release_auth && go test ./...)
           (cd go/grpc_server && go test ./...)
           # С ТОЙ ЖЕ ПРАВКОЙ SING-BOX, ЧТО И СБОРКА (patches/README.md, _overlay).
@@ -104,7 +105,8 @@ jobs:
             CORE_TAGS="with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api"
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" ./...
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/common/tls -run TestRealityMLDSA65
-            go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/route -run TestPrivateDestinationInterface
+            go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/route -run 'TestPrivateDestinationInterface|TestAutoDetect'
+            go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-tun -run TestSystemResetPacket
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/common/workvpn github.com/sagernet/sing-box/dns github.com/sagernet/sing-box/route/rule -run TestWorkVPN
           )
           # Свой модуль, поэтому в перечисление выше он не попадал. Здесь
@@ -189,6 +191,60 @@ jobs:
         with:
           name: GreenRhythm-${{ github.sha }}-darwin-${{ matrix.cross_arch }}
           path: artifacts.tgz
+
+  windows-tun-regression:
+    name: System TUN (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version-file: .go-version
+          cache-dependency-path: go/cmd/nekobox_core/go.sum
+      - name: Pinned dependency
+        shell: bash
+        run: |
+          git init ../libneko
+          git -C ../libneko remote add origin https://github.com/MatsuriDayo/libneko.git
+          git -C ../libneko fetch --depth 1 origin "$LIBNEKO_COMMIT"
+          git -C ../libneko checkout FETCH_HEAD
+      - name: Capture test subnet on disposable runner
+        shell: pwsh
+        run: |
+          pktmon filter add GreenRhythmTest -i 198.18.253.0/30
+          pktmon list --all > go/cmd/nekobox_core/tun-packet-components.txt
+          pktmon start --capture --pkt-size 128 --file-size 16 --file-name "$env:GITHUB_WORKSPACE\go\cmd\nekobox_core\tun-packets.etl"
+      - name: Native tests and real isolated TUN
+        shell: bash
+        env:
+          GREENRHYTHM_TEST_REAL_TUN: '1'
+        run: |
+          set -euo pipefail
+          cd go/cmd/nekobox_core
+          MODFILE=$(bash _overlay/prepare.sh)
+          CORE_TAGS="with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api"
+          go test -modfile "$MODFILE" -tags "$CORE_TAGS" -timeout 5m -v -run 'TestTunDNSGuard|TestWindowsRealTunDNSLoopGuard' . 2>&1 | tee tun-regression.log
+          go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/route -run 'TestAutoDetect|TestPrivateDestinationInterface'
+          go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-tun -run 'TestFirewallExecutablePath|TestSystemResetPacket'
+      - name: Stop test capture
+        if: always()
+        shell: pwsh
+        run: |
+          pktmon stop
+          pktmon etl2txt go/cmd/nekobox_core/tun-packets.etl --out go/cmd/nekobox_core/tun-packets.txt --verbose 3
+      - name: Save test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tun-regression-${{ matrix.os }}
+          path: |
+            go/cmd/nekobox_core/tun-regression.log
+            go/cmd/nekobox_core/tun-packet*
 
   build-windows:
     runs-on: windows-2022
@@ -696,6 +752,7 @@ jobs:
       always() && github.event_name == 'workflow_dispatch'
       && needs.build-windows.result == 'success'
       && needs.build-go.result == 'success'
+      && needs.windows-tun-regression.result == 'success'
     runs-on: ubuntu-latest
     # Единственный job, которому нужна запись: выпуск и его файлы.
     permissions:
@@ -725,6 +782,7 @@ jobs:
     needs:
       - build-windows
       - build-go
+      - windows-tun-regression
       - build-macos
     steps:
       - name: Checkout

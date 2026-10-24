@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"sync/atomic"
 	"time"
 
@@ -84,6 +85,9 @@ func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
 			cancel()
 			return nil, nil, err
 		}
+	}
+	if runtime.GOOS == "windows" {
+		configureTunDNSGuard(&options)
 	}
 	var geoManager *geoDataManager
 	if geoSettings.Present && usesManagedGeoData(options) {

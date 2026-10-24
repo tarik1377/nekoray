@@ -353,29 +353,45 @@ func (r *NetworkManager) AutoDetectInterfaceFunc() control.Func {
 		if r.interfaceMonitor == nil {
 			return nil
 		}
-		return control.BindToInterfaceFunc(r.interfaceFinder, func(network string, address string) (interfaceName string, interfaceIndex int, err error) {
-			remoteAddr := M.ParseSocksaddr(address).Addr
-			if remoteAddr.IsValid() {
-				if r.workVPN != nil {
-					if name, index, ok := r.workVPN.Interface(remoteAddr); ok {
-						return name, index, nil
-					}
-				}
-				iif, err := r.interfaceFinder.ByAddr(remoteAddr)
-				if err == nil {
-					return iif.Name, iif.Index, nil
-				}
-				if name, index, ok := privateDestinationInterface(remoteAddr); ok {
-					return name, index, nil
-				}
-			}
-			defaultInterface := r.interfaceMonitor.DefaultInterface()
-			if defaultInterface == nil {
-				return "", -1, tun.ErrNoRoute
-			}
-			return defaultInterface.Name, defaultInterface.Index, nil
-		})
+		return control.BindToInterfaceFunc(r.interfaceFinder, r.autoDetectInterfaceForDestination)
 	}
+}
+
+// Kept separate from the socket control callback so routing-loop rejection can
+// be tested without creating adapters, changing routes or binding real sockets.
+func (r *NetworkManager) autoDetectInterfaceForDestination(network, address string) (interfaceName string, interfaceIndex int, err error) {
+	remoteAddr := M.ParseSocksaddr(address).Addr.Unmap()
+	if remoteAddr.IsValid() {
+		if r.workVPN != nil {
+			if name, index, ok := r.workVPN.Interface(remoteAddr); ok {
+				if common.Contains(r.interfaceMonitor.MyInterfaces(), name) {
+					return "", -1, E.New("refusing outbound through own TUN interface ", name, ": routing loop")
+				}
+				return name, index, nil
+			}
+		}
+		iif, err := r.interfaceFinder.ByAddr(remoteAddr)
+		if err == nil && iif != nil {
+			if common.Contains(r.interfaceMonitor.MyInterfaces(), iif.Name) {
+				return "", -1, E.New("refusing outbound through own TUN interface ", iif.Name, ": routing loop")
+			}
+			return iif.Name, iif.Index, nil
+		}
+		if name, index, ok := privateDestinationInterface(remoteAddr); ok {
+			if common.Contains(r.interfaceMonitor.MyInterfaces(), name) {
+				return "", -1, E.New("refusing outbound through own TUN interface ", name, ": routing loop")
+			}
+			return name, index, nil
+		}
+	}
+	defaultInterface := r.interfaceMonitor.DefaultInterface()
+	if defaultInterface == nil {
+		return "", -1, tun.ErrNoRoute
+	}
+	if common.Contains(r.interfaceMonitor.MyInterfaces(), defaultInterface.Name) {
+		return "", -1, E.New("refusing outbound through own TUN interface ", defaultInterface.Name, ": routing loop")
+	}
+	return defaultInterface.Name, defaultInterface.Index, nil
 }
 
 func (r *NetworkManager) ProtectFunc() control.Func {

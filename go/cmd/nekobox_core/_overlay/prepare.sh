@@ -27,6 +27,19 @@
 # Зовётся из go/cmd/nekobox_core.
 set -e
 
+# All recursive cleanup, including on Windows/Git Bash, must stay inside this
+# module's own build directory. Resolve existing symlinks before removing it.
+reset_overlay_directory() {
+  local module_root resolved
+  module_root=$(pwd -P)
+  resolved=$(realpath -m "$1")
+  case "$resolved" in
+    "$module_root/_overlay/build/sing-box"|"$module_root/_overlay/build/sing-vmess"|"$module_root/_overlay/build/sing-tun") ;;
+    *) echo "prepare.sh: refusing cleanup outside module overlay: $resolved" >&2; exit 1 ;;
+  esac
+  rm -rf -- "$resolved"
+}
+
 patched="_overlay/sing-box/common/tls/reality_client.go"
 if [ ! -f "$patched" ]; then
   echo "prepare.sh: запускать из go/cmd/nekobox_core, файла $patched не видно" >&2
@@ -82,7 +95,7 @@ if [ ! -f "$src/go.mod" ]; then
 fi
 
 dst="_overlay/build/sing-box"
-rm -rf "$dst"
+reset_overlay_directory "$dst"
 mkdir -p "_overlay/build"
 cp -r "$src" "$dst"
 # Кэш модулей только для чтения, и копия наследует это.
@@ -109,7 +122,7 @@ if [ ! -f "$vmess_src/go.mod" ]; then
   exit 1
 fi
 vmess_dst="_overlay/build/sing-vmess"
-rm -rf "$vmess_dst"
+reset_overlay_directory "$vmess_dst"
 cp -r "$vmess_src" "$vmess_dst"
 chmod -R u+w "$vmess_dst"
 while IFS= read -r file; do
@@ -119,5 +132,33 @@ while IFS= read -r file; do
 done < <(find _overlay/sing-vmess -type f -name '*.go')
 vmess_abs="$(cd "$vmess_dst" && (pwd -W 2>/dev/null || pwd))"
 go mod edit -replace "github.com/sagernet/sing-vmess=$vmess_abs" go.overlay.mod
+
+# Windows System-stack firewall setup errors used to be silently discarded.
+tun_have=$(grep -m1 'github.com/sagernet/sing-tun v' go.mod | sed 's/.*sing-tun //' | awk '{print $1}' | tr -d '\r')
+while IFS= read -r file; do
+  base=$(grep -m1 '^// overlay-base: github.com/sagernet/sing-tun ' "$file" | awk '{print $4}')
+  if [ "$base" != "$tun_have" ]; then
+    echo "prepare.sh: $file is based on ${base:-?}, expected $tun_have" >&2
+    exit 1
+  fi
+done < <(find _overlay/sing-tun -type f -name '*.go')
+go mod download github.com/sagernet/sing-tun
+tun_src=$(go list -m -f '{{.Dir}}' github.com/sagernet/sing-tun)
+tun_src="${tun_src//\\//}"
+tun_dst="_overlay/build/sing-tun"
+if [ ! -f "$tun_src/go.mod" ]; then
+  echo 'prepare.sh: sing-tun module not available' >&2
+  exit 1
+fi
+reset_overlay_directory "$tun_dst"
+cp -r "$tun_src" "$tun_dst"
+chmod -R u+w "$tun_dst"
+while IFS= read -r file; do
+  relative="${file#_overlay/sing-tun/}"
+  mkdir -p "$tun_dst/$(dirname "$relative")"
+  cp "$file" "$tun_dst/$relative"
+done < <(find _overlay/sing-tun -type f -name '*.go')
+tun_abs="$(cd "$tun_dst" && (pwd -W 2>/dev/null || pwd))"
+go mod edit -replace "github.com/sagernet/sing-tun=$tun_abs" go.overlay.mod
 
 echo "go.overlay.mod"
