@@ -36,7 +36,7 @@ func configureTunDNSGuard(options *option.Options) {
 				has6 = true
 			}
 			dns := address.Next()
-			if dns.IsValid() && !seen[dns] {
+			if prefix.Contains(dns) && !seen[dns] {
 				seen[dns] = true
 				addresses = append(addresses, netip.PrefixFrom(dns, dns.BitLen()).String())
 			}

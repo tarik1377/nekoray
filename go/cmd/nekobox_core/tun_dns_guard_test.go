@@ -75,6 +75,20 @@ func TestTunDNSGuardPreservesUserPolicy(t *testing.T) {
 	if !reflect.DeepEqual([]string(custom.Route.Rules[0].DefaultOptions.IPCIDR), []string{"10.9.8.2/32", "fd00:9::6/128"}) {
 		t.Fatal("guard used hardcoded addresses instead of the configured adapter DNS")
 	}
+	// A single-address prefix has no synthetic DNS successor. In particular,
+	// gVisor can use such prefixes; its neighbouring address must stay routable.
+	for _, addresses := range [][]string{
+		{"10.9.8.1/32", "fd00:9::5/128"},
+		{"10.9.8.3/30", "fd00:9::7/126"},
+	} {
+		single := tunDNSGuardOptions(t, ctx, addresses)
+		before, _ := json.Marshal(single)
+		configureTunDNSGuard(&single)
+		after, _ := json.Marshal(single)
+		if string(before) != string(after) {
+			t.Fatalf("guard reserved a DNS address outside the TUN prefix: %v", addresses)
+		}
+	}
 }
 
 // Start only the real router/DNS and loopback fixtures. The TUN definition is

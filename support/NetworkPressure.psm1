@@ -20,7 +20,7 @@ function ConvertTo-GreenRhythmTcpPressure {
         })
         TimeWaitDestinations = $destinations
         TunDnsConnections = $tun
-        Interpretation = 'TIME_WAIT PID 0 does not identify the initiating process. Active counts alone do not establish absence of a leak or a cause of a watchdog.'
+        Interpretation = 'TIME_WAIT PID 0 does not identify the initiating process. The synthetic DNS address is also a System TCP NAT peer: connections to its ephemeral ports alone do not prove a DNS loop. Active counts alone do not establish absence of a leak or a cause of a watchdog.'
     }
 }
 
