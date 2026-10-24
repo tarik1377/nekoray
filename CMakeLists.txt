@@ -307,6 +307,8 @@ set(PROJECT_SOURCES
         ui/dialog_vpn_settings.cpp
         ui/dialog_vpn_settings.h
         ui/dialog_vpn_settings.ui
+        ui/TunBypassDialog.cpp
+        ui/TunBypassDialog.hpp
 
         ui/dialog_hotkey.cpp
         ui/dialog_hotkey.h
@@ -919,6 +921,12 @@ target_include_directories(system_routes_patch_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(system_routes_patch_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 
 add_executable(local_dns_test EXCLUDE_FROM_ALL test/LocalDnsTest.cpp main/LocalDns.cpp)
+add_executable(tun_bypass_test EXCLUDE_FROM_ALL test/TunBypassTest.cpp ui/TunBypassDialog.cpp)
+target_include_directories(tun_bypass_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(tun_bypass_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
+if (MSVC)
+    target_compile_options(tun_bypass_test PRIVATE /utf-8)
+endif ()
 target_include_directories(local_dns_test PRIVATE ${CMAKE_SOURCE_DIR})
 
 add_executable(import_integration_test EXCLUDE_FROM_ALL
@@ -995,6 +1003,7 @@ set(GR_TEST_TARGETS
         http_outage_test
         video_routes_test
         local_dns_test
+        tun_bypass_test
         relaytrace_test
         credentials_test
         relay_component_test

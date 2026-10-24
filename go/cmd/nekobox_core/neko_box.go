@@ -46,6 +46,10 @@ var trafficManager atomic.Pointer[trafficontrol.Manager]
 
 // nekoCreate creates a sing-box instance from JSON config bytes.
 func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
+	return nekoCreateWithTunLookup(configJSON, net.DefaultResolver.LookupNetIP)
+}
+
+func nekoCreateWithTunLookup(configJSON []byte, lookup tunGatewayLookup) (*box.Box, context.CancelFunc, error) {
 	if !previousGeoDataStopped() {
 		return nil, nil, errors.New("previous country-rule refresh is still stopping; retry shortly")
 	}
@@ -74,6 +78,11 @@ func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ctx = include.Context(ctx)
+	configJSON, err = prepareTunRouteExclusions(ctx, configJSON, lookup)
+	if err != nil {
+		cancel()
+		return nil, nil, err
+	}
 
 	options, err := singjson.UnmarshalExtendedContext[option.Options](ctx, configJSON)
 	if err != nil {

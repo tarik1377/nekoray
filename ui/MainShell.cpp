@@ -554,6 +554,12 @@ namespace GreenRhythm {
         connect(shareToLanToggle, &QPushButton::clicked, this, &MainShell::shareToLanToggled);
         shareToLanDetail = addRow(tr("Раздавать VPN другим устройствам"), QString(), "gr-devices", shareToLanToggle); shareToLanDetail->setObjectName("grShareToLanDetail");
         box->addWidget(caption(page, tr("МАРШРУТИЗАЦИЯ")));
+#ifdef Q_OS_WIN
+        auto *gateways = new QPushButton(tr("Настроить"), page); gateways->setObjectName("grTunBypass");
+        gateways->setAccessibleName(tr("Рабочие VPN и виртуальные машины"));
+        connect(gateways, &QPushButton::clicked, this, &MainShell::tunBypassRequested);
+        addRow(tr("Рабочие VPN и виртуальные машины"), tr("Сохранить шлюз по домену или IP и подключать его мимо TUN. Подходит для VPN внутри VMware NAT."), "gr-routes", gateways);
+#endif
         gamesToggle = toggle(page, tr("Включить")); gamesToggle->setAccessibleName(tr("Игры через VPN"));
         connect(gamesToggle, &QPushButton::clicked, this, &MainShell::gamesViaTunnelToggled);
 #ifdef Q_OS_WIN

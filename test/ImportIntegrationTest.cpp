@@ -392,6 +392,29 @@ int main(int argc, char **argv) {
           "external TUN mode excludes internal-only process settings without losing RU and application fallback rules");
 #ifdef Q_OS_WIN
     {
+        const auto previousExclusions = NekoGui::dataStore->vpn_route_exclude_extra;
+        const auto previousInternal = NekoGui::dataStore->vpn_internal_tun;
+        const auto beforeScheme = GreenRhythm::RouteState::completeSnapshot(*NekoGui::dataStore->routing);
+        NekoGui::dataStore->vpn_internal_tun = true;
+        NekoGui::dataStore->vpn_route_exclude_extra = "10.20.0.0/16\nmks-racceess.rtk-it.ru\n212.164.137.29";
+        const auto gatewayBuild = buildCurrent();
+        QJsonArray excluded;
+        for (const auto &value : gatewayBuild->coreConfig.value("inbounds").toArray())
+            if (value.toObject().value("type") == "tun") excluded = value.toObject().value("route_exclude_address").toArray();
+        check(gatewayBuild->error.isEmpty() && excluded.contains("10.20.0.0/16") && excluded.contains("mks-racceess.rtk-it.ru")
+              && excluded.contains("212.164.137.29/32") && excluded.contains("192.168.0.0/16"),
+              "real builder puts saved gateway names and IPs into OS exclusions while retaining existing LAN ranges");
+        check(GreenRhythm::RouteState::completeSnapshot(*NekoGui::dataStore->routing) == beforeScheme
+              && NekoGui::dataStore->vpn_route_exclude_extra.endsWith("212.164.137.29"),
+              "building a gateway exclusion never rewrites the saved scheme or preference");
+        NekoGui::dataStore->vpn_route_exclude_extra = "*.invalid";
+        check(!buildCurrent()->error.isEmpty(), "invalid gateway entry is rejected before starting any core");
+        NekoGui::dataStore->vpn_route_exclude_extra = previousExclusions;
+        NekoGui::dataStore->vpn_internal_tun = previousInternal;
+    }
+#endif
+#ifdef Q_OS_WIN
+    {
         const auto beforeRoute = GreenRhythm::RouteState::completeSnapshot(*NekoGui::dataStore->routing);
         const auto previousBypass = NekoGui::dataStore->vpn_rule_process;
         const auto previousGames = NekoGui::dataStore->games_via_tunnel;

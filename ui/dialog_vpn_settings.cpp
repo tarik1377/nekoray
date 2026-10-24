@@ -4,6 +4,7 @@
 
 #include "main/GuiUtils.hpp"
 #include "main/NekoGui.hpp"
+#include "main/TunBypass.hpp"
 #include "ui/mainwindow_interface.h"
 
 #include "sys/ForeignTunnels.hpp"
@@ -114,6 +115,12 @@ DialogVPNSettings::~DialogVPNSettings() {
 }
 
 void DialogVPNSettings::accept() {
+    QStringList gatewayExclusions;
+    QString gatewayError;
+    if (!GreenRhythm::TunBypass::parse(ui->vpn_route_exclude_extra->toPlainText(), &gatewayExclusions, &gatewayError)) {
+        QMessageBox::warning(this, tr("Исключения TUN"), gatewayError);
+        return;
+    }
     //
     auto mtu = ui->vpn_mtu->currentText().toInt();
     if (mtu > 10000 || mtu < 1000) mtu = 9000;
