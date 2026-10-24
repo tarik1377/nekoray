@@ -18,6 +18,21 @@
 исходящие соединения больше не выбирают собственные TUN-интерфейсы и эти тесты
 проходят без нашей правки. Версия overlay остаётся закреплена на sing-box 1.13.18.
 
+## sing-tun: работоспособные отказы TCP и правило Firewall (#53)
+
+В `_overlay/sing-tun/stack_system.go` от исходного файла отличаются TTL=64 и
+HopLimit=64 при создании TCP RST. Нулевые значения превращали отказ в таймаут.
+`stack_system_windows.go` раскрывает путь exe из 8.3 перед добавлением правила
+Firewall и сообщает исходную COM-ошибку. `internal/winfw/winfw.go` сохраняет
+ошибку Add через `%w`, чтобы её HRESULT/SCODE можно было прочитать.
+
+Версия каждого файла проверяется `_overlay/prepare.sh` по закреплённому
+sing-tun v0.8.12-0.20260727151122-3a09076491df; кэш модулей не меняется.
+`TestSystemResetPacket` и `TestFirewallExecutablePath` не меняют сеть.
+`TestWindowsRealTunDNSLoopGuard` проверяет настоящий System TUN исключительно
+на одноразовых CI runner. Удалять копии можно после прохождения этих проверок
+без наложения наших файлов на новую версию зависимости.
+
 ## sing-box: владелец локального SOCKS UDP (`_overlay`)
 
 **Зачем.** В sing v0.8.12 `socks.HandleConnectionEx` передаёт для UDP ASSOCIATE

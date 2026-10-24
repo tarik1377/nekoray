@@ -106,6 +106,7 @@ jobs:
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" ./...
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/common/tls -run TestRealityMLDSA65
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/route -run 'TestPrivateDestinationInterface|TestAutoDetect'
+            go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-tun -run TestSystemResetPacket
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/common/workvpn github.com/sagernet/sing-box/dns github.com/sagernet/sing-box/route/rule -run TestWorkVPN
           )
           # Свой модуль, поэтому в перечисление выше он не попадал. Здесь
@@ -229,7 +230,7 @@ jobs:
           CORE_TAGS="with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api"
           go test -modfile "$MODFILE" -tags "$CORE_TAGS" -timeout 5m -v -run 'TestTunDNSGuard|TestWindowsRealTunDNSLoopGuard' . 2>&1 | tee tun-regression.log
           go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/route -run 'TestAutoDetect|TestPrivateDestinationInterface'
-          go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-tun -run TestFirewallExecutablePath
+          go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-tun -run 'TestFirewallExecutablePath|TestSystemResetPacket'
       - name: Stop test capture
         if: always()
         shell: pwsh
