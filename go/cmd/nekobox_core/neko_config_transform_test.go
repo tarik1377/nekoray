@@ -172,9 +172,8 @@ func TestTransformDNSAndBlockOutbounds(t *testing.T) {
 	}
 }
 
-// Legacy inbound fields are stripped, TUN gvisor stack is forced to mixed, legacy
-// TUN address fields are merged into address[], and sniff:true yields a prepended
-// {action:sniff} route rule.
+// Legacy inbound fields are stripped, explicit TUN stacks are preserved, legacy
+// addresses are merged and sniff:true becomes an inbound-scoped route action.
 func TestTransformInboundsSniffAndTun(t *testing.T) {
 	m := mustTransform(t, map[string]interface{}{
 		"inbounds": []interface{}{
@@ -224,6 +223,43 @@ func TestTransformInboundsSniffAndTun(t *testing.T) {
 	}
 	if rules[1].(map[string]interface{})["outbound"] != "proxy" {
 		t.Errorf("original rules should be preserved after the sniff rule, got %#v", rules[1])
+	}
+}
+
+func TestTransformScopesSniffToItsInbound(t *testing.T) {
+	m := mustTransform(t, map[string]interface{}{
+		"inbounds": []interface{}{
+			map[string]interface{}{"type": "mixed", "tag": "browser", "sniff": true, "sniff_timeout": "90ms"},
+			map[string]interface{}{"type": "mixed", "tag": "voice", "sniff": false},
+			map[string]interface{}{"type": "mixed", "sniff": true, "sniff_timeout": "800ms"},
+		},
+		"route": map[string]interface{}{"rules": []interface{}{map[string]interface{}{"inbound": []interface{}{"voice"}, "action": "sniff", "sniffer": []interface{}{"dns"}}}},
+	})
+	rules := m["route"].(map[string]interface{})["rules"].([]interface{})
+	if len(rules) != 3 {
+		t.Fatalf("unexpected rules: %#v", rules)
+	}
+	for i, tag := range []string{"browser", "2"} {
+		rule := rules[i].(map[string]interface{})
+		if inbound := rule["inbound"].([]interface{}); len(inbound) != 1 || inbound[0] != tag {
+			t.Fatalf("unscoped sniff: %#v", rule)
+		}
+	}
+	if rules[0].(map[string]interface{})["timeout"] != "90ms" || rules[1].(map[string]interface{})["timeout"] != "800ms" {
+		t.Fatal("per-inbound sniff deadlines were lost")
+	}
+	if rules[2].(map[string]interface{})["sniffer"].([]interface{})[0] != "dns" {
+		t.Fatal("explicit modern sniff action was changed")
+	}
+}
+
+func TestTransformEmptySniffTimeoutUsesDefault(t *testing.T) {
+	for _, timeout := range []interface{}{"", nil} {
+		m := mustTransform(t, map[string]interface{}{"inbounds": []interface{}{map[string]interface{}{"type": "mixed", "sniff": true, "sniff_timeout": timeout}}})
+		rule := m["route"].(map[string]interface{})["rules"].([]interface{})[0].(map[string]interface{})
+		if _, exists := rule["timeout"]; exists {
+			t.Fatal("empty timeout must retain the core default")
+		}
 	}
 }
 

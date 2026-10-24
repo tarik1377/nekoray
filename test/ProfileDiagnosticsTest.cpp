@@ -1,5 +1,6 @@
 #include "main/ProfileProbe.hpp"
 #include "main/ServiceHealth.hpp"
+#include "main/StunProbe.hpp"
 #include "ServiceHealthFixture.hpp"
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -72,8 +73,21 @@ struct Proxy : QTcpServer {
                 data.resize(int(count)); ++packets;
                 if (udpMode == "drop" || data.size() < 30) continue;
                 if (udpMode == "partial" && quint8(data[4]) == 8) continue;
-                data[12] = char(quint8(data[12]) | 128); // DNS QR
-                auto invalid = data; invalid[23] ^= 1; // same TXID, wrong question nonce
+                const int headerSize = quint8(data[3]) == 3 ? 7 + quint8(data[4]) : quint8(data[3]) == 4 ? 22 : 10;
+                if (data.size() < headerSize + 20) continue;
+                if (udpMode == "dns_only") {
+                    // The former DNS-based probe would succeed here even when
+                    // every non-DNS datagram is dropped or hijacked.
+                    if (data.mid(headerSize + 4, 4) == QByteArray::fromHex("2112a442")) continue;
+                    data[headerSize + 2] = char(quint8(data[headerSize + 2]) | 128);
+                    relay.writeDatagram(data, sender, port); continue;
+                }
+                data = data.left(headerSize) + QByteArray::fromHex("0101000c2112a442")
+                    + data.mid(headerSize + 8, 12) + QByteArray::fromHex("0020000800011234e112a443");
+                if (udpMode == "bad_length") data[headerSize + 3] = 8;
+                if (udpMode == "wrong_source") data[headerSize - 1] ^= 1;
+                if (udpMode == "fragment") data[2] = 1;
+                auto invalid = data; invalid[headerSize + 8] ^= 1;
                 relay.writeDatagram(invalid, sender, port);
                 if (udpMode == "wrong_nonce") continue;
                 relay.writeDatagram(data, sender, port); relay.writeDatagram(data, sender, port); // duplicate is ignored
@@ -155,6 +169,16 @@ int main(int argc, char **argv) {
     const auto arguments = app.arguments();
     if (arguments.contains("run")) return fakeCore(arguments, app);
     if (arguments.contains("--sentinel")) return app.exec();
+    if (arguments.contains("--live-transport")) {
+        // Explicit developer run only. Uses the already running loopback
+        // proxy; does not start/stop any core or change application settings.
+        DiscordTransport probe; DiscordProbeOptions options;
+        options.proxy = QNetworkProxy(QNetworkProxy::HttpProxy, "127.0.0.1", 2080);
+        probe.start(options); wait(&probe, SIGNAL(completed()), 15000);
+        const auto result = probe.report();
+        std::printf("%s\n", QJsonDocument(result).toJson(QJsonDocument::Compact).constData());
+        return result.value("udp_control") == "replies" ? 0 : 1;
+    }
     if (arguments.contains("--live-private")) {
         QFile file(arguments.value(arguments.indexOf("--live-private") + 1)); if (!file.open(QIODevice::ReadOnly)) return 2;
         HealthCandidate candidate; candidate.protocol = "vless"; candidate.nodeId = "private-live-fixture";
@@ -173,26 +197,50 @@ int main(int argc, char **argv) {
     QSslConfiguration::setDefaultConfiguration(trusted);
     DiscordProbeOptions options; options.proxy = QNetworkProxy(QNetworkProxy::HttpProxy, "127.0.0.1", proxy.serverPort());
     options.gateway = QUrl("wss://127.0.0.1:" + QString::number(gateway.serverPort()) + "/?v=10&encoding=json");
+    options.udpEndpoints = {{"1.1.1.1", 3478}, {"8.8.8.8", 19302}}; // Owned relay replies; no public packets are sent.
     options.timeoutMs = 1500; options.udpIntervalMs = 100;
     auto run = [&] { DiscordTransport probe; probe.start(options); wait(&probe, SIGNAL(completed())); return probe.report(); };
     auto result = run();
     check(result.value("gateway_wss") == "hello", "verified TLS CONNECT and split RFC6455 handshake receive Discord opcode 10");
     check(result.value("udp_received") == 6 && result.value("udp_sent") == 6 && result.value("udp_control") == "replies", "six nonce-matched UDP replies are counted once despite bad nonces and duplicates");
-    check(result.value("voice_verified") == false, "gateway and DNS never claim voice verification");
+    check(result.value("voice_verified") == false && result.value("udp_probe") == "stun_binding", "gateway and STUN never claim voice verification");
+    const auto endpointReports = result.value("udp_endpoints").toArray();
+    check(endpointReports.size() == 2 && endpointReports.first().toObject().value("rtt_median_ms").toInt(-1) >= 0
+          && endpointReports.last().toObject().value("received").toInt() == 3, "UDP timing and response counts are reported separately for each destination");
+    const auto safeTransport = QJsonDocument(result).toJson();
+    check(!safeTransport.contains("1.1.1.1") && !safeTransport.contains("2112a442") && !safeTransport.contains("secret"), "STUN addresses, transactions and credentials are excluded from the report");
     gateway.mode = "fragmented"; check(run().value("gateway_wss") == "hello", "fragmented Gateway Hello with intervening ping is supported");
     for (const auto &mode : {"bad_accept", "wrong_opcode", "oversize"}) {
         gateway.mode = mode; check(run().value("gateway_wss") == "protocol", "invalid WebSocket handshake, opcode or oversized frame fails closed");
     }
     gateway.mode = "hello"; proxy.udpMode = "wrong_nonce"; result = run();
-    check(result.value("udp_received") == 0 && result.value("udp_control") == "timeout", "wrong-question DNS replies cannot pass a UDP probe");
+    check(result.value("udp_received") == 0 && result.value("udp_control") == "timeout", "wrong STUN transactions cannot pass a UDP probe");
+    for (const auto &mode : {"bad_length", "wrong_source", "fragment", "dns_only"}) {
+        proxy.udpMode = mode; result = run();
+        check(result.value("udp_received") == 0 && result.value("udp_control") == "timeout", "malformed, fragmented, wrong-source and DNS-only responses never pass STUN");
+    }
     proxy.udpMode = "partial"; result = run();
     check(result.value("udp_received") == 3 && result.value("udp_control") == "partial", "failure of one independent UDP destination remains visible");
+    proxy.udpMode = "replies";
+    const auto oldEndpoints = options.udpEndpoints;
+    options.udpEndpoints = {{"fixture-one.invalid", 3478}, {"fixture-two.invalid", 19302}};
+    check(run().value("udp_received") == 6, "SOCKS domain addressing checks STUN without local hostname lookups");
+    options.udpEndpoints = {{"2001:db8::1", 3478}, {"2001:db8::2", 19302}};
+    check(run().value("udp_received") == 6, "SOCKS IPv6 destination and reply headers are supported through the owned relay");
+    options.udpEndpoints = oldEndpoints;
     proxy.udpMode = "replies"; proxy.reject = true;
     check(run().value("udp_control") == "proxy", "SOCKS negotiation rejection is not a UDP network loss verdict"); proxy.reject = false;
     QSslConfiguration::setDefaultConfiguration(savedTls);
     check(run().value("gateway_wss") == "tls", "untrusted Gateway certificate is rejected without ignoreSslErrors");
     DiscordTransport cancelled; cancelled.start(options); cancelled.cancel();
     check(cancelled.report().value("gateway_wss") == "cancelled" && cancelled.report().value("udp_control") == "cancelled", "cancel aborts both transports");
+    const auto transaction = QByteArray(12, 'x');
+    const auto validStun = QByteArray::fromHex("0101000c2112a442") + transaction + QByteArray::fromHex("0020000800011234e112a443");
+    check(StunProbe::validReply(validStun, transaction), "RFC Binding success with XOR-MAPPED-ADDRESS passes");
+    for (int size = 0; size < validStun.size(); ++size)
+        check(!StunProbe::validReply(validStun.left(size), transaction), "every truncated STUN response is rejected");
+    check(!StunProbe::validReply(validStun + '\0', transaction)
+          && !StunProbe::validReply(QByteArray::fromHex("010100002112a442") + transaction, transaction), "extra bytes and success without a mapped address are rejected");
     QProcess sentinel; sentinel.start(app.applicationFilePath(), {"--sentinel"}); check(sentinel.waitForStarted(), "unrelated process started for isolation check");
     const auto before = QDir(QDir::tempPath()).entryList({"greenrhythm-health-*"}, QDir::Dirs | QDir::NoDotAndDotDot);
     const QList<ProfileProbeTarget> targets{{"control", QUrl("http://fixture.invalid/"), 200}};

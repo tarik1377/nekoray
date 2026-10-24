@@ -528,6 +528,12 @@ add_executable(ru_routing_policy_test EXCLUDE_FROM_ALL test/RuRoutingPolicyTest.
 target_include_directories(ru_routing_policy_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ru_routing_policy_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 
+add_executable(game_voice_routing_test EXCLUDE_FROM_ALL test/GameVoiceRoutingTest.cpp)
+target_include_directories(game_voice_routing_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(game_voice_routing_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+target_compile_definitions(game_voice_routing_test PRIVATE GR_GAME_VOICE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/go/cmd/nekobox_core/testdata/game_voice_rules.json")
+target_compile_definitions(game_voice_routing_test PRIVATE GR_GAME_VOICE_SNIFF_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/go/cmd/nekobox_core/testdata/game_voice_sniff.json")
+
 add_executable(tun_report_test EXCLUDE_FROM_ALL
         test/TunReportTest.cpp
 )
@@ -1000,6 +1006,7 @@ set(GR_TEST_TARGETS
         route_order_test
         geodata_status_test
         ru_routing_policy_test
+        game_voice_routing_test
         program_trouble_test
         program_watch_lifetime_test
         port_health_test

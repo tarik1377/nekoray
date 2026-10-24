@@ -1,0 +1,7 @@
+[
+  {"process_name":["cs2.exe","csgo.exe","steam.exe","steamwebhelper.exe","steamservice.exe","SteamService.exe"],"outbound":"bypass"},
+  {"process_name":["Discord.exe","discord.exe","DiscordPTB.exe","DiscordCanary.exe"],"outbound":"proxy"},
+  {"network":"udp","port":443,"outbound":"block"},
+  {"ip_cidr":["178.130.128.0/20"],"outbound":"bypass"},
+  {"outbound":"proxy"}
+]

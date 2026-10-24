@@ -5,6 +5,7 @@
 #include "main/TunHelper.hpp"
 #include "main/LocalDns.hpp"
 #include "main/RuRoutingPolicy.hpp"
+#include "main/GameVoiceRouting.hpp"
 
 #include <QApplication>
 #include <QFile>
@@ -550,10 +551,12 @@ namespace NekoGui {
                 if (!extra.trimmed().isEmpty()) excludes += extra.trimmed();
             }
             inboundObj["route_exclude_address"] = excludes;
+#ifndef Q_OS_WIN
             if (dataStore->routing->sniffing_mode != SniffingMode::DISABLE) {
                 inboundObj["sniff"] = true;
                 inboundObj["sniff_override_destination"] = dataStore->routing->sniffing_mode == SniffingMode::FOR_DESTINATION;
             }
+#endif
             inboundObj["domain_strategy"] = dataStore->routing->domain_strategy;
             status->inbounds += inboundObj;
         }
@@ -897,21 +900,37 @@ namespace NekoGui {
                                                          {"process_name", QList2QJsonArray(arr)}};
             }
 
+#ifdef Q_OS_WIN
+            if (!dataStore->vpn_rule_white) {
+                const Routing factory(1);
+                auto defaults = GreenRhythm::GameVoiceRouting::defaults(
+                    QString2QJsonObject(dataStore->routing->custom)["rules"].toArray(),
+                    QString2QJsonObject(factory.custom)["rules"].toArray(),
+                    QString2QJsonObject(dataStore->custom_route_global)["rules"].toArray(),
+                    dataStore->routing_defaults_choice);
+                for (const auto &value : defaults) {
+                    auto rule = value.toObject();
+                    if (rule.value("outbound") == "proxy") rule["outbound"] = tagProxy;
+                    status->routingRulesFirst += rule;
+                }
+            }
+#endif
+
             // ИГРЫ ЧЕРЕЗ ТУННЕЛЬ — РАЗВОРОТОМ ПРЕСЕТА, А НЕ ВТОРЫМ СПИСКОМ.
             //
             // Пресет уводит игры мимо туннеля правилами по process_name и
             // process_path_regex. Когда серверы игры фильтруются у провайдера,
             // «мимо» означает «никак», и человеку нужен один переключатель, а не
-            // правка схемы. Разворот берёт ТЕ ЖЕ правила и меняет им выход на
-            // туннель: список один, при правке пресета расходиться нечему.
+            // правка схемы. Разворот берёт те же правила и меняет им выход на
+            // туннель; CS2, Steam и голосовые приложения сохраняют отдельную
+            // политику. Поимённое правило «через VPN» задаётся списком выше.
             // Стоит здесь, после списков человека и до пресета: поимённое «мимо»
             // человека по-прежнему побеждает, а правило пресета уже не успевает.
             // Только правила по процессу: блокировки QUIC и прочее не трогаются.
             if (dataStore->games_via_tunnel) {
                 for (const auto &v: QString2QJsonObject(dataStore->routing->custom)["rules"].toArray()) {
-                    auto o = v.toObject();
-                    if (o["outbound"].toString() != QStringLiteral("bypass")) continue;
-                    if (!o.contains("process_name") && !o.contains("process_path_regex")) continue;
+                    auto o = GreenRhythm::GameVoiceRouting::gameTunnelRule(v.toObject(), dataStore->routing_defaults_choice);
+                    if (o.isEmpty()) continue;
                     o["outbound"] = tagProxy;
                     status->routingRulesFirst += o;
                 }
@@ -948,6 +967,16 @@ namespace NekoGui {
             dataStore->routing->direct_ip, dataStore->routing->def_outbound,
             dataStore->routing_defaults_choice);
         auto routingRules = status->routingRulesDns;
+#ifdef Q_OS_WIN
+        if (UseInternalTun() && dataStore->spmode_vpn && !status->forTest
+            && dataStore->routing->sniffing_mode != SniffingMode::DISABLE) {
+            auto sniffRules = GreenRhythm::GameVoiceRouting::tunSniffRules(status->routingRulesFirst,
+                localHosts.isEmpty() && localDnsDomains.isEmpty()
+                && dataStore->routing_defaults_choice != "keep" && dataStore->routing_defaults_choice != "restored");
+            QJSONARRAY_ADD(sniffRules, routingRules)
+            routingRules = sniffRules;
+        }
+#endif
         QJSONARRAY_ADD(routingRules, status->routingRulesFirst)
         QJSONARRAY_ADD(routingRules, schemeRules.primary)
         if (status->forTest) routingRules = {};

@@ -2,6 +2,8 @@
 *.pem
 *.json
 !release_auth/trusted_keys.json
+!cmd/nekobox_core/testdata/game_voice_rules.json
+!cmd/nekobox_core/testdata/game_voice_sniff.json
 *.exe
 *.dat
 /cmd/nekoray_core/nekoray_core
