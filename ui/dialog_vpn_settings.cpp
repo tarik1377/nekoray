@@ -5,6 +5,7 @@
 #include "main/GuiUtils.hpp"
 #include "main/NekoGui.hpp"
 #include "main/TunBypass.hpp"
+#include "ui/TunBypassAction.hpp"
 #include "ui/mainwindow_interface.h"
 
 #include "sys/ForeignTunnels.hpp"
@@ -48,6 +49,11 @@ DialogVPNSettings::DialogVPNSettings(QWidget *parent) : QDialog(parent), ui(new 
     D_LOAD_STRING_PLAIN(vpn_rule_cidr)
     D_LOAD_STRING_PLAIN(vpn_rule_process)
     D_LOAD_STRING_PLAIN(vpn_route_exclude_extra)
+#ifdef Q_OS_WIN
+    auto *gateways = new QPushButton(tr("Рабочие VPN и виртуальные машины…"), this);
+    ui->verticalLayout_5->addWidget(gateways);
+    connect(gateways, &QPushButton::clicked, this, [this] { GreenRhythm::openTunBypass(this); });
+#endif
 
     /*
      * Кнопка ПОКАЗЫВАЕТ найденное, а не применяет его.
@@ -119,6 +125,10 @@ void DialogVPNSettings::accept() {
     QString gatewayError;
     if (!GreenRhythm::TunBypass::parse(ui->vpn_route_exclude_extra->toPlainText(), &gatewayExclusions, &gatewayError)) {
         QMessageBox::warning(this, tr("Исключения TUN"), gatewayError);
+        return;
+    }
+    for (const auto &entry : gatewayExclusions) if (!entry.contains('/')) {
+        QMessageBox::warning(this, tr("Исключения TUN"), tr("Для домена шлюза используйте кнопку «Рабочие VPN и виртуальные машины». Этот список хранит IP и сети для совместимости со старой версией."));
         return;
     }
     //

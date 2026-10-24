@@ -245,6 +245,9 @@ namespace NekoGui {
          * решает человек.
          */
         QString vpn_route_exclude_extra = "";
+        // New gateway syntax is separate so a runtime rollback can still read
+        // the old CIDR-only preference without seeing an unsupported DNS name.
+        QString vpn_gateway_exclusions;
 
         bool vpn_rule_white = false;
         QString vpn_rule_process = "";

@@ -58,11 +58,11 @@ inline bool saveSetting(const QString &path, const QString &expected, const QStr
     const auto document = QJsonDocument::fromJson(bytes, &jsonError);
     if (!document.isObject() || jsonError.error != QJsonParseError::NoError) { *error = QStringLiteral("Файл настроек повреждён. Изменения не записаны."); return false; }
     auto settings = document.object();
-    if ((settings.contains("vpn_route_exclude_extra") && !settings.value("vpn_route_exclude_extra").isString())
-        || settings.value("vpn_route_exclude_extra").toString() != expected) {
+    if ((settings.contains("vpn_gateway_exclusions") && !settings.value("vpn_gateway_exclusions").isString())
+        || settings.value("vpn_gateway_exclusions").toString() != expected) {
         *error = QStringLiteral("Исключения уже изменились. Закройте окно и откройте его снова."); return false;
     }
-    settings.insert("vpn_route_exclude_extra", text);
+    settings.insert("vpn_gateway_exclusions", text);
     QSaveFile output(path);
     output.setDirectWriteFallback(false);
     const auto updated = QJsonDocument(settings).toJson(QJsonDocument::Indented);

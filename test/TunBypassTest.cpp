@@ -35,11 +35,11 @@ int main(int argc, char **argv) {
     check(Policy::parse({}, &entries, &error) && entries.isEmpty(), "empty preference preserves the existing built-in policy");
     QTemporaryDir temp;
     const auto file = temp.filePath("settings.json"), route = temp.filePath("Default");
-    const QJsonObject original{{"vpn_route_exclude_extra", saved}, {"custom_route_global", "do not change"}, {"future_setting", QJsonArray{1, 2}}};
+    const QJsonObject original{{"vpn_gateway_exclusions", saved}, {"vpn_route_exclude_extra", "172.20.0.0/16\n# legacy CIDRs stay byte-identical"}, {"custom_route_global", "do not change"}, {"future_setting", QJsonArray{1, 2}}};
     write(file, QJsonDocument(original).toJson()); write(route, "route bytes untouched\n"); const auto routeBytes = read(route);
     const auto changed = saved + "mks-racceess.rtk-it.ru\n";
     check(Policy::saveSetting(file, saved, changed, &error), "gateway preference persists atomically in existing settings key");
-    auto after = QJsonDocument::fromJson(read(file)).object(); after.insert("vpn_route_exclude_extra", saved);
+    auto after = QJsonDocument::fromJson(read(file)).object(); after.insert("vpn_gateway_exclusions", saved);
     check(after == original && read(route) == routeBytes, "unknown settings, route schemes and old exclusion content survive saving");
     const auto savedBytes = read(file);
     check(!Policy::saveSetting(file, saved, "other.example", &error) && read(file) == savedBytes, "stale editor cannot overwrite another gateway choice");

@@ -6,11 +6,11 @@
 namespace GreenRhythm {
 inline void openTunBypass(QWidget *parent) {
     auto *settings = NekoGui::dataStore;
-    const auto expected = settings->vpn_route_exclude_extra;
+    const auto expected = settings->vpn_gateway_exclusions;
     TunBypassDialog dialog(expected, parent);
     dialog.setCommitter([settings, expected](const QString &text, QString *error) {
         if (!TunBypass::saveSetting(settings->fn, expected, text, error)) return false;
-        settings->vpn_route_exclude_extra = text;
+        settings->vpn_gateway_exclusions = text;
         MW_show_log(QObject::tr("Исключения TUN сохранены для следующего подключения. Текущее соединение продолжает работать."));
         return true;
     });

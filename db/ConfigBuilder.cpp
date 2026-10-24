@@ -555,6 +555,11 @@ namespace NekoGui {
                 return;
             }
             for (const auto &extra : gatewayExclusions) excludes += extra;
+            if (!GreenRhythm::TunBypass::parse(dataStore->vpn_gateway_exclusions, &gatewayExclusions, &gatewayError)) {
+                status->result->error = gatewayError;
+                return;
+            }
+            for (const auto &extra : gatewayExclusions) excludes += extra;
             inboundObj["route_exclude_address"] = excludes;
 #ifndef Q_OS_WIN
             if (dataStore->routing->sniffing_mode != SniffingMode::DISABLE) {
@@ -1147,6 +1152,11 @@ namespace NekoGui {
         QStringList gatewayExclusions;
         QString gatewayError;
         if (!GreenRhythm::TunBypass::parse(dataStore->vpn_route_exclude_extra, &gatewayExclusions, &gatewayError)) {
+            qWarning().noquote() << gatewayError;
+            return {};
+        }
+        for (const auto &extra : gatewayExclusions) route_exclude_extra += ",\"" + extra + "\"";
+        if (!GreenRhythm::TunBypass::parse(dataStore->vpn_gateway_exclusions, &gatewayExclusions, &gatewayError)) {
             qWarning().noquote() << gatewayError;
             return {};
         }

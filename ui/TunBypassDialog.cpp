@@ -23,10 +23,10 @@ TunBypassDialog::TunBypassDialog(const QString &saved, QWidget *parent) : QDialo
     label(tr("Добавьте адрес шлюза рабочего VPN. Он пойдёт мимо TUN через обычные маршруты Windows, в том числе из VMware NAT. Это отличается от правила «Напрямую» внутри туннеля."));
     editor = new QPlainTextEdit(saved, this); editor->setObjectName("tunBypassEntries");
     editor->setMinimumHeight(140);
-    editor->setPlaceholderText(tr("Домен, IP или CIDR, каждый с новой строки\nНапример: vpn.company.ru\n212.164.137.29/32"));
+    editor->setPlaceholderText(tr("Домен, IP или CIDR, каждый с новой строки\nНапример: vpn.example.org\n192.0.2.29/32"));
     editor->setAccessibleName(tr("Шлюзы и сети мимо TUN")); layout->addWidget(editor, 1);
     label(tr("IP доменов определяются системным DNS заново перед каждым подключением. Неответивший DNS остановит запуск TUN с ошибкой. Исключение действует на все порты и сервисы полученного IP."));
-    label(tr("Сохранение не прерывает связь. Изменения вступят в силу при следующем подключении. Введённые сети и прежние исключения останутся в этом списке."));
+    label(tr("Этот список дополняет прежние сетевые исключения из настроек TUN. Сохранение не прерывает связь и не заменяет маршруты. Изменения вступят в силу при следующем подключении."));
     status = new QLabel(this); status->setObjectName("tunBypassStatus"); status->setWordWrap(true); layout->addWidget(status);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
     save = buttons->button(QDialogButtonBox::Save); save->setObjectName("tunBypassSave"); save->setText(tr("Готово"));
