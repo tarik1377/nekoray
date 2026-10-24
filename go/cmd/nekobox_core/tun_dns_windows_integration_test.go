@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net"
@@ -41,7 +42,7 @@ func TestWindowsRealTunDNSLoopGuard(t *testing.T) {
 	go func() { _ = server.ActivateAndServe() }()
 	defer server.Shutdown()
 	config := map[string]any{
-		"log": map[string]any{"disabled": true},
+		"log": map[string]any{"level": "trace"},
 		"inbounds": []any{map[string]any{"type": "tun", "tag": "test-tun", "interface_name": "gr-ci-dns", "stack": "system", "mtu": 1500,
 			"address": []string{"198.18.253.1/30"}, "auto_route": true, "route_address": []string{"198.18.253.0/30"}}},
 		"outbounds": []any{map[string]any{"type": "direct", "tag": "bypass"}},
@@ -56,8 +57,17 @@ func TestWindowsRealTunDNSLoopGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cancel()
-	defer instance.Close()
+	defer func() { cancel(); _ = instance.Close() }()
+	defer func() {
+		if !t.Failed() {
+			return
+		}
+		ctx, stop := context.WithTimeout(context.Background(), 15*time.Second)
+		defer stop()
+		output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command",
+			"Get-NetTCPConnection | Where-Object { $_.LocalAddress -like '198.18.253.*' -or $_.RemoteAddress -like '198.18.253.*' } | Format-Table -AutoSize | Out-String -Width 160; Get-NetRoute -InterfaceAlias gr-ci-dns | Format-Table -AutoSize | Out-String -Width 160; Get-NetIPInterface -InterfaceAlias gr-ci-dns | Format-List; Get-NetFirewallRule -DisplayName 'sing-tun (*)' | Get-NetFirewallApplicationFilter | Format-List").CombinedOutput()
+		t.Logf("runner network state: %s (%v)", output, err)
+	}()
 	q := new(dns.Msg).SetQuestion("real.guard-fixture.invalid.", dns.TypeA)
 	for _, network := range []string{"udp", "tcp"} {
 		a, _, err := (&dns.Client{Net: network, Timeout: 3 * time.Second}).Exchange(q, "198.18.253.2:53")

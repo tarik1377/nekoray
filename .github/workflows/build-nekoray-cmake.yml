@@ -212,6 +212,12 @@ jobs:
           git -C ../libneko remote add origin https://github.com/MatsuriDayo/libneko.git
           git -C ../libneko fetch --depth 1 origin "$LIBNEKO_COMMIT"
           git -C ../libneko checkout FETCH_HEAD
+      - name: Capture test subnet on disposable runner
+        shell: pwsh
+        run: |
+          pktmon filter add GreenRhythmTest -i 198.18.253.0/30
+          pktmon list --all > go/cmd/nekobox_core/tun-packet-components.txt
+          pktmon start --capture --pkt-size 128 --file-size 16 --file-name "$env:GITHUB_WORKSPACE\go\cmd\nekobox_core\tun-packets.etl"
       - name: Native tests and real isolated TUN
         shell: bash
         env:
@@ -223,12 +229,20 @@ jobs:
           CORE_TAGS="with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api"
           go test -modfile "$MODFILE" -tags "$CORE_TAGS" -timeout 5m -v -run 'TestTunDNSGuard|TestWindowsRealTunDNSLoopGuard' . 2>&1 | tee tun-regression.log
           go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/route -run 'TestAutoDetect|TestPrivateDestinationInterface'
+      - name: Stop test capture
+        if: always()
+        shell: pwsh
+        run: |
+          pktmon stop
+          pktmon etl2txt go/cmd/nekobox_core/tun-packets.etl --out go/cmd/nekobox_core/tun-packets.txt --verbose 3
       - name: Save test evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: tun-regression-${{ matrix.os }}
-          path: go/cmd/nekobox_core/tun-regression.log
+          path: |
+            go/cmd/nekobox_core/tun-regression.log
+            go/cmd/nekobox_core/tun-packet*
 
   build-windows:
     runs-on: windows-2022
