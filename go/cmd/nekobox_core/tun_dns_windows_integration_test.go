@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"golang.org/x/sys/windows"
 )
 
 // Deliberately unavailable in ordinary local runs, including go test ./....
@@ -29,6 +30,24 @@ func TestWindowsRealTunDNSLoopGuard(t *testing.T) {
 	if exe, err := os.Executable(); err == nil {
 		t.Logf("test program: %s; argv0: %s", exe, os.Args[0])
 	}
+	// Windows may retry a refused connect for a few seconds, even on loopback
+	// (see net/dial_test.go in Go). Check the native refusal baseline and require
+	// WSAECONNREFUSED below; a one-second deadline mistakes that retry for a drop.
+	closed, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closedAddress := closed.Addr().String()
+	_ = closed.Close()
+	started := time.Now()
+	baselineConn, baselineErr := net.DialTimeout("tcp4", closedAddress, 5*time.Second)
+	if baselineConn != nil {
+		_ = baselineConn.Close()
+	}
+	if !errors.Is(baselineErr, windows.WSAECONNREFUSED) {
+		t.Fatalf("native closed-port refusal failed: %v", baselineErr)
+	}
+	t.Logf("native Windows refusal baseline: %s", time.Since(started))
 	packet, err := net.ListenPacket("udp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -84,19 +103,36 @@ func TestWindowsRealTunDNSLoopGuard(t *testing.T) {
 			t.Errorf("real %s TUN DNS failed: %v %v", network, a, err)
 		}
 	}
-	// Above the default 50-reject flood threshold, with a real Windows SYN/RST
-	// exchange through Wintun/System. A timeout is a failure, not a valid refusal.
+	// A burst above the default 50-reject flood threshold, with real Windows
+	// SYN/RST exchanges through Wintun/System. Require an actual refusal rather
+	// than accepting a timeout, cancellation or local resource exhaustion.
+	type refusalResult struct {
+		attempt int
+		elapsed time.Duration
+		err     error
+	}
+	results := make(chan refusalResult, 64)
 	for attempt := 0; attempt < 64; attempt++ {
-		conn, err := net.DialTimeout("tcp4", "198.18.253.2:853", time.Second)
-		if err == nil {
-			_ = conn.Close()
-			t.Fatal("self-DNS TLS unexpectedly accepted")
+		go func(attempt int) {
+			started := time.Now()
+			conn, err := net.DialTimeout("tcp4", "198.18.253.2:853", 5*time.Second)
+			if conn != nil {
+				_ = conn.Close()
+			}
+			results <- refusalResult{attempt, time.Since(started), err}
+		}(attempt)
+	}
+	var slowest time.Duration
+	for range 64 {
+		result := <-results
+		if !errors.Is(result.err, windows.WSAECONNREFUSED) {
+			t.Errorf("self-DNS TLS attempt %d: expected connection refused, got %v after %s", result.attempt, result.err, result.elapsed)
 		}
-		var netErr net.Error
-		if errors.As(err, &netErr) && netErr.Timeout() {
-			t.Fatalf("self-DNS TLS timed out at attempt %d: %v", attempt, err)
+		if result.elapsed > slowest {
+			slowest = result.elapsed
 		}
 	}
+	t.Logf("64 concurrent self-DNS TLS refusal attempts, slowest: %s", slowest)
 	// SYNs rejected by the guard must not leave a chain of established or
 	// TIME_WAIT connections to the synthetic resolver (the original symptom).
 	output, err := exec.Command("powershell.exe", "-NoProfile", "-Command",
