@@ -127,3 +127,19 @@ func TestTunExclusionsParseHostIPAndRejectInvalidInputs(t *testing.T) {
 		t.Fatal("plain IP normalization failed", err)
 	}
 }
+
+func TestTunExclusionsHonorStartRequestCancellation(t *testing.T) {
+	request, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	lookup := requestScopedTunLookup(request, func(ctx context.Context, _, _ string) ([]netip.Addr, error) {
+		close(started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	go func() { <-started; cancel() }()
+	before := time.Now()
+	result, err := prepareTunRouteExclusions(context.Background(), exclusionFixture("gateway.invalid"), lookup)
+	if !errors.Is(err, context.Canceled) || result != nil || time.Since(before) > time.Second {
+		t.Fatal("abandoned Start RPC continued gateway resolution", err)
+	}
+}

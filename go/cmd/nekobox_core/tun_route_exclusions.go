@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/netip"
 	"strings"
 	"time"
@@ -12,6 +13,23 @@ import (
 )
 
 type tunGatewayLookup func(context.Context, string, string) ([]netip.Addr, error)
+
+func requestScopedTunLookup(request context.Context, lookup tunGatewayLookup) tunGatewayLookup {
+	return func(ctx context.Context, network, host string) ([]netip.Addr, error) {
+		ctx, cancel := context.WithCancel(ctx)
+		stop := context.AfterFunc(request, cancel)
+		defer cancel()
+		defer stop()
+		if err := request.Err(); err != nil {
+			return nil, err
+		}
+		return lookup(ctx, network, host)
+	}
+}
+
+func tunSystemLookupForRequest(request context.Context) tunGatewayLookup {
+	return requestScopedTunLookup(request, net.DefaultResolver.LookupNetIP)
+}
 
 // Resolve explicitly saved gateway names before creating the TUN adapter. These
 // are OS route exclusions, not DIRECT outbounds. No interface or gateway is
@@ -73,6 +91,9 @@ func prepareTunRouteExclusions(ctx context.Context, content []byte, lookup tunGa
 				continue
 			}
 			if ip, err := netip.ParseAddr(entry); err == nil {
+				if ip.Zone() != "" {
+					return nil, fmt.Errorf("TUN bypass: scoped IP addresses are not supported")
+				}
 				ip = ip.Unmap()
 				appendPrefix(netip.PrefixFrom(ip, ip.BitLen()).String())
 				inboundChanged = true

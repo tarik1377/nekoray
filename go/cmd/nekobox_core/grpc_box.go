@@ -41,7 +41,7 @@ func (s *server) Start(ctx context.Context, in *gen.LoadConfigReq) (out *gen.Err
 	// V2Ray stats outbounds are now expected to be configured in the JSON config
 	// passed from the C++ side, so no manual injection is needed.
 	rememberClashAPI([]byte(in.CoreConfig))
-	instance, instance_cancel, err = nekoCreate([]byte(in.CoreConfig))
+	instance, instance_cancel, err = nekoCreateWithTunLookup([]byte(in.CoreConfig), tunSystemLookupForRequest(ctx))
 
 	return
 }
