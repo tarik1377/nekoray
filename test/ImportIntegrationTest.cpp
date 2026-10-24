@@ -427,7 +427,7 @@ int main(int argc, char **argv) {
             check(built->error == defaultConfig->error, "game/voice policy introduces no additional builder errors");
             const auto guards = GreenRhythm::GameVoiceRouting::defaults(
                 QJsonDocument::fromJson(factoryCustom.toUtf8()).object().value("rules").toArray(),
-                QJsonDocument::fromJson(factoryCustom.toUtf8()).object().value("rules").toArray(), {});
+                QJsonDocument::fromJson(factoryCustom.toUtf8()).object().value("rules").toArray(), {}, {}, games);
             for (const auto &guard : guards)
                 check(ruleIndex(rules, guard.toObject()) >= 0 && ruleIndex(rules, guard.toObject()) < ruIndex(rules),
                       "actual game and voice guards precede broad country rules");
@@ -437,7 +437,8 @@ int main(int argc, char **argv) {
             check(udpBlock >= 0 && ruleIndex(rules, guards.last().toObject()) < udpBlock,
                   "Discord UDP/443 reaches the VPN before the general QUIC restriction");
             for (const auto &name : GreenRhythm::GameVoiceRouting::directProcesses())
-                check(routeFor(rules, name) == "bypass", "actual internal TUN keeps CS2 and Steam direct with games on/off");
+                check(routeFor(rules, name) == (games && !GreenRhythm::GameCatalog::alwaysDirect().contains(name, Qt::CaseInsensitive) ? "proxy" : "bypass"),
+                      "actual internal TUN keeps CS2/Dota/Steam direct and honors the games switch for other games");
             for (const auto &name : GreenRhythm::GameVoiceRouting::voiceProcesses())
                 check(routeFor(rules, name) == "proxy", "actual internal TUN forces Discord voice before country and QUIC rules");
         }
@@ -459,6 +460,15 @@ int main(int argc, char **argv) {
         const auto explicitRules = runtimeRules(buildCurrent());
         check(routeFor(explicitRules, "Discord.exe") == "bypass" && routeFor(explicitRules, "cs2.exe") == "proxy",
               "explicit per-app user choices beat game and voice defaults");
+        const auto previousGameApps = NekoGui::dataStore->game_app_rules;
+        NekoGui::dataStore->game_app_rules = "{\"schema\":1,\"programs\":{\"my-owned-game.exe\":\"bypass\",\"dota2.exe\":\"proxy\",\"Discord.exe\":\"proxy\"}}";
+        for (bool whitelist : {false, true}) {
+            NekoGui::dataStore->vpn_rule_white = whitelist;
+            const auto customRules = runtimeRules(buildCurrent());
+            check(routeFor(customRules, "my-owned-game.exe") == "bypass" && routeFor(customRules, "dota2.exe") == "proxy"
+                  && routeFor(customRules, "Discord.exe") == "proxy", "button choices have the same semantics in normal and whitelist TUN modes");
+        }
+        NekoGui::dataStore->game_app_rules = previousGameApps;
         NekoGui::dataStore->routing->custom = factoryCustom;
         NekoGui::dataStore->vpn_rule_process = previousBypass;
         NekoGui::dataStore->games_via_tunnel = previousGames;

@@ -7,14 +7,37 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
+	"github.com/sagernet/sing-box/route/rule"
 	"github.com/sagernet/sing/common/buf"
 	M "github.com/sagernet/sing/common/metadata"
 )
+
+func TestProcessNamePlatformCaseMatching(t *testing.T) {
+	r := rule.NewProcessItem([]string{"Dota2.EXE", "my-owned-game.exe"})
+	for _, tc := range []struct {
+		name string
+		want bool
+	}{
+		{"Dota2.EXE", true}, {"dota2.exe", runtime.GOOS == "windows"},
+		{"MY-OWNED-GAME.EXE", runtime.GOOS == "windows"},
+		{"my-owned-game.exe", true}, {"not-dota2.exe", false},
+		{"dota2.exe.bak", false},
+	} {
+		metadata := adapter.InboundContext{ProcessInfo: &adapter.ConnectionOwner{ProcessPath: filepath.Join("fixture", tc.name)}}
+		if got := r.Match(&metadata); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	if r.Match(&adapter.InboundContext{}) || r.Match(&adapter.InboundContext{ProcessInfo: &adapter.ConnectionOwner{}}) {
+		t.Fatal("missing process owner matched")
+	}
+}
 
 // Metadata represents the process information supplied by a TUN inbound. No
 // TUN device, OS route, installed client, subscription or public endpoint is used.
@@ -73,8 +96,10 @@ func TestGameVoiceUDPAndTCPRoutes(t *testing.T) {
 		}()
 	}
 	// One instance per transport, with no profile reloads during the probes.
-	for _, network := range []string{"udp", "tcp"} {
-		t.Run(network, func(t *testing.T) {
+	for _, variant := range []string{"udp", "tcp", "udp-custom", "tcp-custom"} {
+		network := strings.Split(variant, "-")[0]
+		custom := strings.HasSuffix(variant, "-custom")
+		t.Run(variant, func(t *testing.T) {
 			targets := tcpTargets
 			if network == "udp" {
 				targets = udpTargets
@@ -82,6 +107,12 @@ func TestGameVoiceUDPAndTCPRoutes(t *testing.T) {
 			var rules []map[string]interface{}
 			if err := json.Unmarshal(fixture, &rules); err != nil {
 				t.Fatal(err)
+			}
+			if custom {
+				rules = append([]map[string]interface{}{
+					{"process_name": []string{"my-owned-game.exe"}, "outbound": "bypass"},
+					{"process_name": []string{"dota2.exe", "Discord.exe"}, "outbound": "proxy"},
+				}, rules...)
 			}
 			for _, rule := range rules {
 				if tag, _ := rule["outbound"].(string); tag == "bypass" || tag == "proxy" {
@@ -97,6 +128,11 @@ func TestGameVoiceUDPAndTCPRoutes(t *testing.T) {
 			if err = json.Unmarshal(sniffFixture, &sniffRules); err != nil {
 				t.Fatal(err)
 			}
+			if custom {
+				names := append(sniffRules[0]["process_name"].([]interface{}), "my-owned-game.exe")
+				sniffRules[0]["process_name"] = names
+				sniffRules[1]["rules"].([]interface{})[1].(map[string]interface{})["rules"].([]interface{})[1].(map[string]interface{})["process_name"] = names
+			}
 			rules = append(sniffRules, rules...)
 			config := map[string]interface{}{
 				"log":       map[string]interface{}{"disabled": true},
@@ -109,17 +145,27 @@ func TestGameVoiceUDPAndTCPRoutes(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer func() { cancel(); _ = box.Close() }()
-			for _, process := range []string{"cs2.exe", "csgo.exe", "steam.exe", "steamwebhelper.exe", "steamservice.exe", "SteamService.exe", "Discord.exe", "discord.exe", "DiscordPTB.exe", "DiscordCanary.exe", "other.exe"} {
+			processes := []string{"cs2.exe", "csgo.exe", "steam.exe", "steamwebhelper.exe", "steamservice.exe", "SteamService.exe",
+				"dota2.exe", "r5apex.exe", "VALORANT.exe", "VALORANT-Win64-Shipping.exe", "League of Legends.exe", "LeagueClient.exe", "LeagueClientUx.exe", "LeagueClientUxRenderer.exe",
+				"FortniteClient-Win64-Shipping.exe", "FortniteClient-Win64-Shipping_BE.exe", "FortniteClient-Win64-Shipping_EAC.exe", "FortniteLauncher.exe",
+				"SquadGame-Win64-Shipping.exe", "SquadGame.exe", "Squad.exe", "SoTGame.exe", "SoTLauncher.exe", "EscapeFromTarkov.exe", "BsgLauncher.exe",
+				"Discord.exe", "discord.exe", "DiscordPTB.exe", "DiscordCanary.exe", "my-owned-game.exe", "other.exe"}
+			if runtime.GOOS == "windows" {
+				processes = append(processes, "DOTA2.EXE", "CS2.EXE", "DISCORD.EXE", "MY-OWNED-GAME.EXE", "STEAM.EXE")
+			}
+			for _, process := range processes {
+				processKey := strings.ToLower(process)
 				for _, host := range []string{"178.130.128.26:27015", "198.51.100.8:443"} {
 					t.Run(process+"/"+host, func(t *testing.T) {
-						want := "proxy"
-						if strings.HasPrefix(strings.ToLower(process), "cs") || strings.HasPrefix(strings.ToLower(process), "steam") {
+						want := "bypass"
+						if strings.HasPrefix(processKey, "discord") || processKey == "other.exe" || processKey == "my-owned-game.exe" && !custom || processKey == "dota2.exe" && custom {
+							want = "proxy"
+						}
+						ordinary := processKey == "other.exe" || processKey == "my-owned-game.exe" && !custom
+						if ordinary && strings.HasPrefix(host, "178.") {
 							want = "bypass"
 						}
-						if process == "other.exe" && strings.HasPrefix(host, "178.") {
-							want = "bypass"
-						}
-						blocked := process == "other.exe" && network == "udp" && strings.HasSuffix(host, ":443")
+						blocked := ordinary && network == "udp" && strings.HasSuffix(host, ":443")
 						metadata := adapter.InboundContext{Inbound: "tun-in", Network: network, Destination: M.ParseSocksaddr(host), ProcessInfo: &adapter.ConnectionOwner{ProcessPath: "C:/fixture/" + process}}
 						if network == "tcp" {
 							client, server := net.Pipe()
