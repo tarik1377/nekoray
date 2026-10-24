@@ -68,6 +68,12 @@ func TestWindowsRealTunDNSLoopGuard(t *testing.T) {
 			"Get-NetTCPConnection | Where-Object { $_.LocalAddress -like '198.18.253.*' -or $_.RemoteAddress -like '198.18.253.*' } | Format-Table -AutoSize | Out-String -Width 160; Get-NetRoute -InterfaceAlias gr-ci-dns | Format-Table -AutoSize | Out-String -Width 160; Get-NetIPInterface -InterfaceAlias gr-ci-dns | Format-List; Get-NetFirewallRule -DisplayName 'sing-tun (*)' | Get-NetFirewallApplicationFilter | Format-List").CombinedOutput()
 		t.Logf("runner network state: %s (%v)", output, err)
 	}()
+	// Restart capture after the NIC exists so Packet Monitor can see the newly
+	// registered virtual adapter. This is still restricted to disposable CI.
+	_ = exec.Command("pktmon", "stop").Run()
+	if output, err := exec.Command("pktmon", "start", "--capture", "--trace", "--provider", "Microsoft-Windows-TCPIP", "--pkt-size", "128", "--file-size", "16", "--file-name", "tun-packets.etl").CombinedOutput(); err != nil {
+		t.Logf("packet trace unavailable: %s %v", output, err)
+	}
 	q := new(dns.Msg).SetQuestion("real.guard-fixture.invalid.", dns.TypeA)
 	for _, network := range []string{"udp", "tcp"} {
 		a, _, err := (&dns.Client{Net: network, Timeout: 3 * time.Second}).Exchange(q, "198.18.253.2:53")

@@ -120,4 +120,32 @@ done < <(find _overlay/sing-vmess -type f -name '*.go')
 vmess_abs="$(cd "$vmess_dst" && (pwd -W 2>/dev/null || pwd))"
 go mod edit -replace "github.com/sagernet/sing-vmess=$vmess_abs" go.overlay.mod
 
+# Windows System-stack firewall setup errors used to be silently discarded.
+tun_have=$(grep -m1 'github.com/sagernet/sing-tun v' go.mod | sed 's/.*sing-tun //' | awk '{print $1}' | tr -d '\r')
+while IFS= read -r file; do
+  base=$(grep -m1 '^// overlay-base: github.com/sagernet/sing-tun ' "$file" | awk '{print $4}')
+  if [ "$base" != "$tun_have" ]; then
+    echo "prepare.sh: $file is based on ${base:-?}, expected $tun_have" >&2
+    exit 1
+  fi
+done < <(find _overlay/sing-tun -type f -name '*.go')
+go mod download github.com/sagernet/sing-tun
+tun_src=$(go list -m -f '{{.Dir}}' github.com/sagernet/sing-tun)
+tun_src="${tun_src//\\//}"
+tun_dst="_overlay/build/sing-tun"
+if [ ! -f "$tun_src/go.mod" ]; then
+  echo 'prepare.sh: sing-tun module not available' >&2
+  exit 1
+fi
+rm -rf "$tun_dst"
+cp -r "$tun_src" "$tun_dst"
+chmod -R u+w "$tun_dst"
+while IFS= read -r file; do
+  relative="${file#_overlay/sing-tun/}"
+  mkdir -p "$tun_dst/$(dirname "$relative")"
+  cp "$file" "$tun_dst/$relative"
+done < <(find _overlay/sing-tun -type f -name '*.go')
+tun_abs="$(cd "$tun_dst" && (pwd -W 2>/dev/null || pwd))"
+go mod edit -replace "github.com/sagernet/sing-tun=$tun_abs" go.overlay.mod
+
 echo "go.overlay.mod"
