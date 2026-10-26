@@ -760,7 +760,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // search box
     ui->search->setVisible(false);
     connect(shortcut_ctrl_f, &QShortcut::activated, this, [=] {
-        if (shell) { shell->focusServerSearch(); return; }
+        if (shell) { shell->focusSearch(); return; }
         ui->search->setVisible(true);
         ui->search->setFocus();
     });

@@ -514,7 +514,7 @@ namespace GreenRhythm {
         QFont f = heading->font(); f.setWeight(QFont::DemiBold); f.setPointSizeF(f.pointSizeF() * 1.45); heading->setFont(f);
         intro->addWidget(heading);
         intro->addWidget(muted(header, tr("Подключение, правила и обслуживание приложения"), 0.92));
-        auto *search = new QLineEdit(header); search->setObjectName("grSettingsSearch");
+        auto *search = new SettingsSearch(header); search->setObjectName("grSettingsSearch");
         search->setPlaceholderText(tr("Найти настройку: игры, туннель, запуск…"));
         search->setAccessibleName(tr("Поиск по настройкам")); search->setClearButtonEnabled(true);
         search->addAction(Icons::icon("gr-search", QColor(kMuted), QColor(kMuted), 16), QLineEdit::LeadingPosition);
@@ -898,6 +898,14 @@ namespace GreenRhythm {
         searchResult->setText(total == 0 ? tr("Серверов пока нет. Добавьте ссылку или вставьте её из буфера.") :
                               visible == 0 ? tr("Ничего не найдено. Попробуйте другое название или адрес.") :
                               tr("Показано %1 из %2").arg(visible).arg(total));
+    }
+
+    void MainShell::focusSearch() {
+        auto *settings = findChild<QLineEdit *>("grSettingsSearch");
+        if (settings && settings->isVisible()) {
+            settings->setFocus(); settings->selectAll(); return;
+        }
+        focusServerSearch();
     }
 
     void MainShell::focusServerSearch() {

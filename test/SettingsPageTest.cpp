@@ -61,6 +61,7 @@
 #include <QLineEdit>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QMainWindow>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -703,12 +704,44 @@ static void searchableSettingsStayReadOnly() {
     is(QStringLiteral("страница не создаёт горизонтальную прокрутку"), scroll->horizontalScrollBar()->maximum() == 0);
 }
 
+static void settingsSearchKeyboardIsContained() {
+    class Host : public QMainWindow {
+    public: int enterActions = 0, escapeActions = 0;
+    protected:
+        void keyPressEvent(QKeyEvent *event) override {
+            if (event->key() == Qt::Key_Enter) ++enterActions;
+            if (event->key() == Qt::Key_Escape) ++escapeActions;
+            QMainWindow::keyPressEvent(event);
+        }
+    } host;
+    auto *shell = new GreenRhythm::MainShell(&host);
+    shell->adopt(new QWidget, new QWidget); host.setCentralWidget(shell); host.resize(1100, 820); host.show();
+    shell->showPage(3); QCoreApplication::processEvents();
+    auto *search = shell->findChild<QLineEdit *>("grSettingsSearch");
+    auto *pages = shell->findChild<QStackedWidget *>("grPages");
+    search->setText(QStringLiteral("туннель")); shell->focusSearch(); QCoreApplication::processEvents();
+    is(QStringLiteral("Ctrl+F в настройках остаётся на странице и выделяет запрос"), pages->currentIndex() == 3 && search->selectedText() == search->text());
+    for (const auto key : {Qt::Key_Return, Qt::Key_Enter}) {
+        QKeyEvent shortcut(QEvent::ShortcutOverride, key, Qt::NoModifier); shortcut.setAccepted(false);
+        QCoreApplication::sendEvent(search, &shortcut);
+        QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier); QCoreApplication::sendEvent(search, &press);
+        is(QStringLiteral("Enter %1 не передаётся обработчику подключения главного окна").arg(int(key)), shortcut.isAccepted() && host.enterActions == 0);
+    }
+    QKeyEvent shortcut(QEvent::ShortcutOverride, Qt::Key_Escape, Qt::NoModifier); shortcut.setAccepted(false);
+    QCoreApplication::sendEvent(search, &shortcut);
+    QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier); QCoreApplication::sendEvent(search, &escape);
+    is(QStringLiteral("Escape очищает запрос вместо команды главного окна"), shortcut.isAccepted() && search->text().isEmpty() && host.escapeActions == 0);
+    shell->showPage(0); shell->focusSearch(); QCoreApplication::processEvents();
+    is(QStringLiteral("Ctrl+F на странице подключения по-прежнему открывает серверы"), pages->currentIndex() == 1);
+}
+
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     registerWidgetTestFonts();
     GreenRhythm::applyAppFont(app);
     app.setStyleSheet(slurp("res/theme/feiyangqingyun/qss/modern.css"));
     searchableSettingsStayReadOnly();
+    settingsSearchKeyboardIsContained();
     shellShowsTheTruth();
     scheduleRule();
     sourcesWiredAndMoved();

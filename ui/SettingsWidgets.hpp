@@ -6,11 +6,38 @@
 #include <QEvent>
 #include <QFrame>
 #include <QLabel>
+#include <QLineEdit>
+#include <QKeyEvent>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QWidget>
 
 namespace GreenRhythm {
+
+class SettingsSearch : public QLineEdit {
+public:
+    explicit SettingsSearch(QWidget *parent = nullptr) : QLineEdit(parent) {}
+protected:
+    bool event(QEvent *event) override {
+        if (event->type() == QEvent::ShortcutOverride) {
+            auto *key = static_cast<QKeyEvent *>(event);
+            if (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter
+                || (key->key() == Qt::Key_Escape && !text().isEmpty())) {
+                event->accept(); return true;
+            }
+        }
+        return QLineEdit::event(event);
+    }
+    void keyPressEvent(QKeyEvent *event) override {
+        if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+            event->accept(); return;
+        }
+        if (event->key() == Qt::Key_Escape && !text().isEmpty()) {
+            clear(); event->accept(); return;
+        }
+        QLineEdit::keyPressEvent(event);
+    }
+};
 
 inline bool settingsMatch(QString text, QString query) {
     text = text.toCaseFolded().replace(QChar(0x451), QChar(0x435));

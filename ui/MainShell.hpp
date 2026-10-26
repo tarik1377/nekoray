@@ -62,6 +62,7 @@ namespace GreenRhythm {
         /** Показать страницу по номеру: 0 подключение, 1 серверы, 2 журнал. */
         void showPage(int index);
         void focusServerSearch();
+        void focusSearch();
         void setSearchResultCount(int visible, int total);
 
         /**
