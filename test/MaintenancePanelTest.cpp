@@ -1,6 +1,8 @@
 #include "ui/MainShell.hpp"
 #include "ui/MaintenancePanel.hpp"
 #include "ui/RollbackAction.hpp"
+#include "main/AppFont.hpp"
+#include "test/WidgetTestFonts.hpp"
 
 #include <QApplication>
 #include <QElapsedTimer>
@@ -251,11 +253,8 @@ int main(int argc, char **argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QApplication app(argc, argv);
 #ifdef Q_OS_WIN
-    // Match the shipped 10 pt profile from main/AppFont.cpp when measuring the
-    // real widgets; the platform's generic 9 pt default hides compact clipping.
-    QFont font(QFontDatabase::families().contains("Segoe UI Variable Text") ? "Segoe UI Variable Text" : "Segoe UI", 10);
-    font.setStyleStrategy(QFont::PreferAntialias);
-    app.setFont(font);
+    registerWidgetTestFonts();
+    GreenRhythm::applyAppFont(app);
 #endif
     if (argc == 2 && std::strcmp(argv[1], "--geometry-only") == 0) {
         geometry();

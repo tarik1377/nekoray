@@ -52,13 +52,18 @@
 #include "ui/MainShell.hpp"
 #include "ui/SubscriptionSchedule.hpp"
 #include "ui/UpdateNotice.hpp"
+#include "main/AppFont.hpp"
+#include "test/WidgetTestFonts.hpp"
 
 #include <QApplication>
 #include <QFile>
 #include <QLabel>
+#include <QLineEdit>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QStackedWidget>
 #include <QWindow>
 #include <QDialog>
@@ -652,8 +657,58 @@ static void quietUpdateCheckWired() {
        check.contains(QStringLiteral("NekoGui_rpc::defaultClient == nullptr")));
 }
 
+static void searchableSettingsStayReadOnly() {
+    Shell s;
+    auto *search = s.w.findChild<QLineEdit *>("grSettingsSearch");
+    auto *empty = s.w.findChild<QLabel *>("grSettingsSearchEmpty");
+    auto *scroll = s.w.findChild<QScrollArea *>("grSettingsScroll");
+    is(QStringLiteral("поиск и его пустое состояние доступны"), search && empty && scroll);
+    if (!search || !empty || !scroll) return;
+    int routeActions = 0, tunnelChanges = 0, maintenanceShows = 0;
+    QObject::connect(&s.w, &GreenRhythm::MainShell::routeDefaultsRequested, [&] { ++routeActions; });
+    QObject::connect(&s.w, &GreenRhythm::MainShell::tunToggled, [&] { ++tunnelChanges; });
+    QObject::connect(&s.w, &GreenRhythm::MainShell::maintenanceShown, [&] { ++maintenanceShows; });
+    s.reveal(search);
+    s.w.setModes(true, false, true, false);
+    const bool autoStart = s.autostart->isChecked(), subscription = s.subscription->isChecked();
+    auto settle = [] { for (int i = 0; i < 5; ++i) { QCoreApplication::sendPostedEvents(); QCoreApplication::processEvents(); } };
+    search->setText(QStringLiteral("ПАРАМЕТРЫ ТУННЕЛЯ")); settle();
+    is(QStringLiteral("поиск без учёта регистра находит нужное действие"), s.tunnelSettings->isVisible());
+    is(QStringLiteral("поиск скрывает посторонние настройки"), !s.autostart->isVisible() && !s.checkUpdates->isVisible());
+    s.click(s.tunnelSettings);
+    is(QStringLiteral("найденное действие сохраняет исходную проводку"), s.tunnelSettingsOpened == 1 && tunnelChanges == 0);
+#ifdef Q_OS_WIN
+    search->setText(QStringLiteral("рабочие VPN")); settle();
+    auto *gateways = s.w.findChild<QPushButton *>("grTunBypass");
+    auto *games = s.w.findChild<QPushButton *>("grGamePrograms");
+    is(QStringLiteral("запрос «рабочие VPN» находит шлюзы, не все строки группы"), gateways && gateways->isVisible() && games && !games->isVisible());
+    search->setText(QStringLiteral("dOtA")); settle();
+    is(QStringLiteral("поиск работает и по описанию игры"), games && games->isVisible() && !gateways->isVisible());
+#endif
+    search->setText(QStringLiteral("свернутым")); settle();
+    is(QStringLiteral("поиск принимает е вместо ё"), s.startHidden->isVisible());
+    search->setText(QStringLiteral("несуществующая-настройка-123")); settle();
+    is(QStringLiteral("пустой результат объяснён, действия скрыты"), empty->isVisible() && !s.tunnelSettings->isVisible());
+    search->clear(); settle();
+    is(QStringLiteral("очистка восстанавливает все настройки и значения"), !empty->isVisible() && s.autostart->isVisible()
+        && s.checkUpdates->isVisible() && s.autostart->isChecked() == autoStart && s.subscription->isChecked() == subscription);
+    is(QStringLiteral("фильтрация не воспроизводит событие входа в обслуживание"), maintenanceShows == 1);
+    const auto searchPosition = search->mapTo(&s.w, QPoint());
+    scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum()); settle();
+    is(QStringLiteral("поиск остаётся видимым при прокрутке до конца"), search->isVisible() && search->mapTo(&s.w, QPoint()) == searchPosition);
+    search->setFocus();
+    QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+    QCoreApplication::sendEvent(search, &enter); settle();
+    is(QStringLiteral("Enter в поиске не применяет маршруты и не меняет подключение"), routeActions == 0 && tunnelChanges == 0 && s.updateChecks == 0);
+    is(QStringLiteral("страница не создаёт горизонтальную прокрутку"), scroll->horizontalScrollBar()->maximum() == 0);
+}
+
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
+    registerWidgetTestFonts();
+    GreenRhythm::applyAppFont(app);
+    app.setStyleSheet(slurp("res/theme/feiyangqingyun/qss/modern.css"));
+    searchableSettingsStayReadOnly();
     shellShowsTheTruth();
     scheduleRule();
     sourcesWiredAndMoved();
