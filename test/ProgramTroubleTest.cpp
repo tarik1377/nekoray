@@ -101,7 +101,19 @@ int main(int argc, char **argv) {
         w.add({conn(game, "bypass", "udp", "1.2.3.4:15020", 1)});
         const auto f = w.finish(game);
         is(QStringLiteral("«и так напрямую» опознано"), f.verdict == Verdict::Direct);
+        is(QStringLiteral("прямой UDP посчитан отдельно от TCP"), f.udpDirect == 1 && f.udpViaTunnel == 0);
         is(QStringLiteral("сам себе в соседи не попал"), f.companions.isEmpty());
+    }
+
+    {
+        Watch w;
+        w.add({conn("dota2.exe", "bypass", "tcp", "1.2.3.4:443", 1),
+               conn("dota2.exe", "bypass", "udp", "1.2.3.4:27020", 2),
+               conn("dota2.exe", "proxy", "udp", "1.2.3.5:27020", 3),
+               conn("dota2.exe", "block", "udp", "1.2.3.6:27020", 4)});
+        const auto f = w.finish("DOTA2.EXE");
+        is(QStringLiteral("смешанный UDP игры не маскируется прямым HTTPS меню"),
+           f.direct == 2 && f.udpDirect == 1 && f.udpViaTunnel == 1 && f.verdict == Verdict::Mixed);
     }
 
     // ---- имя сравнивается без учёта регистра ----

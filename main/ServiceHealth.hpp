@@ -23,7 +23,7 @@ struct HealthSample {
 struct HealthContext {
     QString version, protocol, nodeId, routeFingerprint, tunStack;
     int mtu = 0;
-    bool profileRunning = false, tunEnabled = false;
+    bool profileRunning = false, tunEnabled = false, systemProxyEnabled = false;
     QNetworkProxy profileProxy;
     QUrl subscription;
     QString subscriptionUserAgent;

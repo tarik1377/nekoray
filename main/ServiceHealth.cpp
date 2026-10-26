@@ -280,6 +280,8 @@ QString ServiceHealth::summary() const {
         if (transport.value("udp_control") != "replies")
             return verdict(tr("HTTPS и Gateway WebSocket Discord доступны, но не все контрольные UDP-ответы получены. Это отдельный UDP-путь, а не доказательство отказа голоса Discord."));
     }
+    if (service == "discord" && !context.tunEnabled)
+        return verdict(tr("Контрольные запросы прошли, но TUN выключен. Системный HTTP-прокси не перенаправляет голосовой UDP Discord. Если голос не подключается, выберите туннель в настройках и переподключитесь, когда это будет удобно. Контрольная UDP-проба использует прокси явно и не проверяет маршрут самой программы Discord."));
     return verdict(service == "discord"
         ? tr("HTTPS Discord и контрольные запросы прошли. Голосовое соединение не проверено. Результаты WebSocket и UDP приведены отдельно.")
         : tr("Контрольные HTTPS-запросы прошли в интервале проверки. Это не подтверждает работу всех приложений и голосовых соединений."));
@@ -320,6 +322,10 @@ QString ServiceHealth::comparisonConclusion() const {
 }
 QString ServiceHealth::details() const {
     QStringList lines;
+    lines.append(tr("Режим при запуске проверки: TUN — %1; системный прокси — %2.")
+        .arg(context.tunEnabled ? tr("включён") : tr("выключен"), context.systemProxyEnabled ? tr("включён") : tr("выключен")));
+    if (service == "discord" && !context.tunEnabled)
+        lines.append(tr("Без TUN голосовой UDP приложения не перенаправляется системным HTTP-прокси. Другая программа или VPN могут управлять им отдельно. Наша контрольная UDP-проба обращается к прокси явно; её успех не подтверждает, что сам Discord использует этот путь."));
     for (const auto &target : targets) for (const auto path : {WebCheckPath::System, WebCheckPath::GreenRhythm}) {
         int success = 0, count = 0; QList<qint64> timings; QString last;
         for (const auto &sample : samples) if (sample.target == target.id && sample.result.path == path) {
@@ -365,6 +371,7 @@ QJsonObject ServiceHealth::report() const {
         {"os", QSysInfo::prettyProductName()}, {"node_id", context.nodeId}, {"route_fingerprint", context.routeFingerprint},
         {"tun_stack", context.tunStack}, {"mtu", context.mtu},
         {"service", service}, {"profile_running", context.profileRunning}, {"tun_enabled", context.tunEnabled},
+        {"system_proxy_enabled", context.systemProxyEnabled},
         {"independent_isp_baseline", false}, {"voice_verified", false}, {"cancelled", cancelled}, {"stale", stale},
         {"deadline_exceeded", deadlineExceeded},
         {"rounds_requested", rounds}, {"subscription_state", subscriptionState}, {"subscription_http", subscriptionHttp},

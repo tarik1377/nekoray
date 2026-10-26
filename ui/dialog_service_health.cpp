@@ -27,7 +27,7 @@ DialogServiceHealth::DialogServiceHealth(QWidget *parent, const QList<GreenRhyth
     cancel = new QPushButton(tr("Остановить проверку"), this); cancel->setObjectName("grHealthCancel"); cancel->setEnabled(false);
     actions->addWidget(start); actions->addWidget(cancel); layout->addLayout(actions);
     progress = new QProgressBar(this); progress->setObjectName("grHealthProgress"); progress->setRange(0, 1); progress->setValue(0); layout->addWidget(progress);
-    verdict = new QLabel(tr("Выберите проверку и нажмите «Начать проверку»."), this);
+    verdict = new QLabel(tr("Выберите сервис и нажмите «Сравнить профили и проверить»."), this);
     verdict->setTextFormat(Qt::PlainText); verdict->setWordWrap(true); verdict->setObjectName("grHealthVerdict"); layout->addWidget(verdict);
     results = new QPlainTextEdit(this); results->setObjectName("grHealthResults"); results->setReadOnly(true); layout->addWidget(results, 1);
     observe = new QPushButton(tr("Наблюдать за Discord во время попытки войти в голос"), this); observe->setObjectName("grHealthObserveDiscord"); observe->hide(); observe->setEnabled(false);

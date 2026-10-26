@@ -78,8 +78,21 @@ int main(int argc, char **argv) {
 
     GameProgramsDialog unchanged({}, true);
     int commits = 0;
+    QString inspected;
+    unchanged.setInspector([&](const QString &name) { inspected=name; });
     unchanged.setCommitter([&](const QString &, QString *) { ++commits; return true; });
     unchanged.show(); app.processEvents();
+    auto *table = unchanged.findChild<QTableWidget *>("gamePrograms");
+    for (int row=0;row<table->rowCount();++row)
+        if (table->item(row,0)->data(Qt::UserRole).toStringList().contains("dota2.exe")) table->selectRow(row);
+    auto *inspect = unchanged.findChild<QPushButton *>("gameInspect");
+    inspect->click();
+    check(inspected=="dota2.exe" && commits==0 && !unchanged.changed() && unchanged.isVisible(),
+          "selected Dota inspection starts without committing routes, closing the editor or reconnecting");
+    auto *search = unchanged.findChild<QLineEdit *>("gameSearch"); search->setText("not-in-catalog");
+    check(!inspect->isEnabled(), "filtered-out selection cannot silently inspect an invisible program");
+    search->clear();
+    check(inspect->isEnabled(), "clearing search restores observation for the selected game");
     auto *done = unchanged.findChild<QPushButton *>("gameSave");
     check(done && done->isEnabled() && done->text() == QString::fromUtf8("Готово"), "no-change dialog has a working Done button");
     check(unchanged.rect().contains(QRect(done->mapTo(&unchanged, QPoint{}), done->size())), "footer action stays inside the dialog");
@@ -92,6 +105,14 @@ int main(int argc, char **argv) {
     check(edited.changed(), "adding a custom game creates a draft only");
     choice(edited, "Discord.exe")->setCurrentIndex(choice(edited, "Discord.exe")->findData("proxy"));
     choice(edited, "dota2.exe")->setCurrentIndex(choice(edited, "dota2.exe")->findData("bypass"));
+    edited.setInspector([&](const QString &name) { inspected=name; });
+    auto *editedTable=edited.findChild<QTableWidget *>("gamePrograms");
+    for(int row=0;row<editedTable->rowCount();++row)
+        if(editedTable->item(row,0)->data(Qt::UserRole).toStringList().contains("dota2.exe")) editedTable->selectRow(row);
+    const auto draftBefore=edited.serializedRules(); const auto commitsBefore=commits;
+    edited.findChild<QPushButton *>("gameInspect")->click();
+    check(inspected=="dota2.exe" && commits==commitsBefore && edited.changed() && edited.serializedRules()==draftBefore,
+          "inspection preserves an unsaved custom-game draft and never invokes its committer");
     edited.show(); app.processEvents(); edited.findChild<QPushButton *>("gameSave")->click();
     check(edited.isVisible() && edited.findChild<QLabel *>("gameStatus")->text() == "fixture denied write", "failed commit stays open with the real error");
     QJsonObject accepted;

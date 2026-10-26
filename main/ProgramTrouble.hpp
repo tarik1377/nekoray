@@ -26,8 +26,8 @@ namespace GreenRhythm {
 
     enum class Verdict {
         NotSeen,       // за время наблюдения программа не связывалась ни с кем
-        ThroughTunnel, // ходит через туннель — вот и причина
-        Direct,        // и так ходит напрямую — причина не в нас
+        ThroughTunnel, // замечен выход через профиль; причина сбоя не установлена
+        Direct,        // выход без VPN-сервера; TUN может продолжать перехват
         Mixed,         // часть через туннель, часть напрямую
     };
 
@@ -37,6 +37,7 @@ namespace GreenRhythm {
         int viaTunnel = 0;
         int direct = 0;
         int udpViaTunnel = 0; // для игр решает именно это
+        int udpDirect = 0;
         QStringList companions;
     };
 

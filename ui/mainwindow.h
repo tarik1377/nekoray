@@ -81,6 +81,7 @@ public:
     void start_select_mode(QObject *context, const std::function<void(int)> &callback);
 
     void refresh_connection_list(const QJsonArray &arr);
+    void inspect_program(const QString &name, QWidget *owner = nullptr);
 
     // Окно разбора кормится тем же потоком соединений, что и таблица. Пока оно
     // закрыто — указатель пуст, и лишней работы не делается.

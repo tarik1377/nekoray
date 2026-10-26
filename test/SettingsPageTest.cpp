@@ -735,11 +735,39 @@ static void settingsSearchKeyboardIsContained() {
     is(QStringLiteral("Ctrl+F на странице подключения по-прежнему открывает серверы"), pages->currentIndex() == 1);
 }
 
+static void connectionModeAdviceAndSmallWindow() {
+    Shell s; s.w.showPage(0); s.w.setConnectionState(true, "Fixture", "27 мс");
+    int reconnects=0, routeChanges=0;
+    QObject::connect(&s.w, &GreenRhythm::MainShell::connectToggled, [&]{++reconnects;});
+    QObject::connect(&s.w, &GreenRhythm::MainShell::tunToggled, [&]{++routeChanges;});
+    auto *hint=s.w.findChild<QLabel*>("grModeCoverage");
+    auto *scroll=s.w.findChild<QScrollArea*>("grConnectScroll");
+    for (const bool tun : {false,true}) for (const bool proxy : {false,true}) {
+        s.w.setModes(tun,proxy,false,false); QCoreApplication::processEvents();
+        is(QStringLiteral("описание режима не обещает голос по одному HTTP"), hint && !hint->text().isEmpty()
+            && (tun ? hint->text().contains(QStringLiteral("UDP"))
+                    : !proxy || hint->text().contains(QStringLiteral("не перенаправляет голосовой UDP"))));
+    }
+    s.w.resize(820,560);
+    for(int i=0;i<8;++i) { QCoreApplication::sendPostedEvents(); QCoreApplication::processEvents(); }
+    auto *body=s.w.findChild<QWidget*>("grConnectBody");
+    is(QStringLiteral("узкое окно подключения не обрезает тело по ширине"), scroll && body
+        && body->width() <= scroll->viewport()->width() && scroll->horizontalScrollBar()->maximum()==0);
+    is(QStringLiteral("короткое окно подключения позволяет дойти до диагностики"), scroll && scroll->verticalScrollBar()->maximum()>0);
+    if(scroll) scroll->ensureWidgetVisible(s.w.findChild<QPushButton*>("grQuickServiceHealth"));
+    QCoreApplication::processEvents();
+    auto *health=s.w.findChild<QPushButton*>("grQuickServiceHealth");
+    is(QStringLiteral("кнопка диагностики доступна после прокрутки"), scroll && health
+        && scroll->viewport()->rect().contains(QRect(health->mapTo(scroll->viewport(),QPoint()),health->size())));
+    is(QStringLiteral("обновление подписей и размеров не меняет маршруты и подключение"),reconnects==0 && routeChanges==0);
+}
+
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     registerWidgetTestFonts();
     GreenRhythm::applyAppFont(app);
     app.setStyleSheet(slurp("res/theme/feiyangqingyun/qss/modern.css"));
+    connectionModeAdviceAndSmallWindow();
     searchableSettingsStayReadOnly();
     settingsSearchKeyboardIsContained();
     shellShowsTheTruth();

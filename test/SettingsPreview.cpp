@@ -34,10 +34,13 @@ int main(int argc, char **argv) {
         shell.findChild<QLabel *>("grRollbackStatus"), GreenRhythm::Rollback::parseStatus(
             QByteArrayLiteral("{\"available\":true,\"version\":\"2.1.3\",\"provenance\":\"signed-release\",\"platform\":\"windows-x64\",\"files\":43}")));
     shell.resize(argc > 2 ? QByteArray(argv[2]).toInt() : 1180, argc > 3 ? QByteArray(argv[3]).toInt() : 820);
-    shell.showPage(3);
+    const auto view = argc > 4 ? QByteArray(argv[4]) : QByteArray();
+    const bool connection = view == "connection" || view == "proxy";
+    if (connection) shell.setModes(view == "connection", view == "proxy", true, false);
+    shell.showPage(connection ? 0 : 3);
     shell.show();
     for (int i = 0; i < 8; ++i) { app.sendPostedEvents(); app.processEvents(); }
-    if (argc > 4) shell.findChild<QLineEdit *>("grSettingsSearch")->setText(QString::fromLocal8Bit(argv[4]));
+    if (argc > 4 && !connection) shell.findChild<QLineEdit *>("grSettingsSearch")->setText(QString::fromLocal8Bit(argv[4]));
     for (int i = 0; i < 8; ++i) { app.sendPostedEvents(); app.processEvents(); }
     if (argc > 5 && QByteArray(argv[5]) == "end") {
         auto *scroll = shell.findChild<QScrollArea *>("grSettingsScroll");

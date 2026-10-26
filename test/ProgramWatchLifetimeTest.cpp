@@ -5,11 +5,21 @@
 #include <QApplication>
 #include <QFontDatabase>
 #include <QLabel>
+#include <QListWidget>
 #include <QPushButton>
+#include <QSemaphore>
+#include <QThread>
+#include <QTimer>
+#include <QElapsedTimer>
+#include <atomic>
 #include <cstdio>
 
 // Список процессов задаёт тест: клиент и ядро здесь не запускаются.
-namespace GreenRhythm { QStringList runningPrograms() { return {"fixture.exe"}; } }
+static QSemaphore allowEnumeration;
+static std::atomic<bool> enumerationFinished{false};
+namespace GreenRhythm { QStringList runningPrograms() {
+    allowEnumeration.tryAcquire(1,5000); enumerationFinished=true; return {"fixture.exe"};
+} }
 
 static int checks = 0, failures = 0;
 static void check(const char *name, bool condition) {
@@ -50,6 +60,15 @@ int main(int argc, char **argv) {
     check("deduplication resumes after clear", watch.total() == 1);
 
     DialogWhatBroke dialog;
+    bool guiTick=false;
+    QTimer::singleShot(0,&dialog,[&]{guiTick=true;}); app.processEvents();
+    check("window and GUI stay available while process enumeration is blocked",guiTick && !enumerationFinished);
+    allowEnumeration.release();
+    QElapsedTimer wait; wait.start();
+    while(dialog.findChild<QListWidget*>()->count()==0 && wait.elapsed()<1500) {
+        app.processEvents(); QThread::msleep(1);
+    }
+    check("background process list reaches the dialog safely",dialog.findChild<QListWidget*>()->count()==1);
     dialog.inspect("fixture.exe");
     check("inspect starts observation", dialog.watching() == "fixture.exe");
     dialog.feed({connection(0)});
@@ -94,6 +113,21 @@ int main(int argc, char **argv) {
     check("Discord UDP observations do not declare a cause or propose a blind direct-route fix", !directOffer
         && voiceText.contains(QStringLiteral("причина ещё не установлена"))
         && voiceText.contains(QStringLiteral("не доказательство доставки")));
+
+    auto game=connection(2); game.process="dota2.exe"; game.tag="bypass";
+    dialog.inspect("dota2.exe"); dialog.feed({game}); dialog.conclude();
+    auto *verdict=dialog.findChild<QLabel*>("grProgramVerdict");
+    check("menu HTTPS alone never verifies game UDP or clears TUN of suspicion",
+        verdict->text().contains(QStringLiteral("Игровой UDP не замечен"))
+        && verdict->text().contains(QStringLiteral("внутри него")));
+    game.network="udp";
+    dialog.inspect("dota2.exe"); dialog.feed({game,game}); dialog.conclude();
+    check("direct game UDP is counted once without claiming ping was measured",
+        verdict->text().contains(QStringLiteral("напрямую — 1, через VPN — 0"))
+        && verdict->text().contains(QStringLiteral("не измерение пинга")));
+    dialog.setSystemNote("late port fixture"); dialog.setSystemNote("late port fixture");
+    check("late background system result is visible once without restarting observation",
+        verdict->text().count("late port fixture")==1 && dialog.watching().isEmpty());
 
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;

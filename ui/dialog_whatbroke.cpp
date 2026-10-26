@@ -1,6 +1,7 @@
 #include "ui/dialog_whatbroke.h"
 
 #include "main/RunningPrograms.hpp"
+#include "main/GameCatalog.hpp"
 
 #include <QDialogButtonBox>
 #include <QLabel>
@@ -8,7 +9,10 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QStackedWidget>
+#include <QScrollArea>
+#include <QThread>
 #include <QVBoxLayout>
+#include <memory>
 
 namespace {
 
@@ -75,8 +79,23 @@ void DialogWhatBroke::buildPick() {
     box->addWidget(filter);
 
     programs = new QListWidget(page);
-    for (const auto &name: GreenRhythm::runningPrograms()) new QListWidgetItem(name, programs);
+    auto *loading = muted(page, tr("Загружаю список программ…"));
+    // Process enumeration can wait on PowerShell for ten seconds. Keep it off
+    // the GUI thread, including when this window opens for a known game.
+    auto names = std::make_shared<QStringList>();
+    auto *reader = QThread::create([names] { *names = GreenRhythm::runningPrograms(); });
+    connect(reader, &QThread::finished, this, [this, filter, names, loading] {
+        for (const auto &name : *names) {
+            auto *item = new QListWidgetItem(name, programs);
+            item->setHidden(!name.contains(filter->text(), Qt::CaseInsensitive));
+        }
+        loading->setText(names->isEmpty() ? tr("Список программ недоступен. Игру также можно выбрать в настройках «Игры и программы».") : QString());
+        loading->setVisible(names->isEmpty());
+    });
+    connect(reader, &QThread::finished, reader, &QObject::deleteLater);
+    reader->start();
     box->addWidget(programs, 1);
+    box->addWidget(loading);
 
     connect(filter, &QLineEdit::textChanged, programs, [this](const QString &text) {
         for (int i = 0; i < programs->count(); i++) {
@@ -135,9 +154,13 @@ void DialogWhatBroke::buildVerdict() {
     box->addWidget(verdictTitle);
 
     verdictBody = new QLabel(page);
+    verdictBody->setObjectName("grProgramVerdict");
     verdictBody->setWordWrap(true);
-    box->addWidget(verdictBody);
-    box->addStretch(1);
+    verdictBody->setAlignment(Qt::AlignTop);
+    auto *scroll = new QScrollArea(page); scroll->setObjectName("grProgramVerdictScroll");
+    scroll->setFrameShape(QFrame::NoFrame); scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setWidget(verdictBody); box->addWidget(scroll, 1);
 
     fixButton = new QPushButton(page);
     fixButton->setCursor(Qt::PointingHandCursor);
@@ -174,6 +197,19 @@ void DialogWhatBroke::buildVerdict() {
 void DialogWhatBroke::setFixAvailable(bool can, const QString &whyNot) {
     canFix = can;
     cannotFixWhy = whyNot;
+}
+
+void DialogWhatBroke::setSystemNote(const QString &text) {
+    if (text == systemNote) return;
+    if (pages->currentIndex() == 2) {
+        auto body = verdictBody->text();
+        const auto separator = QStringLiteral("\n\n— — —\n\n");
+        if (!systemNote.isEmpty() && body.endsWith(separator + systemNote))
+            body.chop(separator.size() + systemNote.size());
+        if (!text.isEmpty()) body += separator + text;
+        verdictBody->setText(body);
+    }
+    systemNote = text;
 }
 
 void DialogWhatBroke::inspect(const QString &name) {
@@ -259,8 +295,8 @@ void DialogWhatBroke::conclude() {
         case GreenRhythm::Verdict::Direct: {
             verdictTitle->setText(tr("Замечен прямой маршрут"));
             verdictBody->setText(
-                tr("«%1» и так выходит в интернет напрямую, минуя нас: %2 попыток, и ни одна "
-                   "не шла через VPN. Доставка данных и причина сбоя этим наблюдением не установлены.")
+                tr("«%1»: замечено %2 соединений с выходом без VPN-сервера, через профиль — 0. "
+                   "При включённом TUN трафик всё ещё может обрабатываться внутри него. Доставка данных и причина сбоя этим наблюдением не установлены.")
                     .arg(program)
                     .arg(f.direct));
             break;
@@ -300,13 +336,16 @@ void DialogWhatBroke::conclude() {
         }
     }
 
-    // Про проверки связи говорим отдельно и всегда: к программе они не
-    // привязываются в принципе, и обещать обратное нельзя.
-    if (f.verdict != GreenRhythm::Verdict::NotSeen) {
+    if (GreenRhythm::GameCatalog::processes().contains(executable, Qt::CaseInsensitive)) {
+        verdictBody->setText(verdictBody->text() + tr("\n\nИгровой UDP: напрямую — %1, через VPN — %2. ")
+            .arg(f.udpDirect).arg(f.udpViaTunnel)
+            + (f.udpDirect + f.udpViaTunnel == 0
+                ? tr("Игровой UDP не замечен: соединения магазина и меню не подтверждают маршрут матча. Начните наблюдение во время игры.")
+                : tr("Это маршруты соединений, а не измерение пинга или потерь. Сравнивайте пинг на одном игровом сервере или релее; смена региона меняет путь. Для Dota 2 и CS2 данные игры о задержке и потерях полезнее обычного ping Windows.")));
+    } else if (f.verdict != GreenRhythm::Verdict::NotSeen) {
         verdictBody->setText(verdictBody->text() +
-                             tr("\n\nЕсли в игре не считается пинг — это чинится отдельно и сразу "
-                                "для всех программ: у проверок связи нет владельца, и разобрать их "
-                                "по программам нельзя."));
+                             tr("\n\nОбычная команда ping Windows использует ICMP и не проверяет UDP программы. "
+                                "Игры могут измерять задержку своим протоколом; её нельзя определить по числу соединений."));
     }
 
     if (limited) {

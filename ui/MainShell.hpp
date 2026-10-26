@@ -325,6 +325,7 @@ namespace GreenRhythm {
         QPushButton *power = nullptr;
         PowerGlow *glow = nullptr;
         QLabel *powerHint = nullptr;
+        QLabel *modeCoverage = nullptr;
         QLabel *stateDot = nullptr;
         QLabel *currentTitle = nullptr;
         QLabel *currentMeta = nullptr;

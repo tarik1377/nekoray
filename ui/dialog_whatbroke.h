@@ -76,7 +76,7 @@ public:
      * любую программу с жёстко заданным портом — игровой магазин, лаунчер,
      * античит, — и жалуется она при этом на что угодно, только не на порт.
      */
-    void setSystemNote(const QString &text) { systemNote = text; }
+    void setSystemNote(const QString &text);
 
     /** Список программ, уже идущих мимо туннеля, — чтобы не чинить починенное. */
     void setAlreadyDirect(const QStringList &names) { alreadyDirect = names; }
