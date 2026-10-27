@@ -23,7 +23,7 @@ void MainWindow::run_diagnostics() {
     auto *dialog = new DialogServiceHealth(this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     struct Snapshot {
-        int profile = -1; quint64 core = 0, connection = 0; bool tun = false;
+        int profile = -1; quint64 core = 0, connection = 0; bool tun = false, systemProxy = false;
         QByteArray settings; GreenRhythm::HealthCandidate candidate;
     };
     auto snapshot = std::make_shared<Snapshot>();
@@ -32,6 +32,7 @@ void MainWindow::run_diagnostics() {
         context.version = QString(NKR_VERSION);
         context.profileRunning = running != nullptr;
         context.tunEnabled = NekoGui::dataStore->spmode_vpn;
+        context.systemProxyEnabled = NekoGui::dataStore->spmode_system_proxy;
         context.tunStack = Preset::SingBox::VpnImplementation.value(NekoGui::dataStore->vpn_implementation);
         context.mtu = NekoGui::dataStore->vpn_mtu;
         QString address = NekoGui::dataStore->inbound_address;
@@ -72,6 +73,7 @@ void MainWindow::run_diagnostics() {
 #endif
         snapshot->connection = connection_lifecycle.token();
         snapshot->tun = context.tunEnabled;
+        snapshot->systemProxy = context.systemProxyEnabled;
         snapshot->candidate = context.currentCandidate;
         snapshot->settings = QCryptographicHash::hash(routes + NekoGui::dataStore->vpn_route_exclude_extra.toUtf8() + NekoGui::dataStore->vpn_gateway_exclusions.toUtf8() + (group ? group->url.toUtf8() : QByteArray()), QCryptographicHash::Sha256);
         return context;
@@ -87,6 +89,7 @@ void MainWindow::run_diagnostics() {
             && snapshot->core == (core_process ? core_process->generation() : 0)
 #endif
             && snapshot->connection == connection_lifecycle.token() && snapshot->tun == NekoGui::dataStore->spmode_vpn
+            && snapshot->systemProxy == NekoGui::dataStore->spmode_system_proxy
             && snapshot->settings == QCryptographicHash::hash(settings, QCryptographicHash::Sha256);
     };
     dialog->health->readSubscription = [snapshot](const QByteArray &body) {

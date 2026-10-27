@@ -18,6 +18,7 @@ public:
     void setCommitter(Commit callback) { commit = std::move(callback); }
     // Injection keeps interaction tests independent of OS process enumeration.
     void setRunningProvider(std::function<QStringList()> callback) { runningProvider = std::move(callback); }
+    void setInspector(std::function<void(const QString &)> callback);
     bool addExecutable(const QString &path);
     QString serializedRules() const;
     bool changed() const { return repaired || original != draft; }
@@ -30,11 +31,13 @@ private:
     QScrollArea *scroll = nullptr;
     QLabel *status = nullptr;
     QPushButton *save = nullptr;
+    QPushButton *inspect = nullptr;
     QJsonObject original, draft;
     QString raw;
     bool valid = false;
     bool repaired = false;
     Commit commit;
     std::function<QStringList()> runningProvider;
+    std::function<void(const QString &)> inspector;
 };
 } // namespace GreenRhythm

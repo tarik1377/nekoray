@@ -89,6 +89,18 @@ int main(int argc,char **argv) {
     check(report.value("independent_isp_baseline")==false && report.value("voice_verified")==false,
           "TUN comparisons never claim an independent ISP baseline or verified voice");
     check(health.summary().contains(QString::fromUtf8("Голосовое соединение не проверено")),"HTTPS success cannot claim Discord voice works");
+    context.tunEnabled=false; context.systemProxyEnabled=true;
+    run(health,context,targets,1);
+    check(health.summary().contains(QString::fromUtf8("HTTP-прокси не перенаправляет голосовой UDP"))
+        && health.report().value("system_proxy_enabled").toBool() && !health.report().value("tun_enabled").toBool(),
+        "proxy-only success explains that Discord voice does not inherit an explicit control probe's UDP path");
+    context.systemProxyEnabled=false;
+    run(health,context,targets,1);
+    check(health.details().contains(QString::fromUtf8("Другая программа или VPN")) && !health.report().value("voice_verified").toBool(),
+        "manual proxy mode preserves uncertainty about other VPNs and real voice");
+    context.tunEnabled=true;
+    run(health,context,targets);
+    report=health.report();
     health.recordDiscordObservation(3,0,2,false,QDateTime::currentDateTimeUtc(),QDateTime::currentDateTimeUtc());
     check(health.report().value("discord_observation").toObject().value("udp_via_profile")==2
         && health.report().value("voice_verified")==false,"observed Discord UDP is included in the report without claiming packet delivery");

@@ -11,6 +11,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMenu>
 #include <QProcess>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -24,6 +25,7 @@ namespace GreenRhythm {
 GameProgramsDialog::GameProgramsDialog(const QString &saved, bool tunnelEnabled, QWidget *parent)
     : QDialog(parent), raw(saved) {
     setWindowTitle(tr("Игры и программы"));
+    setObjectName("grGameProgramsDialog");
     const auto *display = QGuiApplication::primaryScreen();
     const auto available = (display ? display->availableGeometry().size() : QSize(800, 600)) - QSize(32, 64);
     const QSize initial(qMax(320, qMin(680, available.width())), qMax(280, qMin(560, available.height())));
@@ -33,7 +35,7 @@ GameProgramsDialog::GameProgramsDialog(const QString &saved, bool tunnelEnabled,
     auto *canvas = new QWidget(scroll);
     auto *layout = new QVBoxLayout(canvas);
     layout->setContentsMargins(20, 20, 20, 20); layout->setSpacing(12);
-    auto *intro = new QLabel(tr("Выберите, как подключать игру. В стандартной схеме игры идут напрямую, Discord — через VPN. "
+    auto *intro = new QLabel(tr("Выберите, как подключать игру. В стандартной схеме CS2, Dota 2 и Steam идут напрямую, Discord — через VPN. Для остальных игр учитывается переключатель «Игры через VPN». "
                                "Свой выбор здесь имеет приоритет над общими правилами."), this);
     intro->setWordWrap(true); layout->addWidget(intro);
     auto *search = new QLineEdit(this); search->setObjectName("gameSearch");
@@ -49,6 +51,27 @@ GameProgramsDialog::GameProgramsDialog(const QString &saved, bool tunnelEnabled,
     table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     table->verticalHeader()->hide(); table->setSelectionBehavior(QAbstractItemView::SelectRows);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers); layout->addWidget(table, 1);
+    inspect = new QPushButton(tr("Проверить текущие соединения"), this);
+    inspect->setObjectName("gameInspect"); inspect->setEnabled(false);
+    inspect->setToolTip(tr("Проверить текущие маршруты TCP и UDP. Не сохраняет изменения и не переподключает VPN; пинг измеряется в самой игре."));
+    layout->addWidget(inspect);
+    connect(inspect, &QPushButton::clicked, this, [this] {
+        const int row = table->currentRow();
+        if (!inspector || row < 0 || table->isRowHidden(row)) return;
+        const auto programs = table->item(row, 0)->data(Qt::UserRole).toStringList();
+        if (programs.size() == 1) { inspector(programs.first()); return; }
+        QMenu menu(this);
+        QStringList offered;
+        for (const auto &name : programs) {
+            if (offered.contains(name, Qt::CaseInsensitive)) continue;
+            offered.append(name);
+            menu.addAction(name, this, [this, name] { if (inspector) inspector(name); });
+        }
+        menu.exec(inspect->mapToGlobal(QPoint(0, inspect->height())));
+    });
+    connect(table, &QTableWidget::currentCellChanged, this, [this] {
+        inspect->setEnabled(bool(inspector) && table->currentRow() >= 0 && !table->isRowHidden(table->currentRow()));
+    });
     status = new QLabel(this); status->setObjectName("gameStatus"); status->setWordWrap(true); layout->addWidget(status);
     auto *hint = new QLabel(tunnelEnabled
         ? tr("Выбор сохранится для следующего подключения. Текущее соединение продолжит работать.")
@@ -83,12 +106,14 @@ GameProgramsDialog::GameProgramsDialog(const QString &saved, bool tunnelEnabled,
             if (table->item(row, 0)->data(Qt::UserRole).toStringList().contains(name, Qt::CaseInsensitive)) found = true;
         if (!found) addRow(name, {name});
     }
+    if (table->rowCount()) table->selectRow(0);
     connect(search, &QLineEdit::textChanged, this, [this](const QString &text) {
         for (int row = 0; row < table->rowCount(); ++row) {
             const auto *item = table->item(row, 0);
             table->setRowHidden(row, !item->text().contains(text, Qt::CaseInsensitive)
                 && !item->data(Qt::UserRole).toStringList().join(' ').contains(text, Qt::CaseInsensitive));
         }
+        inspect->setEnabled(bool(inspector) && table->currentRow() >= 0 && !table->isRowHidden(table->currentRow()));
     });
     connect(file, &QPushButton::clicked, this, [this] {
         const auto path = QFileDialog::getOpenFileName(this, tr("Выберите исполняемый файл игры"), {}, tr("Программы Windows (*.exe)"));
@@ -96,6 +121,11 @@ GameProgramsDialog::GameProgramsDialog(const QString &saved, bool tunnelEnabled,
     });
     connect(running, &QPushButton::clicked, this, &GameProgramsDialog::chooseRunning);
     updateSave();
+}
+
+void GameProgramsDialog::setInspector(std::function<void(const QString &)> callback) {
+    inspector = std::move(callback);
+    inspect->setEnabled(bool(inspector) && table->currentRow() >= 0 && !table->isRowHidden(table->currentRow()));
 }
 
 void GameProgramsDialog::addRow(const QString &title, const QStringList &programs) {

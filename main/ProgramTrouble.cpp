@@ -62,6 +62,7 @@ namespace GreenRhythm {
                 if (s.network == QStringLiteral("udp")) f.udpViaTunnel++;
             } else if (goesOutside(s.tag)) {
                 f.direct++;
+                if (s.network == QStringLiteral("udp")) f.udpDirect++;
             }
         }
 

@@ -17,6 +17,7 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -302,13 +303,11 @@ namespace GreenRhythm {
         bannerActions->addStretch(); banner->addLayout(bannerActions); updateBanner->hide();
         content->addWidget(updateBanner); content->addWidget(pages, 1); row->addLayout(content, 1);
 
-        auto *connectScroll = new QScrollArea(this); connectScroll->setObjectName("grConnectScroll");
-        connectScroll->setWidgetResizable(true); connectScroll->setFrameShape(QFrame::NoFrame);
         auto *connectPage = buildConnectPage();
         auto pagePalette = connectPage->palette(); pagePalette.setColor(QPalette::Window, QColor(kSurface));
-        connectPage->setPalette(pagePalette); connectScroll->viewport()->setPalette(pagePalette);
-        connectScroll->setWidget(connectPage);
-        pages->addWidget(connectScroll); // 0 — подключение; banner cannot push actions below the window
+        connectPage->setPalette(pagePalette);
+        connectPage->findChild<QScrollArea *>("grConnectScroll")->viewport()->setPalette(pagePalette);
+        pages->addWidget(connectPage); // 0 — pinned heading, scrollable connection actions
         pages->addWidget(buildSettingsPage()); // moved to 3 when legacy pages are adopted
         selectPage(0);
     }
@@ -424,8 +423,15 @@ namespace GreenRhythm {
         auto *heading = new QLabel(tr("Подключение"), page);
         QFont headingFont = heading->font(); headingFont.setPointSizeF(headingFont.pointSizeF() * 1.45); headingFont.setBold(true);
         heading->setFont(headingFont); outer->addWidget(heading);
-        outer->addStretch(1);
-        auto *body = new QWidget(page); body->setFixedWidth(480);
+        auto *scroll = new QScrollArea(page); scroll->setObjectName("grConnectScroll");
+        scroll->setWidgetResizable(true); scroll->setFrameShape(QFrame::NoFrame);
+        scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        auto *canvas = new QWidget(scroll);
+        auto *content = new QVBoxLayout(canvas); content->setContentsMargins(0, 8, 0, 8); content->setSpacing(12);
+        content->setSizeConstraint(QLayout::SetMinAndMaxSize);
+        content->addStretch(1);
+        auto *body = new QWidget(canvas); body->setObjectName("grConnectBody"); body->setMaximumWidth(520);
+        body->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         auto *box = new QVBoxLayout(body); box->setContentsMargins(0, 0, 0, 0); box->setSpacing(12);
         statusTitle = new QLabel(tr("Готов к подключению"), body);
         statusTitle->setObjectName(QStringLiteral("grStatusTitle"));
@@ -474,10 +480,12 @@ namespace GreenRhythm {
         mode->setStyleSheet(QStringLiteral("QPushButton#grConnectionOptions { min-height: 44px; background: %1; border: 1px solid transparent; border-radius: 12px; padding: 0; } QPushButton#grConnectionOptions:hover, QPushButton#grConnectionOptions:focus { border-color: %2; }").arg(kSurfaceUp, kLine));
         auto *modeRow = new QHBoxLayout(mode); modeRow->setContentsMargins(14, 6, 14, 6);
         auto *modeIcon = new QLabel(mode); modeIcon->setPixmap(Icons::pixmap("gr-sliders", QColor(kMuted), 18)); modeRow->addWidget(modeIcon);
-        modeSummary = muted(mode, tr("Параметры подключения"), 0.95); modeRow->addWidget(modeSummary, 1);
+        modeSummary = muted(mode, tr("Параметры подключения"), 0.95); modeSummary->setWordWrap(true); modeRow->addWidget(modeSummary, 1);
         auto *modeArrow = new QLabel(mode); modeArrow->setPixmap(Icons::pixmap("gr-arrow-right", QColor(kMuted), 16)); modeRow->addWidget(modeArrow);
         for (auto *label : mode->findChildren<QLabel *>()) label->setAttribute(Qt::WA_TransparentForMouseEvents);
         connect(mode, &QPushButton::clicked, this, [this] { selectPage(3); }); box->addWidget(mode);
+        modeCoverage = muted(body, QString(), 0.9); modeCoverage->setObjectName("grModeCoverage");
+        modeCoverage->setWordWrap(true); modeCoverage->setAlignment(Qt::AlignCenter); box->addWidget(modeCoverage);
 
         emptyHint = new QWidget(body); auto *emptyBox = new QVBoxLayout(emptyHint); emptyBox->setContentsMargins(0, 8, 0, 8);
         auto *emptyText = muted(emptyHint, tr("Добавьте сервер или ссылку подписки")); emptyText->setAlignment(Qt::AlignCenter); emptyBox->addWidget(emptyText);
@@ -488,27 +496,45 @@ namespace GreenRhythm {
         metrics->addWidget(tile(body, tr("напрямую"), &liveDirect, kText, 1.1), 1);
         metrics->addWidget(tile(body, tr("получено / отправлено"), &liveTraffic, kText, 0.95), 2);
         box->addLayout(metrics);
-        outer->addWidget(body, 0, Qt::AlignHCenter); outer->addStretch(2);
+        auto *bodyRow = new QHBoxLayout; bodyRow->setContentsMargins(0, 0, 0, 0);
+        bodyRow->addStretch(); bodyRow->addWidget(body, 1); bodyRow->addStretch();
+        content->addLayout(bodyRow); content->addStretch(2);
         auto *health = new QPushButton(tr("Проверить подписку и Discord"), page); health->setObjectName("grQuickServiceHealth");
         health->setStyleSheet(linkStyle(kAccent)); health->setCursor(Qt::PointingHandCursor);
-        connect(health, &QPushButton::clicked, this, &MainShell::diagnosticsRequested); outer->addWidget(health, 0, Qt::AlignCenter);
+        connect(health, &QPushButton::clicked, this, &MainShell::diagnosticsRequested); content->addWidget(health, 0, Qt::AlignCenter);
         troubleLink = new QPushButton(tr("Нужна помощь с подключением?"), page); troubleLink->setStyleSheet(linkStyle(kMuted));
         troubleLink->setCursor(Qt::PointingHandCursor); connect(troubleLink, &QPushButton::clicked, this, &MainShell::troubleRequested);
-        outer->addWidget(troubleLink, 0, Qt::AlignCenter);
+        content->addWidget(troubleLink, 0, Qt::AlignCenter);
         auto *browserHelp = new QPushButton(tr("Помощь браузеру"), page);
         browserHelp->setObjectName(QStringLiteral("grBrowserHelp"));
         browserHelp->setAccessibleName(tr("Проверить подключение сайта и DNS браузера"));
         browserHelp->setStyleSheet(linkStyle(kMuted)); browserHelp->setCursor(Qt::PointingHandCursor);
         connect(browserHelp, &QPushButton::clicked, this, &MainShell::browserHelpRequested);
-        outer->addWidget(browserHelp, 0, Qt::AlignCenter);
+        content->addWidget(browserHelp, 0, Qt::AlignCenter);
+        scroll->setWidget(canvas); outer->addWidget(scroll, 1);
         return page;
     }
 
     QWidget *MainShell::buildSettingsPage() {
-        auto *scroll = new QScrollArea(this); scroll->setWidgetResizable(true); scroll->setFrameShape(QFrame::NoFrame);
-        auto *page = new QWidget(scroll); auto *box = new QVBoxLayout(page); box->setContentsMargins(28, 24, 28, 24); box->setSpacing(18);
-        auto *heading = new QLabel(tr("Настройки"), page); QFont f = heading->font(); f.setBold(true); f.setPointSizeF(f.pointSizeF() * 1.45); heading->setFont(f); box->addWidget(heading);
-        box->addWidget(muted(page, tr("Как подключаться и что направлять через VPN")));
+        auto *root = new QWidget(this); root->setObjectName("grSettingsPage");
+        auto *outer = new QVBoxLayout(root); outer->setContentsMargins(0, 0, 0, 0); outer->setSpacing(0);
+        auto *header = new QWidget(root);
+        auto *intro = new QVBoxLayout(header); intro->setContentsMargins(24, 22, 24, 16); intro->setSpacing(8);
+        auto *heading = new QLabel(tr("Настройки"), header);
+        QFont f = heading->font(); f.setWeight(QFont::DemiBold); f.setPointSizeF(f.pointSizeF() * 1.45); heading->setFont(f);
+        intro->addWidget(heading);
+        intro->addWidget(muted(header, tr("Подключение, правила и обслуживание приложения"), 0.92));
+        auto *search = new SettingsSearch(header); search->setObjectName("grSettingsSearch");
+        search->setPlaceholderText(tr("Найти настройку: игры, туннель, запуск…"));
+        search->setAccessibleName(tr("Поиск по настройкам")); search->setClearButtonEnabled(true);
+        search->addAction(Icons::icon("gr-search", QColor(kMuted), QColor(kMuted), 16), QLineEdit::LeadingPosition);
+        search->setStyleSheet(QStringLiteral("QLineEdit { min-height:34px; padding:2px 10px; background:%1; color:%2; border:1px solid %3; border-radius:9px; } QLineEdit:focus { border-color:%4; }")
+                                 .arg(kSurfaceUp, kText, kLine, kAccent));
+        intro->addWidget(search);
+        auto *searchStatus = muted(header, {}, 0.85); searchStatus->setObjectName("grSettingsSearchStatus"); searchStatus->hide(); intro->addWidget(searchStatus);
+        outer->addWidget(header);
+        auto *scroll = new QScrollArea(root); scroll->setObjectName("grSettingsScroll"); scroll->setWidgetResizable(true); scroll->setFrameShape(QFrame::NoFrame);
+        auto *page = new QWidget(scroll); auto *box = new QVBoxLayout(page); box->setContentsMargins(24, 0, 24, 24); box->setSpacing(20);
         maintenance = new MaintenancePanel({
             [this] { emit routeDefaultsRequested(); }, [this] { emit routesRequested(); },
             [this] { emit restoreRoutesRequested(); }, [this] { emit geoDataRefreshRequested(); },
@@ -519,18 +545,15 @@ namespace GreenRhythm {
         box->addWidget(maintenance);
         checkUpdatesButton = maintenance->updateButton;
         updatesDetail = maintenance->versionDetail;
-        auto addRow = [&](const QString &title, const QString &description, const QString &icon, QPushButton *button) {
-            auto *card = new QWidget(page); card->setObjectName("grSettingRow");
-            card->setStyleSheet(QStringLiteral("QWidget#grSettingRow { background: %1; border-radius: 14px; }").arg(kSurfaceUp));
-            auto *row = new QHBoxLayout(card); row->setContentsMargins(16, 14, 16, 14); row->setSpacing(14);
-            auto *glyph = new QLabel(card); glyph->setPixmap(Icons::pixmap(icon, QColor(kAccent), 22)); row->addWidget(glyph);
-            auto *labels = new QVBoxLayout(); auto *name = new QLabel(title, card); QFont font = name->font(); font.setBold(true); name->setFont(font); labels->addWidget(name);
-            auto *detail = muted(card, description, 0.9); detail->setWordWrap(true); labels->addWidget(detail); row->addLayout(labels, 1);
-            if (!button->isCheckable()) button->setStyleSheet(QStringLiteral("QPushButton { min-height: 36px; padding: 0 14px; background: %1; border-radius: 9px; color: %2; border: 1px solid transparent; } QPushButton:hover, QPushButton:focus { border-color: %3; }").arg(kSurface, kText, kAccent));
-            button->setCursor(Qt::PointingHandCursor); row->addWidget(button); box->addWidget(card);
-            return detail;
+        QList<SettingsSection *> sections;
+        SettingsSection *section = nullptr;
+        auto beginSection = [&](const QString &title) {
+            section = new SettingsSection(title, page); sections.append(section); box->addWidget(section);
         };
-        box->addWidget(caption(page, tr("ПОДКЛЮЧЕНИЕ")));
+        auto addRow = [&](const QString &title, const QString &description, const QString &icon, QPushButton *button) {
+            return section->addRow(title, description, icon, button);
+        };
+        beginSection(tr("Подключение"));
         modeTun = toggle(page, tr("Включить")); modeTun->setObjectName("grModeTun"); modeTun->setAccessibleName(tr("Туннель для всего устройства"));
         connect(modeTun, &QPushButton::clicked, this, &MainShell::tunToggled);
         addRow(tr("Туннель"), tr("Трафик всего устройства. Для запуска нужны права администратора."), "gr-shield-check", modeTun);
@@ -553,7 +576,7 @@ namespace GreenRhythm {
         shareToLanToggle = toggle(page, tr("Раздавать VPN другим устройствам")); shareToLanToggle->setObjectName("grShareToLan");
         connect(shareToLanToggle, &QPushButton::clicked, this, &MainShell::shareToLanToggled);
         shareToLanDetail = addRow(tr("Раздавать VPN другим устройствам"), QString(), "gr-devices", shareToLanToggle); shareToLanDetail->setObjectName("grShareToLanDetail");
-        box->addWidget(caption(page, tr("МАРШРУТИЗАЦИЯ")));
+        beginSection(tr("Сайты, игры и рабочие VPN"));
 #ifdef Q_OS_WIN
         auto *gateways = new QPushButton(tr("Настроить"), page); gateways->setObjectName("grTunBypass");
         gateways->setAccessibleName(tr("Рабочие VPN и виртуальные машины"));
@@ -573,7 +596,7 @@ namespace GreenRhythm {
 #endif
         bypassLine = new QPushButton(tr("Настроить"), page); connect(bypassLine, &QPushButton::clicked, this, &MainShell::bypassListRequested);
         addRow(tr("Исключения"), tr("Приложения и адреса, которые подключаются напрямую."), "gr-list", bypassLine);
-        box->addWidget(caption(page, tr("ОБХОД ФИЛЬТРАЦИИ")));
+        beginSection(tr("Обход фильтрации"));
         dpiToggle = toggle(page, tr("Включить")); dpiToggle->setAccessibleName(tr("Обход фильтрации"));
         connect(dpiToggle, &QPushButton::clicked, this, &MainShell::dpiFragmentToggled);
         addRow(tr("Обход фильтрации"), tr("Дробление TLS для прямых соединений. Используйте, если провайдер блокирует сайты."), "gr-shield-alert", dpiToggle);
@@ -585,8 +608,8 @@ namespace GreenRhythm {
 #else
         dpiModuleToggle->hide();
 #endif
-        dpiModuleState = muted(page, QString()); dpiModuleState->setWordWrap(true); dpiModuleState->hide(); box->addWidget(dpiModuleState);
-        box->addWidget(caption(page, tr("ПРИЛОЖЕНИЕ")));
+        dpiModuleState = section->addStatus(dpiModuleToggle);
+        beginSection(tr("Приложение"));
         // Автозапуск жил в меню «Все команды», «свёрнутым» и автообновление — в
         // «Дополнительных настройках» между адресом прокси и User-Agent, и там их
         // не находили. Правду о них знает окно, оно же кладёт её сюда: setAppOptions.
@@ -617,7 +640,7 @@ namespace GreenRhythm {
         setAppOptions(false, false, 0); setAppVersion(QString());
         auto *advanced = new QPushButton(tr("Открыть"), page); connect(advanced, &QPushButton::clicked, this, &MainShell::settingsRequested);
         addRow(tr("Дополнительные настройки"), tr("Язык и оформление, локальный прокси, проверка серверов, тонкая настройка подписки и ядра."), "gr-sliders", advanced);
-        box->addWidget(caption(page, tr("ПОМОЩЬ")));
+        beginSection(tr("Помощь"));
         auto *support = new QPushButton(tr("Написать"), page); support->setObjectName("grSupport"); support->setAccessibleName(tr("Поддержка в Telegram"));
         connect(support, &QPushButton::clicked, this, &MainShell::supportRequested);
         addRow(tr("Поддержка в Telegram"), tr("Напишите нам, если что-то не работает или непонятно."), "gr-chat", support);
@@ -628,7 +651,18 @@ namespace GreenRhythm {
         connect(about, &QPushButton::clicked, this, &MainShell::aboutRequested);
         addRow(tr("О программе"), tr("Версия, сайт, лицензия и исходный код."), "gr-info", about);
         setConnectionOptions(false, false, false, QString(), 0);
-        box->addStretch(); scroll->setWidget(page); return scroll;
+        auto *empty = muted(page, tr("Ничего не найдено. Попробуйте другой запрос."));
+        empty->setObjectName("grSettingsSearchEmpty"); empty->setWordWrap(true); empty->hide(); box->addWidget(empty);
+        box->addStretch(); scroll->setWidget(page); outer->addWidget(scroll, 1);
+        connect(search, &QLineEdit::textChanged, root, [this, sections, empty, searchStatus, scroll](const QString &query) {
+            int count = maintenance->filter(query);
+            for (auto *group : sections) count += group->filter(query);
+            empty->setVisible(count == 0);
+            searchStatus->setVisible(!query.trimmed().isEmpty());
+            searchStatus->setText(tr("Найдено: %1").arg(count));
+            scroll->verticalScrollBar()->setValue(0);
+        });
+        return root;
     }
 
     void MainShell::chooseServer() {
@@ -876,6 +910,14 @@ namespace GreenRhythm {
                               tr("Показано %1 из %2").arg(visible).arg(total));
     }
 
+    void MainShell::focusSearch() {
+        auto *settings = findChild<QLineEdit *>("grSettingsSearch");
+        if (settings && settings->isVisible()) {
+            settings->setFocus(); settings->selectAll(); return;
+        }
+        focusServerSearch();
+    }
+
     void MainShell::focusServerSearch() {
         selectPage(1);
         if (serverSearch) serverSearch->setFocus();
@@ -889,6 +931,14 @@ namespace GreenRhythm {
         if (dpiToggle != nullptr) dpiToggle->setChecked(dpiFragment);
         for (auto *button : {modeTun, modeProxy, gamesToggle, dpiToggle}) if (button) button->setText(button->isChecked() ? tr("Включено") : tr("Включить"));
         if (modeSummary) modeSummary->setText(tun ? (systemProxy ? tr("Туннель и системный прокси") : tr("Туннель для всего устройства")) : (systemProxy ? tr("Системный прокси") : tr("Режим подключения · настроить")));
+        if (modeCoverage) {
+            modeCoverage->setText(tun
+                ? tr("Туннель охватывает UDP. Маршрут отдельной игры можно проверить в «Игры и программы».")
+                : systemProxy
+                    ? tr("Системный прокси не перенаправляет голосовой UDP Discord. Если голос не подключается, используйте туннель.")
+                    : tr("Прокси нужно указать в самом приложении. Для игр и голоса Discord можно выбрать туннель."));
+            modeCoverage->setStyleSheet(QStringLiteral("color: %1;").arg(!tun && systemProxy ? kAmber : kMuted));
+        }
     }
 
     void MainShell::setDpiModule(bool enabled, bool running, const QString &text) {

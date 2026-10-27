@@ -12,6 +12,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QScopedValueRollback>
+#include <QThread>
 #include <memory>
 
 #ifndef Q_OS_WIN
@@ -760,7 +761,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // search box
     ui->search->setVisible(false);
     connect(shortcut_ctrl_f, &QShortcut::activated, this, [=] {
-        if (shell) { shell->focusServerSearch(); return; }
+        if (shell) { shell->focusSearch(); return; }
         ui->search->setVisible(true);
         ui->search->setFocus();
     });
@@ -2742,6 +2743,19 @@ inline void FastAppendTextDocument(const QString &message, QTextDocument *doc) {
  * должен иметь возможность свернуть нас, попробовать в игре и вернуться. Пока
  * окно открыто, оно получает те же записи о соединениях, что и таблица.
  */
+void MainWindow::inspect_program(const QString &name, QWidget *owner) {
+    open_what_broke();
+    if (!what_broke) return;
+    // A routes editor may itself be modal. Its observation window must remain
+    // reachable without saving or closing that editor's draft.
+    if (owner && what_broke->parentWidget() != owner) {
+        what_broke->setParent(owner, what_broke->windowFlags());
+        what_broke->show();
+    }
+    what_broke->inspect(name);
+    ActivateWindow(what_broke);
+}
+
 void MainWindow::open_what_broke() {
     if (what_broke != nullptr) {
         ActivateWindow(what_broke);
@@ -2778,6 +2792,8 @@ void MainWindow::open_what_broke() {
     // запускается», у чужого игрового лаунчера — «ошибка соединения» и сорванная
     // установка. Увидеть это можно только спросив систему, и никто не спрашивал.
     {
+        auto note = std::make_shared<QString>();
+        auto *reader = QThread::create([note] {
         auto ask = [](const QStringList &args) {
             QProcess p;
             p.start(QStringLiteral("netsh"), args);
@@ -2790,7 +2806,11 @@ void MainWindow::open_what_broke() {
         const auto health = GreenRhythm::parsePortHealth(
             ask({"int", "ipv4", "show", "dynamicport", "tcp"}),
             ask({"int", "ipv4", "show", "excludedportrange", "protocol=tcp"}));
-        d->setSystemNote(health.verdict());
+        *note = health.verdict();
+        });
+        connect(reader, &QThread::finished, d, [d, note] { d->setSystemNote(*note); });
+        connect(reader, &QThread::finished, reader, &QObject::deleteLater);
+        reader->start();
     }
 #endif
 

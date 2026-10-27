@@ -717,6 +717,7 @@ target_link_libraries(power_state_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt
 # Набор файлов — как у power_state_test.
 add_executable(settings_page_test EXCLUDE_FROM_ALL
         test/SettingsPageTest.cpp
+        main/AppFont.cpp
         ui/MainShell.cpp
         ui/Icons.cpp
         ui/ServerCardDelegate.cpp
@@ -727,8 +728,17 @@ set_property(TARGET settings_page_test PROPERTY AUTOMOC ON)
 target_include_directories(settings_page_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(settings_page_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg)
 
+add_executable(settings_preview EXCLUDE_FROM_ALL
+        test/SettingsPreview.cpp main/AppFont.cpp
+        ui/MainShell.cpp ui/Icons.cpp ui/ServerCardDelegate.cpp res/neko.qrc)
+set_property(TARGET settings_preview PROPERTY AUTORCC ON)
+set_property(TARGET settings_preview PROPERTY AUTOMOC ON)
+target_include_directories(settings_preview PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(settings_preview PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg)
+
 add_executable(maintenance_panel_test EXCLUDE_FROM_ALL
         test/MaintenancePanelTest.cpp
+        main/AppFont.cpp
         ui/MainShell.cpp
         ui/Icons.cpp
         ui/ServerCardDelegate.cpp

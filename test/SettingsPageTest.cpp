@@ -52,13 +52,19 @@
 #include "ui/MainShell.hpp"
 #include "ui/SubscriptionSchedule.hpp"
 #include "ui/UpdateNotice.hpp"
+#include "main/AppFont.hpp"
+#include "test/WidgetTestFonts.hpp"
 
 #include <QApplication>
 #include <QFile>
 #include <QLabel>
+#include <QLineEdit>
+#include <QKeyEvent>
 #include <QMouseEvent>
+#include <QMainWindow>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QStackedWidget>
 #include <QWindow>
 #include <QDialog>
@@ -652,8 +658,118 @@ static void quietUpdateCheckWired() {
        check.contains(QStringLiteral("NekoGui_rpc::defaultClient == nullptr")));
 }
 
+static void searchableSettingsStayReadOnly() {
+    Shell s;
+    auto *search = s.w.findChild<QLineEdit *>("grSettingsSearch");
+    auto *empty = s.w.findChild<QLabel *>("grSettingsSearchEmpty");
+    auto *scroll = s.w.findChild<QScrollArea *>("grSettingsScroll");
+    is(QStringLiteral("поиск и его пустое состояние доступны"), search && empty && scroll);
+    if (!search || !empty || !scroll) return;
+    int routeActions = 0, tunnelChanges = 0, maintenanceShows = 0;
+    QObject::connect(&s.w, &GreenRhythm::MainShell::routeDefaultsRequested, [&] { ++routeActions; });
+    QObject::connect(&s.w, &GreenRhythm::MainShell::tunToggled, [&] { ++tunnelChanges; });
+    QObject::connect(&s.w, &GreenRhythm::MainShell::maintenanceShown, [&] { ++maintenanceShows; });
+    s.reveal(search);
+    s.w.setModes(true, false, true, false);
+    const bool autoStart = s.autostart->isChecked(), subscription = s.subscription->isChecked();
+    auto settle = [] { for (int i = 0; i < 5; ++i) { QCoreApplication::sendPostedEvents(); QCoreApplication::processEvents(); } };
+    search->setText(QStringLiteral("ПАРАМЕТРЫ ТУННЕЛЯ")); settle();
+    is(QStringLiteral("поиск без учёта регистра находит нужное действие"), s.tunnelSettings->isVisible());
+    is(QStringLiteral("поиск скрывает посторонние настройки"), !s.autostart->isVisible() && !s.checkUpdates->isVisible());
+    s.click(s.tunnelSettings);
+    is(QStringLiteral("найденное действие сохраняет исходную проводку"), s.tunnelSettingsOpened == 1 && tunnelChanges == 0);
+#ifdef Q_OS_WIN
+    search->setText(QStringLiteral("рабочие VPN")); settle();
+    auto *gateways = s.w.findChild<QPushButton *>("grTunBypass");
+    auto *games = s.w.findChild<QPushButton *>("grGamePrograms");
+    is(QStringLiteral("запрос «рабочие VPN» находит шлюзы, не все строки группы"), gateways && gateways->isVisible() && games && !games->isVisible());
+    search->setText(QStringLiteral("dOtA")); settle();
+    is(QStringLiteral("поиск работает и по описанию игры"), games && games->isVisible() && !gateways->isVisible());
+#endif
+    search->setText(QStringLiteral("свернутым")); settle();
+    is(QStringLiteral("поиск принимает е вместо ё"), s.startHidden->isVisible());
+    search->setText(QStringLiteral("несуществующая-настройка-123")); settle();
+    is(QStringLiteral("пустой результат объяснён, действия скрыты"), empty->isVisible() && !s.tunnelSettings->isVisible());
+    search->clear(); settle();
+    is(QStringLiteral("очистка восстанавливает все настройки и значения"), !empty->isVisible() && s.autostart->isVisible()
+        && s.checkUpdates->isVisible() && s.autostart->isChecked() == autoStart && s.subscription->isChecked() == subscription);
+    is(QStringLiteral("фильтрация не воспроизводит событие входа в обслуживание"), maintenanceShows == 1);
+    const auto searchPosition = search->mapTo(&s.w, QPoint());
+    scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum()); settle();
+    is(QStringLiteral("поиск остаётся видимым при прокрутке до конца"), search->isVisible() && search->mapTo(&s.w, QPoint()) == searchPosition);
+    search->setFocus();
+    QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+    QCoreApplication::sendEvent(search, &enter); settle();
+    is(QStringLiteral("Enter в поиске не применяет маршруты и не меняет подключение"), routeActions == 0 && tunnelChanges == 0 && s.updateChecks == 0);
+    is(QStringLiteral("страница не создаёт горизонтальную прокрутку"), scroll->horizontalScrollBar()->maximum() == 0);
+}
+
+static void settingsSearchKeyboardIsContained() {
+    class Host : public QMainWindow {
+    public: int enterActions = 0, escapeActions = 0;
+    protected:
+        void keyPressEvent(QKeyEvent *event) override {
+            if (event->key() == Qt::Key_Enter) ++enterActions;
+            if (event->key() == Qt::Key_Escape) ++escapeActions;
+            QMainWindow::keyPressEvent(event);
+        }
+    } host;
+    auto *shell = new GreenRhythm::MainShell(&host);
+    shell->adopt(new QWidget, new QWidget); host.setCentralWidget(shell); host.resize(1100, 820); host.show();
+    shell->showPage(3); QCoreApplication::processEvents();
+    auto *search = shell->findChild<QLineEdit *>("grSettingsSearch");
+    auto *pages = shell->findChild<QStackedWidget *>("grPages");
+    search->setText(QStringLiteral("туннель")); shell->focusSearch(); QCoreApplication::processEvents();
+    is(QStringLiteral("Ctrl+F в настройках остаётся на странице и выделяет запрос"), pages->currentIndex() == 3 && search->selectedText() == search->text());
+    for (const auto key : {Qt::Key_Return, Qt::Key_Enter}) {
+        QKeyEvent shortcut(QEvent::ShortcutOverride, key, Qt::NoModifier); shortcut.setAccepted(false);
+        QCoreApplication::sendEvent(search, &shortcut);
+        QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier); QCoreApplication::sendEvent(search, &press);
+        is(QStringLiteral("Enter %1 не передаётся обработчику подключения главного окна").arg(int(key)), shortcut.isAccepted() && host.enterActions == 0);
+    }
+    QKeyEvent shortcut(QEvent::ShortcutOverride, Qt::Key_Escape, Qt::NoModifier); shortcut.setAccepted(false);
+    QCoreApplication::sendEvent(search, &shortcut);
+    QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier); QCoreApplication::sendEvent(search, &escape);
+    is(QStringLiteral("Escape очищает запрос вместо команды главного окна"), shortcut.isAccepted() && search->text().isEmpty() && host.escapeActions == 0);
+    shell->showPage(0); shell->focusSearch(); QCoreApplication::processEvents();
+    is(QStringLiteral("Ctrl+F на странице подключения по-прежнему открывает серверы"), pages->currentIndex() == 1);
+}
+
+static void connectionModeAdviceAndSmallWindow() {
+    Shell s; s.w.showPage(0); s.w.setConnectionState(true, "Fixture", "27 мс");
+    int reconnects=0, routeChanges=0;
+    QObject::connect(&s.w, &GreenRhythm::MainShell::connectToggled, [&]{++reconnects;});
+    QObject::connect(&s.w, &GreenRhythm::MainShell::tunToggled, [&]{++routeChanges;});
+    auto *hint=s.w.findChild<QLabel*>("grModeCoverage");
+    auto *scroll=s.w.findChild<QScrollArea*>("grConnectScroll");
+    for (const bool tun : {false,true}) for (const bool proxy : {false,true}) {
+        s.w.setModes(tun,proxy,false,false); QCoreApplication::processEvents();
+        is(QStringLiteral("описание режима не обещает голос по одному HTTP"), hint && !hint->text().isEmpty()
+            && (tun ? hint->text().contains(QStringLiteral("UDP"))
+                    : !proxy || hint->text().contains(QStringLiteral("не перенаправляет голосовой UDP"))));
+    }
+    s.w.resize(820,560);
+    for(int i=0;i<8;++i) { QCoreApplication::sendPostedEvents(); QCoreApplication::processEvents(); }
+    auto *body=s.w.findChild<QWidget*>("grConnectBody");
+    is(QStringLiteral("узкое окно подключения не обрезает тело по ширине"), scroll && body
+        && body->width() <= scroll->viewport()->width() && scroll->horizontalScrollBar()->maximum()==0);
+    is(QStringLiteral("короткое окно подключения позволяет дойти до диагностики"), scroll && scroll->verticalScrollBar()->maximum()>0);
+    if(scroll) scroll->ensureWidgetVisible(s.w.findChild<QPushButton*>("grQuickServiceHealth"));
+    QCoreApplication::processEvents();
+    auto *health=s.w.findChild<QPushButton*>("grQuickServiceHealth");
+    is(QStringLiteral("кнопка диагностики доступна после прокрутки"), scroll && health
+        && scroll->viewport()->rect().contains(QRect(health->mapTo(scroll->viewport(),QPoint()),health->size())));
+    is(QStringLiteral("обновление подписей и размеров не меняет маршруты и подключение"),reconnects==0 && routeChanges==0);
+}
+
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
+    registerWidgetTestFonts();
+    GreenRhythm::applyAppFont(app);
+    app.setStyleSheet(slurp("res/theme/feiyangqingyun/qss/modern.css"));
+    connectionModeAdviceAndSmallWindow();
+    searchableSettingsStayReadOnly();
+    settingsSearchKeyboardIsContained();
     shellShowsTheTruth();
     scheduleRule();
     sourcesWiredAndMoved();
