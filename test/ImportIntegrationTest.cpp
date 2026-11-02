@@ -512,6 +512,7 @@ int main(int argc, char **argv) {
             const GreenRhythm::ProgramRouting::State original{"RobloxStudioBeta.exe", "RobloxPlayerBeta.exe",
                 GreenRhythm::GameAppRules::serialize({{"Discord.exe","proxy"},{"dota2.exe","bypass"}}),false};
             const auto bypass=NekoGui::dataStore->vpn_rule_process, proxy=NekoGui::dataStore->vpn_rule_process_proxy;
+            const auto previousSplit=NekoGui::dataStore->roblox_split_processes;
             GreenRhythm::ProgramRouting::State player,forced,automatic;QString error;
             check(GreenRhythm::ProgramRouting::choose(original,"RobloxPlayerBeta.exe","bypass",&player,&error)
                 && GreenRhythm::ProgramRouting::choose(player,"RobloxStudioBeta.exe","proxy",&forced,&error),"Roblox editor creates independent choices without changing a route scheme");
@@ -523,6 +524,27 @@ int main(int argc, char **argv) {
                     "actual ordinary/whitelist TUN routes Player DIRECT and Studio VPN ahead of contradictory old lists");
                 check(routeFor(rules,"Discord.exe")=="proxy" && routeFor(rules,"dota2.exe")=="bypass","actual Roblox changes retain Discord VPN and Dota DIRECT");
             }
+            GreenRhythm::ProgramRouting::State smartPlayer,smart;
+            check(GreenRhythm::ProgramRouting::choose(original,"RobloxPlayerBeta.exe","smart",&smartPlayer,&error)
+                && GreenRhythm::ProgramRouting::choose(smartPlayer,"RobloxStudioBeta.exe","smart",&smart,&error),"automatic Roblox preferences are valid in the actual builder");
+            const auto byNetwork=[](const QJsonArray &rules,const QString &name,const QString &network) {
+                for(const auto &v:rules) {const auto r=v.toObject();
+                    if(r.contains("outbound") && r.value("process_name").toArray().contains(name)
+                        && (!r.contains("network") || r.value("network")==network)) return r.value("outbound").toString();
+                } return QString();
+            };
+            for(bool white:{false,true}) {
+                NekoGui::dataStore->vpn_rule_white=white;NekoGui::dataStore->vpn_rule_process=smart.bypass;
+                NekoGui::dataStore->vpn_rule_process_proxy=smart.proxy;NekoGui::dataStore->game_app_rules=smart.applications;
+                NekoGui::dataStore->roblox_split_processes=smart.robloxSplit;
+                const auto rules=runtimeRules(buildCurrent());
+                for(const auto &name:GreenRhythm::RobloxRouting::processes())
+                    check(byNetwork(rules,name,"tcp")=="proxy" && byNetwork(rules,name,"udp")=="bypass",
+                        "actual ordinary/whitelist automatic mode routes Roblox TCP VPN and UDP DIRECT");
+                check(routeFor(rules,"Discord.exe")=="proxy" && routeFor(rules,"dota2.exe")=="bypass",
+                    "automatic Roblox split leaves unrelated game and voice routes intact");
+            }
+            NekoGui::dataStore->roblox_split_processes=previousSplit;
             NekoGui::dataStore->vpn_rule_white=false;
             check(GreenRhythm::ProgramRouting::restore(forced,"RobloxStudioBeta.exe",&player,&error)
                 && GreenRhythm::ProgramRouting::restore(player,"RobloxPlayerBeta.exe",&automatic,&error),"site choice removes every selected Roblox override");

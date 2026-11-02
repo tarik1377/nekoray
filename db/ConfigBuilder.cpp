@@ -874,6 +874,12 @@ namespace NekoGui {
                 return;
             }
             gameUdpPrograms = gamePrograms.keys();
+            QStringList robloxSplit;
+            if(!GreenRhythm::RobloxRouting::parse(dataStore->roblox_split_processes,&robloxSplit,&gameError)) {
+                status->result->error=gameError; return;
+            }
+            const auto activeRoblox=GreenRhythm::RobloxRouting::active(robloxSplit,gamePrograms);
+            if(!activeRoblox.isEmpty()) status->routingRulesFirst += GreenRhythm::RobloxRouting::udpRule(activeRoblox);
             // Explicit choices are independent of whitelist mode. The legacy
             // lists and route schemes remain intact behind these overrides.
             for (const auto &value : GreenRhythm::GameAppRules::rules(gamePrograms)) {

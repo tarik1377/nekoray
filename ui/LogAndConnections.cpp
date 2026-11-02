@@ -4,6 +4,7 @@
 
 #include "main/ConnectionRow.hpp"
 #include "ui/ProgramRoutingAction.hpp"
+#include "ui/RobloxRoutingAction.hpp"
 
 #include <memory>
 
@@ -448,6 +449,8 @@ void MainWindow::show_conn_context_menu(const QPoint &pos) {
     }
 
     QMenu menu(this);
+    QAction *robloxSettings = nullptr;
+    if(GreenRhythm::RobloxRouting::contains(program)) robloxSettings=menu.addAction(tr("Настроить Roblox и Studio…"));
     QAction *aProgramDirect = nullptr;
     QAction *aProgramBack = nullptr;
     QAction *aProgramProxy = nullptr;
@@ -484,6 +487,7 @@ void MainWindow::show_conn_context_menu(const QPoint &pos) {
     auto *aCopy = menu.addAction(tr("Копировать адрес"));
     auto *chosen = menu.exec(ui->tableWidget_conn->viewport()->mapToGlobal(pos));
     if (chosen == nullptr) return;
+    if(robloxSettings && chosen==robloxSettings) {GreenRhythm::openRobloxRouting(this);return;}
     if ((chosen == aProgramBack && aProgramBack) || (chosen == aProgramProxyBack && aProgramProxyBack)) {
         QString error;
         if (!GreenRhythm::restoreProgramSiteRules(program, GreenRhythm::currentProgramRouting(), &error))

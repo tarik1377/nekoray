@@ -1,0 +1,4 @@
+[
+  {"process_name":["RobloxPlayerBeta.exe","RobloxStudioBeta.exe"],"network":"udp","outbound":"bypass"},
+  {"process_name":["RobloxPlayerBeta.exe","RobloxStudioBeta.exe"],"outbound":"proxy"}
+]

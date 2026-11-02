@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GameAppRules.hpp"
+#include "RobloxRouting.hpp"
 #include <QDir>
 #include <QFileInfo>
 #include <QTemporaryFile>
@@ -9,9 +10,10 @@ namespace GreenRhythm::ProgramRouting {
 struct State {
     QString bypass, proxy, applications;
     bool whitelist = false;
+    QString robloxSplit;
     bool operator==(const State &other) const {
         return bypass == other.bypass && proxy == other.proxy
-            && applications == other.applications && whitelist == other.whitelist;
+            && applications == other.applications && whitelist == other.whitelist && robloxSplit == other.robloxSplit;
     }
 };
 inline bool listed(const QString &list, const QString &name) {
@@ -33,7 +35,10 @@ inline bool isBrowser(const QString &name) { return browsers().contains(name, Qt
 inline QString overrideMode(const State &state, const QString &name) {
     QJsonObject apps;
     if (!GameAppRules::parse(state.applications, &apps)) return "unknown";
+    QStringList split;
+    if(!RobloxRouting::parse(state.robloxSplit,&split)) return "unknown";
     const auto mode = GameAppRules::mode(apps, name);
+    if(mode=="proxy" && split.contains(name,Qt::CaseInsensitive)) return "smart";
     if (mode != "auto") return mode;
     if (listed(state.bypass, name)) return state.whitelist ? "proxy" : "bypass";
     return listed(state.proxy, name) ? QStringLiteral("proxy") : QStringLiteral("auto");
@@ -62,6 +67,9 @@ inline bool restore(const State &before, const QString &name, State *after, QStr
     QJsonObject apps;
     if (!GameAppRules::parse(before.applications, &apps, error)) return false;
     auto candidate = before;
+    QStringList split;
+    if(!RobloxRouting::parse(before.robloxSplit,&split,error)) return false;
+    if(split.contains(name,Qt::CaseInsensitive)) candidate.robloxSplit=without(before.robloxSplit,name);
     candidate.bypass = without(before.bypass, name);
     candidate.proxy = without(before.proxy, name);
     if (GameAppRules::mode(apps, name) != "auto") {
@@ -75,11 +83,20 @@ inline bool choose(const State &before, const QString &name, const QString &rout
     if (route == "auto") return restore(before, name, after, error);
     QJsonObject apps;
     if (!GameAppRules::parse(before.applications, &apps, error)) return false;
-    if (!GameAppRules::setMode(&apps, name, route)) {
+    QStringList split;
+    if(!RobloxRouting::parse(before.robloxSplit,&split,error)) return false;
+    if ((route=="smart" && !RobloxRouting::contains(name)) || !GameAppRules::setMode(&apps, name, route=="smart"?QStringLiteral("proxy"):route)) {
         if (error) *error = QStringLiteral("Выберите точное имя .exe и направление подключения.");
         return false;
     }
     *after = before;
+    split.removeAll(name);
+    for(auto it=split.begin();it!=split.end();) if(it->compare(name,Qt::CaseInsensitive)==0) it=split.erase(it);else ++it;
+    if(route=="smart") {
+        split.append(name);
+        after->bypass=without(before.bypass,name); after->proxy=without(before.proxy,name);
+    }
+    after->robloxSplit=split.join('\n');
     after->applications = GameAppRules::serialize(apps);
     return true;
 }
@@ -87,7 +104,9 @@ inline bool choose(const State &before, const QString &name, const QString &rout
 // Route schemes, connection mode, DNS and unknown settings remain untouched.
 inline bool saveState(const QString &path, const State &expected, const State &candidate, QString *error) {
     QJsonObject apps;
-    if (candidate.whitelist != expected.whitelist || !GameAppRules::parse(candidate.applications, &apps, error)) {
+    QStringList split;
+    if (candidate.whitelist != expected.whitelist || !GameAppRules::parse(candidate.applications, &apps, error)
+        || !RobloxRouting::parse(candidate.robloxSplit,&split,error)) {
         if (error && error->isEmpty()) *error = QStringLiteral("Режим TUN не может меняться вместе с выбором программы.");
         return false;
     }
@@ -101,7 +120,7 @@ inline bool saveState(const QString &path, const State &expected, const State &c
         return false;
     }
     auto settings = document.object();
-    for (const auto *key : {"vpn_bypass_process", "vpn_proxy_process", "game_app_rules"})
+    for (const auto *key : {"vpn_bypass_process", "vpn_proxy_process", "game_app_rules", "roblox_split_processes"})
         if (settings.contains(key) && !settings.value(key).isString()) {
             if (error) *error = QStringLiteral("Нераспознанный формат правил программ. Изменения не записаны.");
             return false;
@@ -111,7 +130,7 @@ inline bool saveState(const QString &path, const State &expected, const State &c
         return false;
     }
     const State saved{settings.value("vpn_bypass_process").toString(), settings.value("vpn_proxy_process").toString(),
-                      settings.value("game_app_rules").toString(), settings.value("vpn_rule_white").toBool()};
+                      settings.value("game_app_rules").toString(), settings.value("vpn_rule_white").toBool(),settings.value("roblox_split_processes").toString()};
     if (!(saved == expected)) {
         if (error) *error = QStringLiteral("Правила программ уже изменились. Откройте окно снова.");
         return false;
@@ -131,6 +150,7 @@ inline bool saveState(const QString &path, const State &expected, const State &c
     if (candidate.bypass != expected.bypass) settings.insert("vpn_bypass_process", candidate.bypass);
     if (candidate.proxy != expected.proxy) settings.insert("vpn_proxy_process", candidate.proxy);
     if (candidate.applications != expected.applications) settings.insert("game_app_rules", candidate.applications);
+    if (candidate.robloxSplit != expected.robloxSplit) settings.insert("roblox_split_processes", candidate.robloxSplit);
     QSaveFile output(path);
     output.setDirectWriteFallback(false);
     const auto updated = QJsonDocument(settings).toJson(QJsonDocument::Indented);

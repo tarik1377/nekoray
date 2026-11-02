@@ -2820,6 +2820,16 @@ void MainWindow::open_what_broke() {
 #endif
 
     connect(d, &DialogWhatBroke::fixRequested, this, [this](const QString &program) {
+        if(GreenRhythm::RobloxRouting::contains(program)) {
+            const auto expected=GreenRhythm::currentProgramRouting();
+            GreenRhythm::ProgramRouting::State candidate; QString error;
+            if(!GreenRhythm::ProgramRouting::choose(expected,program,"bypass",&candidate,&error)
+                || !GreenRhythm::ProgramRouting::saveState(NekoGui::dataStore->fn,expected,candidate,&error)) {MessageBoxWarning(software_name,error);return;}
+            NekoGui::dataStore->game_app_rules=candidate.applications;
+            NekoGui::dataStore->roblox_split_processes=candidate.robloxSplit;
+            MW_show_log(tr("«%1» пойдёт напрямую при следующем подключении.").arg(program));
+            return;
+        }
         auto list = NekoGui::dataStore->vpn_rule_process.split(QChar(0x0A), Qt::SkipEmptyParts);
         // Дважды не добавляем: список читает человек, и повтор в нём выглядит
         // ошибкой, хотя вреда не несёт.

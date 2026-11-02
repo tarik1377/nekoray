@@ -96,9 +96,10 @@ func TestGameVoiceUDPAndTCPRoutes(t *testing.T) {
 		}()
 	}
 	// One instance per transport, with no profile reloads during the probes.
-	for _, variant := range []string{"udp", "tcp", "udp-custom", "tcp-custom"} {
+	for _, variant := range []string{"udp", "tcp", "udp-custom", "tcp-custom", "udp-roblox-smart", "tcp-roblox-smart"} {
 		network := strings.Split(variant, "-")[0]
 		custom := strings.HasSuffix(variant, "-custom")
+		smart := strings.HasSuffix(variant, "-roblox-smart")
 		t.Run(variant, func(t *testing.T) {
 			targets := tcpTargets
 			if network == "udp" {
@@ -112,7 +113,20 @@ func TestGameVoiceUDPAndTCPRoutes(t *testing.T) {
 				rules = append([]map[string]interface{}{
 					{"process_name": []string{"my-owned-game.exe"}, "outbound": "bypass"},
 					{"process_name": []string{"dota2.exe", "Discord.exe"}, "outbound": "proxy"},
+					{"process_name": []string{"RobloxPlayerBeta.exe"}, "outbound": "bypass"},
+					{"process_name": []string{"RobloxStudioBeta.exe"}, "outbound": "proxy"},
 				}, rules...)
+			}
+			if smart {
+				data, e := os.ReadFile(filepath.Join("testdata", "roblox_split_rules.json"))
+				if e != nil {
+					t.Fatal(e)
+				}
+				var split []map[string]interface{}
+				if e = json.Unmarshal(data, &split); e != nil {
+					t.Fatal(e)
+				}
+				rules = append(split, rules...)
 			}
 			for _, rule := range rules {
 				if tag, _ := rule["outbound"].(string); tag == "bypass" || tag == "proxy" {
@@ -128,8 +142,12 @@ func TestGameVoiceUDPAndTCPRoutes(t *testing.T) {
 			if err = json.Unmarshal(sniffFixture, &sniffRules); err != nil {
 				t.Fatal(err)
 			}
-			if custom {
-				names := append(sniffRules[0]["process_name"].([]interface{}), "my-owned-game.exe")
+			if custom || smart {
+				names := sniffRules[0]["process_name"].([]interface{})
+				if custom {
+					names = append(names, "my-owned-game.exe")
+				}
+				names = append(names, "RobloxPlayerBeta.exe", "RobloxStudioBeta.exe")
 				sniffRules[0]["process_name"] = names
 				sniffRules[1]["rules"].([]interface{})[1].(map[string]interface{})["rules"].([]interface{})[1].(map[string]interface{})["process_name"] = names
 			}
@@ -149,19 +167,20 @@ func TestGameVoiceUDPAndTCPRoutes(t *testing.T) {
 				"dota2.exe", "r5apex.exe", "VALORANT.exe", "VALORANT-Win64-Shipping.exe", "League of Legends.exe", "LeagueClient.exe", "LeagueClientUx.exe", "LeagueClientUxRenderer.exe",
 				"FortniteClient-Win64-Shipping.exe", "FortniteClient-Win64-Shipping_BE.exe", "FortniteClient-Win64-Shipping_EAC.exe", "FortniteLauncher.exe",
 				"SquadGame-Win64-Shipping.exe", "SquadGame.exe", "Squad.exe", "SoTGame.exe", "SoTLauncher.exe", "EscapeFromTarkov.exe", "BsgLauncher.exe",
-				"Discord.exe", "discord.exe", "DiscordPTB.exe", "DiscordCanary.exe", "my-owned-game.exe", "other.exe"}
+				"Discord.exe", "discord.exe", "DiscordPTB.exe", "DiscordCanary.exe", "my-owned-game.exe", "other.exe", "RobloxPlayerBeta.exe", "RobloxStudioBeta.exe"}
 			if runtime.GOOS == "windows" {
-				processes = append(processes, "DOTA2.EXE", "CS2.EXE", "DISCORD.EXE", "MY-OWNED-GAME.EXE", "STEAM.EXE")
+				processes = append(processes, "DOTA2.EXE", "CS2.EXE", "DISCORD.EXE", "MY-OWNED-GAME.EXE", "STEAM.EXE", "ROBLOXPLAYERBETA.EXE", "ROBLOXSTUDIOBETA.EXE")
 			}
 			for _, process := range processes {
 				processKey := strings.ToLower(process)
 				for _, host := range []string{"178.130.128.26:27015", "198.51.100.8:443"} {
 					t.Run(process+"/"+host, func(t *testing.T) {
 						want := "bypass"
-						if strings.HasPrefix(processKey, "discord") || processKey == "other.exe" || processKey == "my-owned-game.exe" && !custom || processKey == "dota2.exe" && custom {
+						roblox := processKey == "robloxplayerbeta.exe" || processKey == "robloxstudiobeta.exe"
+						if strings.HasPrefix(processKey, "discord") || processKey == "other.exe" || processKey == "my-owned-game.exe" && !custom || processKey == "dota2.exe" && custom || roblox && ((!custom && !smart) || smart && network == "tcp" || custom && processKey == "robloxstudiobeta.exe") {
 							want = "proxy"
 						}
-						ordinary := processKey == "other.exe" || processKey == "my-owned-game.exe" && !custom
+						ordinary := processKey == "other.exe" || processKey == "my-owned-game.exe" && !custom || roblox && !custom && !smart
 						if ordinary && strings.HasPrefix(host, "178.") {
 							want = "bypass"
 						}

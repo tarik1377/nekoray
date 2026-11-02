@@ -1,6 +1,7 @@
 #include "GameProgramsDialog.hpp"
 #include "main/GameAppRules.hpp"
 #include "main/GameCatalog.hpp"
+#include "main/RobloxRouting.hpp"
 
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -103,6 +104,7 @@ GameProgramsDialog::GameProgramsDialog(const QString &saved, bool tunnelEnabled,
     addRow("Steam", GameCatalog::steam());
     addRow("Discord", {"Discord.exe", "discord.exe", "DiscordPTB.exe", "DiscordCanary.exe"});
     for (const auto &name : original.keys()) {
+        if(RobloxRouting::contains(name)) continue; // Its split/forced policy has a dedicated editor.
         bool found = false;
         for (int row = 0; row < table->rowCount(); ++row)
             if (table->item(row, 0)->data(Qt::UserRole).toStringList().contains(name, Qt::CaseInsensitive)) found = true;
@@ -159,6 +161,10 @@ void GameProgramsDialog::addRow(const QString &title, const QStringList &program
 bool GameProgramsDialog::addExecutable(const QString &path) {
     const auto name = QFileInfo(path).fileName();
     if (!valid || !GameAppRules::executableName(name)) { status->setText(tr("Выберите файл программы с расширением .exe.")); return false; }
+    if(RobloxRouting::contains(name)) {
+        if(changed() || !robloxOpener) { status->setText(tr("Сначала сохраните изменения, затем откройте «Roblox и Studio».")); return false; }
+        robloxOpener(); return true;
+    }
     for (int row = 0; row < table->rowCount(); ++row) {
         if (!table->item(row, 0)->data(Qt::UserRole).toStringList().contains(name, Qt::CaseInsensitive)) continue;
         table->setRowHidden(row, false); table->selectRow(row); table->scrollToItem(table->item(row, 0));

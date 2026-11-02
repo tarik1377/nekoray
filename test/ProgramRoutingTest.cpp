@@ -32,6 +32,11 @@ int main(int argc, char **argv) {
     check(ProgramRouting::restore(before, "unlisted.exe", &after, &error) && after == before, "unlisted process is a byte-preserving no-op");
     const ProgramRouting::State nativeProcesses{"Google Chrome\nfirefox", {}, {}, false};
     check(ProgramRouting::restore(nativeProcesses, "Google Chrome", &after, &error) && after.bypass == "firefox", "legacy native process names remain editable on macOS");
+    ProgramRouting::State robloxSmart,browserSite;
+    check(ProgramRouting::choose(before,"RobloxStudioBeta.exe","smart",&robloxSmart,&error)
+        && ProgramRouting::restore(robloxSmart,"browser.exe",&browserSite,&error)
+        && browserSite.robloxSplit==robloxSmart.robloxSplit
+        && ProgramRouting::overrideMode(browserSite,"RobloxStudioBeta.exe")=="smart","browser site recovery preserves Roblox automatic split and its fallback");
     QTemporaryDir files; const auto path = files.filePath("settings.json"), route = files.filePath("Default");
     QJsonObject settings{{"vpn_bypass_process", before.bypass}, {"vpn_proxy_process", before.proxy}, {"game_app_rules", before.applications},
         {"vpn_rule_white", false}, {"vpn_gateway_exclusions", "work.invalid"}, {"custom_route", "keep exactly"}, {"unknown_future", QJsonArray{1, 2}}, {"remote_dns", "keep DNS"}};
