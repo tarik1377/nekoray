@@ -5,12 +5,14 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+	"unsafe"
 )
 
 func exclusiveFile(t *testing.T, path string, directory bool) syscall.Handle {
@@ -23,6 +25,19 @@ func exclusiveFile(t *testing.T, path string, directory bool) syscall.Handle {
 	handle, err := syscall.CreateFile(name, syscall.GENERIC_READ, 0, nil, syscall.OPEN_EXISTING, flags, 0)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !directory {
+		// Some runner configurations permit reads despite a share-mode-only
+		// handle. An exclusive byte-range lock makes the unreadable-snapshot
+		// precondition explicit; CloseHandle releases it before the retry.
+		var overlap syscall.Overlapped
+		ok, _, lockErr := syscall.NewLazyDLL("kernel32.dll").NewProc("LockFileEx").Call(
+			uintptr(handle), 3 /* EXCLUSIVE_LOCK | FAIL_IMMEDIATELY */, 0,
+			uintptr(^uint32(0)), uintptr(^uint32(0)), uintptr(unsafe.Pointer(&overlap)))
+		if ok == 0 {
+			syscall.CloseHandle(handle)
+			t.Fatalf("cannot establish fixture byte-range lock: %v", lockErr)
+		}
 	}
 	return handle
 }
@@ -41,9 +56,12 @@ func TestRestoreWindowsTargetAndSnapshotFileLocksLeaveWorkingFiles(t *testing.T)
 			}
 			handle := exclusiveFile(t, path, false)
 			if probe, openErr := os.Open(path); openErr == nil {
+				_, readErr := io.ReadAll(probe)
 				probe.Close()
-				syscall.CloseHandle(handle)
-				t.Fatalf("exclusive fixture handle did not deny reading %q (path length %d)", path, len(path))
+				if readErr == nil {
+					syscall.CloseHandle(handle)
+					t.Fatalf("fixture lock did not deny reading %q (path length %d)", path, len(path))
+				}
 			}
 			if snapshot {
 				if saved, loadErr := loadPrevious(install); loadErr == nil {
