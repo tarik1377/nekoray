@@ -38,6 +38,11 @@ int main(int argc, char **argv) {
     });
     check("only a verified external helper can request closing the client",launched&&closes==1&&arguments&&bytes);
     QFile::remove(copied);
+    const QStringList appDataArgs{"--install-dir", directory.path(), "--data-dir", directory.path()+"/User Data", "--rollback"};
+    bool dataPreserved = false;
+    check("rollback forwards the separate AppData root without changing it", launchWithArguments(directory.path(), appDataArgs, [&]{++closes;},
+        [&](const QString &path,const QStringList &args,const QString &){copied=path;dataPreserved=args==appDataArgs;return true;}) && dataPreserved);
+    QFile::remove(copied);
     QWidget parent;
     QFile::remove(directory.path()+"/updater.exe");
     QFile::copy(QCoreApplication::applicationFilePath(),directory.path()+"/updater.exe");

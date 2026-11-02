@@ -3,8 +3,20 @@
 #include <QApplication>
 #include <QDir>
 
+#ifdef Q_OS_WIN
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <sddl.h>
+// WinCommander exposes these constants as class members.
+#undef SW_HIDE
+#undef SW_NORMAL
+#undef SW_SHOWMINIMIZED
+#endif
+
 #include "3rdparty/fix_old_qt.h"
 #include "main/NekoGui.hpp"
+#include "main/UserDataPaths.hpp"
 
 // macOS headers (possibly OBJ-c)
 #if defined(Q_OS_MACOS)
@@ -17,15 +29,25 @@
 #include <QFileInfo>
 #include <QProcess>
 #include <QSettings>
+#include <QRegularExpression>
+#include <QStandardPaths>
 
 #include "3rdparty/WinCommander.hpp"
 #include "sys/AutoRunTask.hpp"
 #include "sys/WinShell.hpp"
 
+QString Windows_GenAutoRunArguments() {
+    QStringList encoded;
+    const auto *store = NekoGui::dataStore;
+    for (const auto &argument : GreenRhythm::UserData::guiArguments(store->appdataDir, store->flag_use_appdata, true))
+        encoded << (argument.contains(QRegularExpression("[\\s\"]")) || argument.endsWith('\\')
+            ? GreenRhythm::UserData::quoteWindowsArgument(argument) : argument);
+    return encoded.join(' ');
+}
 QString Windows_GenAutoRunString() {
     auto appPath = QApplication::applicationFilePath();
     appPath = "\"" + QDir::toNativeSeparators(appPath) + "\"";
-    appPath += " -tray";
+    appPath += ' ' + Windows_GenAutoRunArguments();
     return appPath;
 }
 
@@ -37,15 +59,46 @@ namespace {
 
     bool runKeySet() {
         QSettings settings(kRunKey, QSettings::NativeFormat);
-        return settings.value(runName()).toString() == Windows_GenAutoRunString();
+        const auto command = settings.value(runName()).toString().trimmed();
+        const auto match = QRegularExpression(QStringLiteral("^(?:\"([^\"]+)\"|(\\S+))")).match(command);
+        return match.hasMatch() && GreenRhythm::AutoRunTask::ours(match.captured(1).isEmpty() ? match.captured(2) : match.captured(1));
+    }
+
+    QStringList identities() {
+        QStringList values{qEnvironmentVariable("USERDOMAIN") + '\\' + qEnvironmentVariable("USERNAME")};
+        HANDLE token = nullptr;
+        if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+            DWORD needed = 0; GetTokenInformation(token, TokenUser, nullptr, 0, &needed);
+            QByteArray bytes(int(needed), 0);
+            if (needed && GetTokenInformation(token, TokenUser, bytes.data(), needed, &needed)) {
+                LPWSTR sid = nullptr;
+                if (ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER *>(bytes.data())->User.Sid, &sid)) {
+                    values << QString::fromWCharArray(sid); LocalFree(sid);
+                }
+            }
+            CloseHandle(token);
+        }
+        return values;
+    }
+    GreenRhythm::AutoRunTask::Launch taskLaunch() {
+        QProcess query;
+        const auto script = QStringLiteral("$ErrorActionPreference='Stop'\n"
+            "try { $xml=Export-ScheduledTask -TaskPath '\\' -TaskName %1 -ErrorAction Stop; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); [Console]::Write($xml) }\n"
+            "catch { if ($_.CategoryInfo.Category -eq [Management.Automation.ErrorCategory]::ObjectNotFound) { exit 3 }; exit 4 }\n")
+            .arg(GreenRhythm::AutoRunTask::quoted(GreenRhythm::AutoRunTask::kTaskName));
+        query.start(PowerShellPath(), {"-NoProfile", "-NonInteractive", "-EncodedCommand", PowerShellEncode(script)});
+        if (!query.waitForFinished(5000) || query.exitStatus() != QProcess::NormalExit) return {};
+        GreenRhythm::AutoRunTask::Launch result;
+        if (query.exitCode() == 0) {
+            result = GreenRhythm::AutoRunTask::parse(query.readAllStandardOutput());
+            result.present = result.queryKnown = true;
+        } else result.queryKnown = query.exitCode() == 3;
+        return result;
     }
 
     /** Задача в планировщике есть. Смотреть её можно и без прав — проверено на живой машине. */
     bool taskExists() {
-        QProcess query;
-        query.start(System32Exe(QStringLiteral("schtasks.exe")),
-                    {QStringLiteral("/Query"), QStringLiteral("/TN"), GreenRhythm::AutoRunTask::kTaskName});
-        return query.waitForFinished(5000) && query.exitStatus() == QProcess::NormalExit && query.exitCode() == 0;
+        return GreenRhythm::AutoRunTask::owned(taskLaunch(), identities());
     }
 
     /**
@@ -77,13 +130,18 @@ void AutoRun_SetEnabled(bool enable) {
         const QString exe = QDir::toNativeSeparators(QApplication::applicationFilePath());
         const QString dir = QDir::toNativeSeparators(QApplication::applicationDirPath());
         const QString user = qEnvironmentVariable("USERDOMAIN") + QLatin1Char('\\') + qEnvironmentVariable("USERNAME");
-        if (runElevatedScript(GreenRhythm::AutoRunTask::registerScript(exe, dir, user))) {
+        const auto task = taskLaunch();
+        const bool owned = GreenRhythm::AutoRunTask::owned(task, identities());
+        if (task.present && !task.valid) { qWarning("autorun: task XML is unknown; existing registration retained"); return; }
+        // An unknown/foreign task must never be overwritten with -Force.
+        if ((!task.valid || owned) && runElevatedScript(GreenRhythm::AutoRunTask::registerScript(exe, dir, user, Windows_GenAutoRunArguments(), owned))) {
             settings.remove(name); // запускает задача — второй запуск из Run не нужен
             return;
         }
         // Отказ в окне UAC или сбой — прежний путь: автозапуск работает, туннель
         // при входе спросит разрешение, как и раньше.
-        settings.setValue(name, Windows_GenAutoRunString());
+        if (!owned && task.queryKnown) settings.setValue(name, Windows_GenAutoRunString());
+        else qWarning("autorun: existing task could not be repaired; no duplicate Run entry was added");
     } else {
         settings.remove(name);
         if (taskExists()) runElevatedScript(GreenRhythm::AutoRunTask::unregisterScript());
@@ -95,9 +153,34 @@ bool AutoRun_IsEnabled() {
 }
 
 bool AutoRun_IsElevated() {
-    return taskExists();
+    return GreenRhythm::AutoRunTask::matches(taskLaunch(), identities(), QApplication::applicationFilePath(),
+        QApplication::applicationDirPath(), Windows_GenAutoRunArguments());
 }
 
+QStringList AutoRun_PreviousConfigDirectories() {
+    QStringList configs;
+    const auto standard = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    const auto add = [&](QString executable, const QStringList &arguments) {
+        executable.replace('\\', '/');
+        for (const auto &path : {GreenRhythm::UserData::legacyConfigDirectory(executable, arguments, standard),
+                                QFileInfo(executable).absoluteDir().absoluteFilePath("config")}) {
+            if (!configs.contains(path, Qt::CaseInsensitive)) configs << path;
+        }
+    };
+    QSettings settings(kRunKey, QSettings::NativeFormat);
+    const auto command = settings.value(runName()).toString().trimmed();
+    const auto match = QRegularExpression(QStringLiteral("^(?:\"([^\"]+)\"|(\\S+))")).match(command);
+    const auto run = match.captured(1).isEmpty() ? match.captured(2) : match.captured(1);
+    if (GreenRhythm::AutoRunTask::ours(run)) add(run, QProcess::splitCommand(command.mid(match.capturedLength()).trimmed()));
+    const auto task = taskLaunch();
+    if (GreenRhythm::AutoRunTask::owned(task, identities())) add(task.executable, QProcess::splitCommand(task.arguments));
+    return configs;
+}
+
+#endif
+
+#ifndef Q_OS_WIN
+QStringList AutoRun_PreviousConfigDirectories() { return {}; }
 #endif
 
 #ifdef Q_OS_MACOS

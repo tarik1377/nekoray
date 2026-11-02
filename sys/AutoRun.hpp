@@ -1,4 +1,8 @@
 #pragma once
+#include <QStringList>
+
+// Only this user's recognized GreenRhythm registrations, for first migration.
+QStringList AutoRun_PreviousConfigDirectories();
 
 void AutoRun_SetEnabled(bool enable);
 

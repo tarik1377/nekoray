@@ -8,6 +8,7 @@
 #include "ui/RollbackAction.hpp"
 #include "ui/TunBypassAction.hpp"
 #include "ui/GameProgramsAction.hpp"
+#include "main/UserDataPaths.hpp"
 
 #include <QDateTime>
 #include <QDir>
@@ -553,7 +554,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
                 tr("Вернуть GreenRhythm %1?\n\nПриложение закроет подключение и перезапустится. "
                    "Серверы, подписки и настройки сохранятся. OpenVPN не изменяется.").arg(version),
                 QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
-            if (!GreenRhythm::Rollback::launch(QApplication::applicationDirPath(), [] { MW_dialog_message("", "ExitForRollback"); }))
+            auto arguments = GreenRhythm::UserData::updaterArguments(QApplication::applicationDirPath(), QDir::currentPath(), NekoGui::dataStore->flag_use_appdata);
+            arguments << "--rollback";
+            if (!GreenRhythm::Rollback::launchWithArguments(QApplication::applicationDirPath(), arguments, [] { MW_dialog_message("", "ExitForRollback"); }))
                 MessageBoxWarning(tr("Возврат версии"), tr("Не удалось подготовить возврат. GreenRhythm продолжает работать."));
         });
         connect(shell, &GreenRhythm::MainShell::tunnelSettingsRequested, this,
@@ -1501,8 +1504,13 @@ void MainWindow::on_menu_exit_triggered() {
     //
     MF_release_runguard();
     if (exit_reason == 1) {
+        const auto archive = QDir::current().absoluteFilePath("../greenrhythm.zip");
         QDir::setCurrent(QApplication::applicationDirPath());
-        QProcess::startDetached("./updater", QStringList{});
+        auto arguments = GreenRhythm::UserData::updaterArguments(QApplication::applicationDirPath(), QDir(NekoGui::dataStore->appdataDir.isEmpty() ? QApplication::applicationDirPath() : NekoGui::dataStore->appdataDir).absoluteFilePath("config"), NekoGui::dataStore->flag_use_appdata);
+#ifdef Q_OS_WIN
+        arguments << archive;
+#endif
+        QProcess::startDetached("./updater", arguments);
     } else if (exit_reason == 2 || exit_reason == 3) {
         QDir::setCurrent(QApplication::applicationDirPath());
 

@@ -13,7 +13,7 @@ func rollbackFixture(t *testing.T) (string, string, *installationRecord, install
 	t.Helper()
 	archive, install, old := installFixture(t)
 	entries := map[string]string{"GreenRhythm/newasset.dat": "new asset"}
-	for _, name := range []string{"greenrhythm.exe", "greenrhythm_core.exe", "updater.exe", "xray.exe", "Qt6Core.dll", "Qt6Gui.dll", "Qt6Network.dll", "Qt6Widgets.dll", "Qt6Svg.dll", "platforms/qwindows.dll", "wintun.dll"} {
+	for _, name := range []string{"greenrhythm.exe", "greenrhythm_core.exe", "updater.exe", "xray.exe", "geoip.db", "geosite.db", "Qt6Core.dll", "Qt6Gui.dll", "Qt6Network.dll", "Qt6Widgets.dll", "Qt6Svg.dll", "platforms/qwindows.dll", "wintun.dll"} {
 		value := "old-" + name
 		if existing, ok := old[name]; ok {
 			value = existing

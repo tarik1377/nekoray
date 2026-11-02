@@ -1,4 +1,6 @@
 #include <csignal>
+#include <memory>
+#include <vector>
 
 #include <QApplication>
 #include "main/AppFont.hpp"
@@ -22,6 +24,8 @@
 #include "main/RouteDefaultsPolicy.hpp"
 #include "main/RouteState.hpp"
 #include "main/TunHelper.hpp"
+#include "main/UserDataPaths.hpp"
+#include "sys/AutoRun.hpp"
 
 #include "ui/mainwindow_interface.h"
 
@@ -131,6 +135,17 @@ int main(int argc, char* argv[]) {
     NekoGui::dataStore->flag_debug = true;
 #endif
 
+#ifdef Q_OS_WIN
+    const auto storage = GreenRhythm::UserData::windowsStorage(NekoGui::dataStore->argv,
+        QFile::exists(QApplication::applicationDirPath() + "/portable.flag"));
+    if (!storage.error.isEmpty()) {
+        QMessageBox::warning(nullptr, "GreenRhythm", storage.error);
+        return 1;
+    }
+    NekoGui::dataStore->flag_use_appdata = storage.appData;
+    NekoGui::dataStore->appdataDir = storage.path;
+#endif
+
     /*
      * ЗАПУЩЕНЫ ЛИ ОТ ROOT — СПРАШИВАЕТСЯ ДО ТОГО, КАК ЧТО-ЛИБО СОЗДАНО.
      *
@@ -154,14 +169,20 @@ int main(int argc, char* argv[]) {
         if (!NekoGui::dataStore->appdataDir.isEmpty()) {
             wd.setPath(NekoGui::dataStore->appdataDir);
         } else {
+#ifdef Q_OS_WIN
+            wd.setPath(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation));
+#else
             wd.setPath(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation));
+#endif
         }
     }
     if (!running_as_root) {
-        if (!wd.exists()) wd.mkpath(wd.absolutePath());
-        if (!wd.exists("config")) wd.mkdir("config");
-        if (wd.exists("config")) QDir::setCurrent(wd.absoluteFilePath("config"));
-        QDir("temp").removeRecursively();
+        if ((!wd.exists() && !wd.mkpath(wd.absolutePath())) || (!wd.exists("config") && !wd.mkdir("config"))
+            || !QDir::setCurrent(wd.absoluteFilePath("config"))) {
+            QMessageBox::warning(nullptr, "GreenRhythm", QObject::tr("Не удалось открыть папку пользовательских данных: %1").arg(wd.absolutePath()));
+            return 1;
+        }
+        if (NekoGui::dataStore->flag_use_appdata) NekoGui::dataStore->appdataDir = wd.absolutePath();
     }
 
     // init QApplication
@@ -204,7 +225,51 @@ int main(int argc, char* argv[]) {
         QMessageBox::warning(nullptr, "NekoGui", "RunGuard disallow to run, use -many to force start.");
         return 0;
     }
-    MF_release_runguard = [&] { guard.release(); };
+    std::vector<std::unique_ptr<RunGuard>> legacyGuards;
+    MF_release_runguard = [&] {
+        for (auto &legacy : legacyGuards) legacy->release();
+        guard.release();
+    };
+
+#ifdef Q_OS_WIN
+    if (NekoGui::dataStore->flag_use_appdata) {
+        QStringList sources{QApplication::applicationDirPath() + "/config"};
+        sources.append(AutoRun_PreviousConfigDirectories());
+        sources.removeDuplicates();
+        QSet<QString> claimedRoots;
+        for (const auto &source : sources) {
+            const auto oldRoot = QDir::cleanPath(QDir(source).absoluteFilePath(".."));
+            if (oldRoot.compare(QDir::cleanPath(wd.absolutePath()), Qt::CaseInsensitive) == 0 || claimedRoots.contains(oldRoot.toCaseFolded())) continue;
+            auto oldGuard = std::make_unique<RunGuard>("greenrhythm" + oldRoot);
+            if (!oldGuard->tryToRun(&guard_data_in)) {
+                QMessageBox::information(nullptr, "GreenRhythm", QObject::tr("Прежняя копия GreenRhythm ещё работает. Полностью выйдите из неё и запустите новую. Профили и подключение прежней копии сохранены."));
+                return 0;
+            }
+            claimedRoots.insert(oldRoot.toCaseFolded());
+            // The old executable sees the same IPC token and wakes this window,
+            // rather than starting a second core and killing its connections.
+            legacyGuards.push_back(std::move(oldGuard));
+        }
+        auto source = sources.first();
+        for (const auto &candidate : sources) if (GreenRhythm::UserData::hasProfiles(candidate)) { source = candidate; break; }
+        // The destination config directory can be replaced atomically only
+        // while it is not the process working directory on Windows.
+        QDir::setCurrent(wd.absolutePath());
+        QString migrationError;
+        const auto result = GreenRhythm::UserData::migrate(source, wd.absolutePath(), &migrationError);
+        if (result == GreenRhythm::UserData::Migration::Failed) {
+            QMessageBox::warning(nullptr, "GreenRhythm", migrationError); return 1;
+        }
+        if (!QDir::setCurrent(wd.absoluteFilePath("config"))) return 1;
+        if (result == GreenRhythm::UserData::Migration::Copied)
+            qInfo() << "user data copied to AppData; original directory retained";
+        // Preserve the same user's data path after an elevation restart too.
+        if (!NekoGui::dataStore->argv.contains("-appdata"))
+            NekoGui::dataStore->argv << "-appdata" << wd.absolutePath();
+    }
+#endif
+    // A second launch must not delete temp files of the running instance.
+    if (!running_as_root) QDir("temp").removeRecursively();
 
 #ifdef Q_OS_MACOS
     /*

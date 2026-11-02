@@ -771,6 +771,9 @@ target_link_libraries(icons_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 # UAC при входе), мак — через SMAppService. Сценарий регистрации и сторож
 # исходников; ни планировщика, ни окон.
 add_executable(autorun_task_test EXCLUDE_FROM_ALL test/AutoRunTaskTest.cpp)
+add_executable(user_data_paths_test EXCLUDE_FROM_ALL test/UserDataPathsTest.cpp)
+target_include_directories(user_data_paths_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(user_data_paths_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 target_include_directories(autorun_task_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(autorun_task_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 
@@ -1048,6 +1051,7 @@ set(GR_TEST_TARGETS
         icons_test
         palette_test
         autorun_task_test
+        user_data_paths_test
 )
 
 if (WIN32)
