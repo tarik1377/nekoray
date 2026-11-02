@@ -213,6 +213,13 @@ jobs:
           git -C ../libneko remote add origin https://github.com/MatsuriDayo/libneko.git
           git -C ../libneko fetch --depth 1 origin "$LIBNEKO_COMMIT"
           git -C ../libneko checkout FETCH_HEAD
+      # File-lock and rollback tests are Windows-only; the native Go job above
+      # runs on Linux even when it cross-compiles a Windows executable.
+      - name: Native Windows updater and rollback tests
+        shell: bash
+        run: |
+          cd go/cmd/updater
+          go test -timeout 2m ./...
       - name: Capture test subnet on disposable runner
         shell: pwsh
         run: |
