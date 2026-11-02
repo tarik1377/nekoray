@@ -44,7 +44,9 @@ GameProgramsDialog::GameProgramsDialog(const QString &saved, bool tunnelEnabled,
     auto *tools = new QHBoxLayout;
     auto *running = new QPushButton(tr("Из запущенных…"), this); running->setObjectName("gameRunning");
     auto *file = new QPushButton(tr("Выбрать .exe…"), this); file->setObjectName("gameFile");
-    tools->addWidget(running); tools->addWidget(file); tools->addStretch(); layout->addLayout(tools);
+    roblox = new QPushButton(tr("Roblox и Studio…"),this); roblox->setObjectName("gameRoblox"); roblox->setEnabled(false);
+    connect(roblox,&QPushButton::clicked,this,[this] {if(robloxOpener && !changed()) robloxOpener();});
+    tools->addWidget(running); tools->addWidget(file); tools->addWidget(roblox); tools->addStretch(); layout->addLayout(tools);
     table = new QTableWidget(0, 2, this); table->setObjectName("gamePrograms");
     table->setHorizontalHeaderLabels({tr("Игра или программа"), tr("Подключение")});
     table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
@@ -127,6 +129,7 @@ void GameProgramsDialog::setInspector(std::function<void(const QString &)> callb
     inspector = std::move(callback);
     inspect->setEnabled(bool(inspector) && table->currentRow() >= 0 && !table->isRowHidden(table->currentRow()));
 }
+void GameProgramsDialog::setRobloxOpener(std::function<void()> callback) { robloxOpener=std::move(callback); updateSave(); }
 
 void GameProgramsDialog::addRow(const QString &title, const QStringList &programs) {
     const int row = table->rowCount(); table->insertRow(row);
@@ -167,7 +170,11 @@ bool GameProgramsDialog::addExecutable(const QString &path) {
 }
 
 QString GameProgramsDialog::serializedRules() const { return changed() ? GameAppRules::serialize(draft) : raw; }
-void GameProgramsDialog::updateSave() { save->setText(changed() ? tr("Сохранить") : tr("Готово")); }
+void GameProgramsDialog::updateSave() {
+    save->setText(changed() ? tr("Сохранить") : tr("Готово"));
+    roblox->setEnabled(valid && bool(robloxOpener) && !changed());
+    roblox->setToolTip(changed() ? tr("Сначала сохраните или отмените изменения этого окна.") : tr("Отдельный маршрут для Roblox Player и Roblox Studio."));
+}
 void GameProgramsDialog::accept() {
     if (!valid) { reject(); return; }
     if (changed() && commit) {

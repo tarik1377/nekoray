@@ -509,6 +509,30 @@ int main(int argc, char **argv) {
               "explicit per-app user choices beat game and voice defaults");
         const auto previousGameApps = NekoGui::dataStore->game_app_rules;
         {
+            const GreenRhythm::ProgramRouting::State original{"RobloxStudioBeta.exe", "RobloxPlayerBeta.exe",
+                GreenRhythm::GameAppRules::serialize({{"Discord.exe","proxy"},{"dota2.exe","bypass"}}),false};
+            const auto bypass=NekoGui::dataStore->vpn_rule_process, proxy=NekoGui::dataStore->vpn_rule_process_proxy;
+            GreenRhythm::ProgramRouting::State player,forced,automatic;QString error;
+            check(GreenRhythm::ProgramRouting::choose(original,"RobloxPlayerBeta.exe","bypass",&player,&error)
+                && GreenRhythm::ProgramRouting::choose(player,"RobloxStudioBeta.exe","proxy",&forced,&error),"Roblox editor creates independent choices without changing a route scheme");
+            for(bool white:{false,true}) {
+                NekoGui::dataStore->vpn_rule_white=white;
+                NekoGui::dataStore->vpn_rule_process=forced.bypass;NekoGui::dataStore->vpn_rule_process_proxy=forced.proxy;NekoGui::dataStore->game_app_rules=forced.applications;
+                const auto rules=runtimeRules(buildCurrent());
+                check(routeFor(rules,"RobloxPlayerBeta.exe")=="bypass" && routeFor(rules,"RobloxStudioBeta.exe")=="proxy",
+                    "actual ordinary/whitelist TUN routes Player DIRECT and Studio VPN ahead of contradictory old lists");
+                check(routeFor(rules,"Discord.exe")=="proxy" && routeFor(rules,"dota2.exe")=="bypass","actual Roblox changes retain Discord VPN and Dota DIRECT");
+            }
+            NekoGui::dataStore->vpn_rule_white=false;
+            check(GreenRhythm::ProgramRouting::restore(forced,"RobloxStudioBeta.exe",&player,&error)
+                && GreenRhythm::ProgramRouting::restore(player,"RobloxPlayerBeta.exe",&automatic,&error),"site choice removes every selected Roblox override");
+            NekoGui::dataStore->vpn_rule_process=automatic.bypass;NekoGui::dataStore->vpn_rule_process_proxy=automatic.proxy;NekoGui::dataStore->game_app_rules=automatic.applications;
+            const auto rules=runtimeRules(buildCurrent());
+            check(routeFor(rules,"RobloxStudioBeta.exe").isEmpty() && routeFor(rules,"RobloxPlayerBeta.exe").isEmpty() && ruIndex(rules)>=0,
+                "actual automatic Roblox routing falls through to existing site/IP rules without a hidden game-wide bypass");
+            NekoGui::dataStore->vpn_rule_process=bypass;NekoGui::dataStore->vpn_rule_process_proxy=proxy;NekoGui::dataStore->game_app_rules=previousGameApps;
+        }
+        {
             const auto savedBypass = NekoGui::dataStore->vpn_rule_process;
             const auto savedProxy = NekoGui::dataStore->vpn_rule_process_proxy;
             const GreenRhythm::ProgramRouting::State before{"RobloxStudioBeta.exe\nbrowser.exe", "chrome.exe\nbrowser.exe", {}, false};

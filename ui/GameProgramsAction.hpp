@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GameProgramsDialog.hpp"
+#include "RobloxRoutingAction.hpp"
 #include "main/GameAppRules.hpp"
 #include "main/NekoGui.hpp"
 #include "ui/mainwindow_interface.h"
@@ -21,7 +22,14 @@ inline void openGamePrograms(QWidget *parent, std::function<void(const QString &
             if (owner && GetMainWindow()) GetMainWindow()->inspect_program(name, owner);
         };
     }
-    dialog->setInspector(std::move(inspector));
+    dialog->setInspector(inspector);
+    const QPointer<QWidget> owner(parent);
+    const QPointer<GameProgramsDialog> editor(dialog);
+    dialog->setRobloxOpener([owner,editor,inspector] {
+        if(!owner || !editor || editor->changed()) return;
+        editor->reject();
+        openRobloxRouting(owner,inspector);
+    });
     dialog->setCommitter([settings, expected](const QString &text, QString *error) {
         if (!GameAppRules::saveSetting(settings->fn, expected, text, error)) return false;
         settings->game_app_rules = text;

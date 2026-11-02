@@ -93,6 +93,9 @@ int main(int argc, char **argv) {
     check(!inspect->isEnabled(), "filtered-out selection cannot silently inspect an invisible program");
     search->clear();
     check(inspect->isEnabled(), "clearing search restores observation for the selected game");
+    int robloxOpens=0;unchanged.setRobloxOpener([&] {++robloxOpens;});
+    unchanged.findChild<QPushButton *>("gameRoblox")->click();
+    check(robloxOpens==1 && !unchanged.changed() && commits==0,"Roblox navigation has no hidden save or reconnection");
     auto *done = unchanged.findChild<QPushButton *>("gameSave");
     check(done && done->isEnabled() && done->text() == QString::fromUtf8("Готово"), "no-change dialog has a working Done button");
     check(unchanged.rect().contains(QRect(done->mapTo(&unchanged, QPoint{}), done->size())), "footer action stays inside the dialog");
@@ -103,6 +106,8 @@ int main(int argc, char **argv) {
     edited.setCommitter([&](const QString &text, QString *failure) { ++commits; *failure = "fixture denied write"; return false; });
     check(edited.addExecutable("C:/Games/My Game.exe"), "file selection adds a game without executing it");
     check(edited.changed(), "adding a custom game creates a draft only");
+    edited.setRobloxOpener([&] {++robloxOpens;});
+    check(!edited.findChild<QPushButton *>("gameRoblox")->isEnabled(),"unsaved game choices cannot be silently discarded by Roblox navigation");
     choice(edited, "Discord.exe")->setCurrentIndex(choice(edited, "Discord.exe")->findData("proxy"));
     choice(edited, "dota2.exe")->setCurrentIndex(choice(edited, "dota2.exe")->findData("bypass"));
     edited.setInspector([&](const QString &name) { inspected=name; });

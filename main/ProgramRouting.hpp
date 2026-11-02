@@ -71,11 +71,26 @@ inline bool restore(const State &before, const QString &name, State *after, QStr
     *after = candidate;
     return true;
 }
-// Remove exactly one program's overrides, with an atomic save and a backup.
-// No route scheme, connection mode, DNS preference or other program is rewritten.
-inline bool saveSetting(const QString &path, const State &expected, const QString &name, State *replacement, QString *error) {
-    State candidate;
-    if (!restore(expected, name, &candidate, error)) return false;
+inline bool choose(const State &before, const QString &name, const QString &route, State *after, QString *error) {
+    if (route == "auto") return restore(before, name, after, error);
+    QJsonObject apps;
+    if (!GameAppRules::parse(before.applications, &apps, error)) return false;
+    if (!GameAppRules::setMode(&apps, name, route)) {
+        if (error) *error = QStringLiteral("Выберите точное имя .exe и направление подключения.");
+        return false;
+    }
+    *after = before;
+    after->applications = GameAppRules::serialize(apps);
+    return true;
+}
+// Commit the whole process preference snapshot, atomically, with a backup.
+// Route schemes, connection mode, DNS and unknown settings remain untouched.
+inline bool saveState(const QString &path, const State &expected, const State &candidate, QString *error) {
+    QJsonObject apps;
+    if (candidate.whitelist != expected.whitelist || !GameAppRules::parse(candidate.applications, &apps, error)) {
+        if (error && error->isEmpty()) *error = QStringLiteral("Режим TUN не может меняться вместе с выбором программы.");
+        return false;
+    }
     QFile input(path);
     if (!input.open(QIODevice::ReadOnly)) { if (error) *error = input.errorString(); return false; }
     const auto bytes = input.readAll(); input.close();
@@ -101,7 +116,7 @@ inline bool saveSetting(const QString &path, const State &expected, const QStrin
         if (error) *error = QStringLiteral("Правила программ уже изменились. Откройте окно снова.");
         return false;
     }
-    if (candidate == expected) { *replacement = candidate; return true; }
+    if (candidate == expected) return true;
     const auto directory = QFileInfo(path).absoluteDir().filePath(".program-routing-backups");
     if (!QDir().mkpath(directory)) {
         if (error) *error = QStringLiteral("Не удалось создать папку резервной копии. Изменения не записаны.");
@@ -123,6 +138,11 @@ inline bool saveSetting(const QString &path, const State &expected, const QStrin
         if (error) *error = QStringLiteral("Не удалось сохранить правила: ") + output.errorString();
         return false;
     }
+    return true;
+}
+inline bool saveSetting(const QString &path, const State &expected, const QString &name, State *replacement, QString *error) {
+    State candidate;
+    if (!restore(expected, name, &candidate, error) || !saveState(path, expected, candidate, error)) return false;
     *replacement = candidate;
     return true;
 }
