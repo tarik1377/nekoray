@@ -14,6 +14,7 @@
 #include "main/RouteState.hpp"
 #include "main/RuRoutingPolicy.hpp"
 #include "main/GameVoiceRouting.hpp"
+#include "main/ProgramRouting.hpp"
 #include "main/HealthProfiles.hpp"
 #include "sub/GroupUpdater.hpp"
 
@@ -507,6 +508,27 @@ int main(int argc, char **argv) {
         check(routeFor(explicitRules, "Discord.exe") == "bypass" && routeFor(explicitRules, "cs2.exe") == "proxy",
               "explicit per-app user choices beat game and voice defaults");
         const auto previousGameApps = NekoGui::dataStore->game_app_rules;
+        {
+            const auto savedBypass = NekoGui::dataStore->vpn_rule_process;
+            const auto savedProxy = NekoGui::dataStore->vpn_rule_process_proxy;
+            const GreenRhythm::ProgramRouting::State before{"RobloxStudioBeta.exe\nbrowser.exe", "chrome.exe\nbrowser.exe", {}, false};
+            NekoGui::dataStore->vpn_rule_process = before.bypass;
+            NekoGui::dataStore->vpn_rule_process_proxy = before.proxy;
+            check(routeFor(runtimeRules(buildCurrent()), "browser.exe") == "bypass", "actual TUN reproduces browser-wide DIRECT override");
+            GreenRhythm::ProgramRouting::State restored; QString error;
+            check(GreenRhythm::ProgramRouting::restore(before, "browser.exe", &restored, &error), "browser repair removes both override directions");
+            NekoGui::dataStore->vpn_rule_process = restored.bypass;
+            NekoGui::dataStore->vpn_rule_process_proxy = restored.proxy;
+            const auto built = buildCurrent(); const auto rules = runtimeRules(built);
+            check(routeFor(rules, "browser.exe").isEmpty() && ruIndex(rules) >= 0
+                && built->coreConfig.value("route").toObject().value("final") == "proxy",
+                "actual TUN restores existing site/country rules and VPN fallback for browser");
+            check(routeFor(rules, "RobloxStudioBeta.exe") == "bypass" && routeFor(rules, "chrome.exe") == "proxy"
+                && routeFor(rules, "Discord.exe") == "proxy" && routeFor(rules, "dota2.exe") == "bypass",
+                "browser repair retains unrelated program choices, Discord VPN and direct games");
+            NekoGui::dataStore->vpn_rule_process = savedBypass;
+            NekoGui::dataStore->vpn_rule_process_proxy = savedProxy;
+        }
         NekoGui::dataStore->game_app_rules = "{\"schema\":1,\"programs\":{\"my-owned-game.exe\":\"bypass\",\"dota2.exe\":\"proxy\",\"Discord.exe\":\"proxy\"}}";
         for (bool whitelist : {false, true}) {
             NekoGui::dataStore->vpn_rule_white = whitelist;

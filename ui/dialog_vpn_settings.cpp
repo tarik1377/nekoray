@@ -5,12 +5,15 @@
 #include "main/GuiUtils.hpp"
 #include "main/NekoGui.hpp"
 #include "main/TunBypass.hpp"
+#include "main/ProgramRouting.hpp"
 #include "ui/TunBypassAction.hpp"
 #include "ui/mainwindow_interface.h"
 
 #include "sys/ForeignTunnels.hpp"
 
 #include <QMessageBox>
+#include <QLabel>
+#include <QVBoxLayout>
 
 DialogVPNSettings::DialogVPNSettings(QWidget *parent) : QDialog(parent), ui(new Ui::DialogVPNSettings) {
     ui->setupUi(this);
@@ -49,6 +52,21 @@ DialogVPNSettings::DialogVPNSettings(QWidget *parent) : QDialog(parent), ui(new 
     D_LOAD_STRING_PLAIN(vpn_rule_cidr)
     D_LOAD_STRING_PLAIN(vpn_rule_process)
     D_LOAD_STRING_PLAIN(vpn_route_exclude_extra)
+    auto *programHint = new QLabel(ui->gb_process_name);
+    programHint->setObjectName("grTunProgramRoutingHint"); programHint->setWordWrap(true);
+    ui->verticalLayout_4->insertWidget(0, programHint);
+    const auto refreshProgramHint = [this, programHint] {
+        QStringList browsers;
+        for (const auto &name : GreenRhythm::ProgramRouting::browsers())
+            if (GreenRhythm::ProgramRouting::listed(ui->vpn_rule_process->toPlainText(), name)) browsers.append(name);
+        const auto explanation = ui->whitelist_mode->isChecked()
+            ? tr("Белый список выбирает программы целиком, а не отдельные сайты.")
+            : tr("Программы из этого списка идут напрямую целиком. Их правила имеют приоритет над правилами сайтов.");
+        programHint->setText(explanation + (browsers.isEmpty() ? QString() : tr("\nБраузеры в списке: %1. Для выбора по сайтам используйте «Помощь браузеру → По правилам сайтов».").arg(browsers.join(", "))));
+    };
+    connect(ui->vpn_rule_process, &QPlainTextEdit::textChanged, this, refreshProgramHint);
+    connect(ui->whitelist_mode, &QCheckBox::toggled, this, refreshProgramHint);
+    refreshProgramHint();
 #ifdef Q_OS_WIN
     auto *gateways = new QPushButton(tr("Рабочие VPN и виртуальные машины…"), this);
     ui->verticalLayout_5->addWidget(gateways);

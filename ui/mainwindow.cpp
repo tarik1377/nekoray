@@ -8,6 +8,7 @@
 #include "ui/RollbackAction.hpp"
 #include "ui/TunBypassAction.hpp"
 #include "ui/GameProgramsAction.hpp"
+#include "ui/ProgramRoutingAction.hpp"
 
 #include <QDateTime>
 #include <QDir>
@@ -399,6 +400,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         connect(shell, &GreenRhythm::MainShell::browserHelpRequested, this, [this] {
             auto *dialog = new DialogWebDiagnostics(this);
             dialog->setAttribute(Qt::WA_DeleteOnClose);
+            dialog->setProgramRouting(GreenRhythm::currentProgramRouting(), NekoGui::dataStore->spmode_vpn && NekoGui::UseInternalTun());
+            dialog->setRoutingCommitter([](const QString &name, const GreenRhythm::ProgramRouting::State &expected, QString *error) {
+                return GreenRhythm::restoreProgramSiteRules(name, expected, error);
+            });
             const auto *auth = NekoGui::dataStore->inbound_auth;
             dialog->setProxyEndpoint(NekoGui::dataStore->inbound_socks_port,
                                      auth->NeedAuth() ? auth->username : QString(),
