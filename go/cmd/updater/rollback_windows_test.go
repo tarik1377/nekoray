@@ -40,6 +40,17 @@ func TestRestoreWindowsTargetAndSnapshotFileLocksLeaveWorkingFiles(t *testing.T)
 				path = filepath.Join(install, previousDirectory, "files/Qt6Core.dll")
 			}
 			handle := exclusiveFile(t, path, false)
+			if probe, openErr := os.Open(path); openErr == nil {
+				probe.Close()
+				syscall.CloseHandle(handle)
+				t.Fatalf("exclusive fixture handle did not deny reading %q (path length %d)", path, len(path))
+			}
+			if snapshot {
+				if saved, loadErr := loadPrevious(install); loadErr == nil {
+					syscall.CloseHandle(handle)
+					t.Fatalf("snapshot validation omitted locked file %q: manifest=%+v", path, saved.Files)
+				}
+			}
 			err := restorePrevious(install, fixtureOptions())
 			syscall.CloseHandle(handle)
 			if err == nil {
