@@ -2,6 +2,7 @@
 
 #include "RuRoutingPolicy.hpp"
 #include "GameCatalog.hpp"
+#include "RobloxRouting.hpp"
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QStringList>
@@ -105,8 +106,8 @@ inline QJsonArray tunSniffRules(const QJsonArray &first, bool optimize,
     QJsonArray names;
     if (optimize) for (const auto &value : first) {
         const auto rule = value.toObject();
-        if (rule.size() != 2 || !rule.contains("outbound")
-            || (!rule.contains("process_name") && !rule.contains("ip_cidr"))) break;
+        if (!RobloxRouting::isUdpRule(rule) && (rule.size() != 2 || !rule.contains("outbound")
+            || (!rule.contains("process_name") && !rule.contains("ip_cidr")))) break;
         for (const auto &entry : values(rule.value("process_name"))) {
             const auto name = entry.toString();
             const bool eligible = contains(customPrograms, name)

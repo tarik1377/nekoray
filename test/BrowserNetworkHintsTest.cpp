@@ -1,8 +1,11 @@
 #include "main/BrowserNetworkHints.hpp"
 #include "ui/MainShell.hpp"
 #include "ui/dialog_web_diagnostics.h"
+#include "main/AppFont.hpp"
+#include "test/WidgetTestFonts.hpp"
 
 #include <QApplication>
+#include <QComboBox>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QLabel>
@@ -61,6 +64,12 @@ static WebCheckResult pathResult(const ProbeRun &run, WebCheckPath path) {
 int main(int argc, char **argv) {
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
     QApplication app(argc, argv);
+    registerWidgetTestFonts();
+    GreenRhythm::applyAppFont(app);
+    if (!qEnvironmentVariableIsEmpty("GR_BROWSER_HINTS_PREVIEW")) {
+        QFile style("res/theme/feiyangqingyun/qss/modern.css");
+        if (style.open(QIODevice::ReadOnly)) app.setStyleSheet(QString::fromUtf8(style.readAll()));
+    }
     int checks = 0, failures = 0;
     auto check = [&](bool ok, const char *label) { ++checks; if (!ok) ++failures; std::cout << (ok ? "PASS " : "FAIL ") << label << '\n'; };
     const auto secure = parseBrowserDnsHint(QStringLiteral("Fixture browser"), R"({"dns_over_https":{"mode":"secure","templates":"https://resolver.invalid/private-token"},"profile":{"last_used":"Secret name"},"unrelated":"secret"})");
@@ -177,6 +186,38 @@ int main(int argc, char **argv) {
     check(!exposed, "proxy authentication values never appear in diagnostic labels");
     dialog.setProxyEndpoint(2080, {}, {}, false);
     check(connectButton && !connectButton->isEnabled(), "stopping profile removes browser apply availability");
+    DialogWebDiagnostics routingDialog;
+    ProgramRouting::State routingState{"RobloxStudioBeta.exe\nbrowser.exe", "chrome.exe", {}, false};
+    int routeCommits = 0, connections = 0; bool failSave = true;
+    routingDialog.setProgramRouting(routingState, true);
+    QObject::connect(&routingDialog, &DialogWebDiagnostics::connectBrowsersRequested, [&] { ++connections; });
+    auto *siteRules = routingDialog.findChild<QPushButton *>("grBrowserSiteRules");
+    auto *browserChoice = routingDialog.findChild<QComboBox *>("grRoutingBrowser");
+    check(siteRules && !siteRules->isEnabled() && browserChoice->count() == 2, "browser conflicts require an actual save controller");
+    routingDialog.setRoutingCommitter([&](const QString &name, const ProgramRouting::State &expected, QString *failure) {
+        ++routeCommits;
+        if (failSave) { *failure = "fixture locked settings"; return false; }
+        return ProgramRouting::restore(expected, name, &routingState, failure);
+    });
+    routingDialog.resize(610, 480); routingDialog.show(); app.processEvents();
+    if (!qEnvironmentVariableIsEmpty("GR_BROWSER_HINTS_PREVIEW"))
+        routingDialog.grab().save(qEnvironmentVariable("GR_BROWSER_HINTS_PREVIEW"));
+    siteRules->click();
+    check(routeCommits == 1 && connections == 0 && browserChoice->count() == 2
+        && routingDialog.findChild<QLabel *>("grBrowserRoutingStatus")->text() == "fixture locked settings", "failed save retains browser selection and never reconnects");
+    failSave = false; siteRules->click();
+    check(routeCommits == 2 && connections == 0 && routingState.bypass == "RobloxStudioBeta.exe" && routingState.proxy == "chrome.exe"
+        && browserChoice->count() == 1, "site rules clear only selected browser while preserving Roblox and another browser");
+    check(routingDialog.findChild<QLabel *>("grBrowserRoutingStatus")->text().contains(QStringLiteral("следующем подключении")), "save never claims the running core changed");
+    auto *closeBrowserHelp = routingDialog.findChild<QPushButton *>("grLeaveBrowserSettings");
+    check(routingDialog.rect().contains(QRect(closeBrowserHelp->mapTo(&routingDialog, QPoint{}), closeBrowserHelp->size())), "small dialog keeps closing action accessible with long hints");
+    routingState.whitelist = true; routingDialog.setProgramRouting(routingState, true);
+    check(!siteRules->isEnabled() && routingDialog.findChild<QLabel *>("grBrowserRoutingHint")->text().contains(QStringLiteral("белый список")), "whitelist is not advertised as site routing");
+    routingState.whitelist = false; routingState.applications = "broken";
+    routingDialog.setProgramRouting(routingState, false);
+    check(!siteRules->isEnabled() && routingDialog.findChild<QLabel *>("grBrowserRoutingHint")->text().contains(QStringLiteral("не удалось")), "malformed program settings remain unknown and disable repair");
+    routingDialog.setProgramRouting({}, false);
+    check(browserChoice->isHidden() && siteRules->isHidden() && routeCommits == 2, "no override needs no edit");
     std::cout << checks << " checks; " << failures << " failures\n";
     return failures ? 1 : 0;
 }

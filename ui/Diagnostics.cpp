@@ -65,7 +65,7 @@ void MainWindow::run_diagnostics() {
         }
         const auto routes = QJsonDocument(NekoGui::dataStore->routing->ToJson()).toJson(QJsonDocument::Compact)
             + NekoGui::dataStore->custom_route_global.toUtf8() + NekoGui::dataStore->vpn_rule_process.toUtf8()
-            + NekoGui::dataStore->game_app_rules.toUtf8();
+            + NekoGui::dataStore->game_app_rules.toUtf8() + '\n' + NekoGui::dataStore->roblox_split_processes.toUtf8();
         context.routeFingerprint = QString::fromLatin1(QCryptographicHash::hash(routes + NekoGui::dataStore->vpn_route_exclude_extra.toUtf8() + NekoGui::dataStore->vpn_gateway_exclusions.toUtf8(), QCryptographicHash::Sha256).toHex().left(20));
         snapshot->profile = NekoGui::dataStore->started_id;
 #ifndef NKR_NO_GRPC
@@ -83,6 +83,7 @@ void MainWindow::run_diagnostics() {
         const auto settings = QJsonDocument(NekoGui::dataStore->routing->ToJson()).toJson(QJsonDocument::Compact)
             + NekoGui::dataStore->custom_route_global.toUtf8() + NekoGui::dataStore->vpn_rule_process.toUtf8()
             + NekoGui::dataStore->game_app_rules.toUtf8()
+            + '\n' + NekoGui::dataStore->roblox_split_processes.toUtf8()
             + NekoGui::dataStore->vpn_route_exclude_extra.toUtf8() + NekoGui::dataStore->vpn_gateway_exclusions.toUtf8() + (group ? group->url.toUtf8() : QByteArray());
         return snapshot->profile == NekoGui::dataStore->started_id
 #ifndef NKR_NO_GRPC

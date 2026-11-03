@@ -1,6 +1,7 @@
 #include "GameProgramsDialog.hpp"
 #include "main/GameAppRules.hpp"
 #include "main/GameCatalog.hpp"
+#include "main/RobloxRouting.hpp"
 
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -44,7 +45,9 @@ GameProgramsDialog::GameProgramsDialog(const QString &saved, bool tunnelEnabled,
     auto *tools = new QHBoxLayout;
     auto *running = new QPushButton(tr("Из запущенных…"), this); running->setObjectName("gameRunning");
     auto *file = new QPushButton(tr("Выбрать .exe…"), this); file->setObjectName("gameFile");
-    tools->addWidget(running); tools->addWidget(file); tools->addStretch(); layout->addLayout(tools);
+    roblox = new QPushButton(tr("Roblox и Studio…"),this); roblox->setObjectName("gameRoblox"); roblox->setEnabled(false);
+    connect(roblox,&QPushButton::clicked,this,[this] {if(robloxOpener && !changed()) robloxOpener();});
+    tools->addWidget(running); tools->addWidget(file); tools->addWidget(roblox); tools->addStretch(); layout->addLayout(tools);
     table = new QTableWidget(0, 2, this); table->setObjectName("gamePrograms");
     table->setHorizontalHeaderLabels({tr("Игра или программа"), tr("Подключение")});
     table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
@@ -101,6 +104,7 @@ GameProgramsDialog::GameProgramsDialog(const QString &saved, bool tunnelEnabled,
     addRow("Steam", GameCatalog::steam());
     addRow("Discord", {"Discord.exe", "discord.exe", "DiscordPTB.exe", "DiscordCanary.exe"});
     for (const auto &name : original.keys()) {
+        if(RobloxRouting::contains(name)) continue; // Its split/forced policy has a dedicated editor.
         bool found = false;
         for (int row = 0; row < table->rowCount(); ++row)
             if (table->item(row, 0)->data(Qt::UserRole).toStringList().contains(name, Qt::CaseInsensitive)) found = true;
@@ -127,6 +131,7 @@ void GameProgramsDialog::setInspector(std::function<void(const QString &)> callb
     inspector = std::move(callback);
     inspect->setEnabled(bool(inspector) && table->currentRow() >= 0 && !table->isRowHidden(table->currentRow()));
 }
+void GameProgramsDialog::setRobloxOpener(std::function<void()> callback) { robloxOpener=std::move(callback); updateSave(); }
 
 void GameProgramsDialog::addRow(const QString &title, const QStringList &programs) {
     const int row = table->rowCount(); table->insertRow(row);
@@ -156,6 +161,10 @@ void GameProgramsDialog::addRow(const QString &title, const QStringList &program
 bool GameProgramsDialog::addExecutable(const QString &path) {
     const auto name = QFileInfo(path).fileName();
     if (!valid || !GameAppRules::executableName(name)) { status->setText(tr("Выберите файл программы с расширением .exe.")); return false; }
+    if(RobloxRouting::contains(name)) {
+        if(changed() || !robloxOpener) { status->setText(tr("Сначала сохраните изменения, затем откройте «Roblox и Studio».")); return false; }
+        robloxOpener(); return true;
+    }
     for (int row = 0; row < table->rowCount(); ++row) {
         if (!table->item(row, 0)->data(Qt::UserRole).toStringList().contains(name, Qt::CaseInsensitive)) continue;
         table->setRowHidden(row, false); table->selectRow(row); table->scrollToItem(table->item(row, 0));
@@ -167,7 +176,11 @@ bool GameProgramsDialog::addExecutable(const QString &path) {
 }
 
 QString GameProgramsDialog::serializedRules() const { return changed() ? GameAppRules::serialize(draft) : raw; }
-void GameProgramsDialog::updateSave() { save->setText(changed() ? tr("Сохранить") : tr("Готово")); }
+void GameProgramsDialog::updateSave() {
+    save->setText(changed() ? tr("Сохранить") : tr("Готово"));
+    roblox->setEnabled(valid && bool(robloxOpener) && !changed());
+    roblox->setToolTip(changed() ? tr("Сначала сохраните или отмените изменения этого окна.") : tr("Отдельный маршрут для Roblox Player и Roblox Studio."));
+}
 void GameProgramsDialog::accept() {
     if (!valid) { reject(); return; }
     if (changed() && commit) {

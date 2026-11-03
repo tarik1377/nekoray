@@ -3,6 +3,8 @@
 #include "ui/Palette.hpp"
 
 #include "main/ConnectionRow.hpp"
+#include "ui/ProgramRoutingAction.hpp"
+#include "ui/RobloxRoutingAction.hpp"
 
 #include <memory>
 
@@ -447,18 +449,34 @@ void MainWindow::show_conn_context_menu(const QPoint &pos) {
     }
 
     QMenu menu(this);
+    QAction *robloxSettings = nullptr;
+    if(GreenRhythm::RobloxRouting::contains(program)) robloxSettings=menu.addAction(tr("Настроить Roblox и Studio…"));
     QAction *aProgramDirect = nullptr;
     QAction *aProgramBack = nullptr;
     QAction *aProgramProxy = nullptr;
     QAction *aProgramProxyBack = nullptr;
+    QJsonObject appPrograms;
+    GreenRhythm::GameAppRules::parse(NekoGui::dataStore->game_app_rules, &appPrograms);
+    const bool hasAppRule = GreenRhythm::GameAppRules::mode(appPrograms, program) != "auto";
     if (knownProgram) {
-        if (alreadyDirect) {
-            aProgramBack = menu.addAction(tr("Вернуть «%1» под защиту").arg(program));
+        const auto generalRules = GreenRhythm::ProgramRouting::isBrowser(program)
+            ? tr("По правилам сайтов: %1").arg(program) : tr("По общим правилам: %1").arg(program);
+        if (alreadyDirect || hasAppRule) {
+            aProgramBack = menu.addAction(generalRules);
         } else if (alreadyProxy) {
-            aProgramProxyBack = menu.addAction(tr("Вернуть «%1» под общие правила").arg(program));
+            aProgramProxyBack = menu.addAction(generalRules);
         } else {
-            aProgramDirect = menu.addAction(tr("Пустить «%1» напрямую").arg(program));
-            aProgramProxy = menu.addAction(tr("Пустить «%1» через VPN").arg(program));
+            const bool browser = GreenRhythm::ProgramRouting::isBrowser(program);
+            aProgramDirect = menu.addAction(browser ? tr("Весь браузер напрямую: %1").arg(program) : tr("Пустить «%1» напрямую").arg(program));
+            aProgramProxy = menu.addAction(browser ? tr("Весь браузер через VPN: %1").arg(program) : tr("Пустить «%1» через VPN").arg(program));
+            if (browser) for (auto *action : {aProgramDirect, aProgramProxy})
+                action->setToolTip(tr("Выбор относится ко всем сайтам браузера и имеет приоритет над правилами сайтов."));
+        }
+        for (auto *action : {aProgramBack, aProgramProxyBack}) if (action) {
+            action->setEnabled(!NekoGui::dataStore->vpn_rule_white);
+            action->setToolTip(NekoGui::dataStore->vpn_rule_white
+                ? tr("Сначала выберите обычный режим TUN: в белом списке удаление имени не возвращает выбор по сайтам.")
+                : tr("Убрать отдельный выбор всей программы. Сохранится резервная копия; применится при следующем подключении."));
         }
         menu.addSeparator();
     }
@@ -469,23 +487,19 @@ void MainWindow::show_conn_context_menu(const QPoint &pos) {
     auto *aCopy = menu.addAction(tr("Копировать адрес"));
     auto *chosen = menu.exec(ui->tableWidget_conn->viewport()->mapToGlobal(pos));
     if (chosen == nullptr) return;
+    if(robloxSettings && chosen==robloxSettings) {GreenRhythm::openRobloxRouting(this);return;}
+    if ((chosen == aProgramBack && aProgramBack) || (chosen == aProgramProxyBack && aProgramProxyBack)) {
+        QString error;
+        if (!GreenRhythm::restoreProgramSiteRules(program, GreenRhythm::currentProgramRouting(), &error))
+            MessageBoxWarning(software_name, error);
+        return;
+    }
     if (chosen == aProgramDirect && aProgramDirect != nullptr) {
         auto list = bypassList;
         list << program;
         NekoGui::dataStore->vpn_rule_process = list.join(QChar(0x0A));
         NekoGui::dataStore->Save();
         MW_show_log(tr("«%1» пойдёт напрямую. Начнёт действовать при следующем подключении.")
-                        .arg(program));
-        return;
-    }
-    if (chosen == aProgramBack && aProgramBack != nullptr) {
-        QStringList list;
-        for (const auto &line: bypassList) {
-            if (line.trimmed().compare(program, Qt::CaseInsensitive) != 0) list << line;
-        }
-        NekoGui::dataStore->vpn_rule_process = list.join(QChar(0x0A));
-        NekoGui::dataStore->Save();
-        MW_show_log(tr("«%1» снова под защитой. Начнёт действовать при следующем подключении.")
                         .arg(program));
         return;
     }
@@ -496,17 +510,6 @@ void MainWindow::show_conn_context_menu(const QPoint &pos) {
         NekoGui::dataStore->Save();
         MW_show_log(tr("«%1» пойдёт через VPN, даже если общие правила уводят её мимо. "
                        "Начнёт действовать при следующем подключении.")
-                        .arg(program));
-        return;
-    }
-    if (chosen == aProgramProxyBack && aProgramProxyBack != nullptr) {
-        QStringList list;
-        for (const auto &line: proxyList) {
-            if (line.trimmed().compare(program, Qt::CaseInsensitive) != 0) list << line;
-        }
-        NekoGui::dataStore->vpn_rule_process_proxy = list.join(QChar(0x0A));
-        NekoGui::dataStore->Save();
-        MW_show_log(tr("«%1» снова под общими правилами. Начнёт действовать при следующем подключении.")
                         .arg(program));
         return;
     }
