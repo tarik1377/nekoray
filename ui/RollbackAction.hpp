@@ -78,12 +78,12 @@ using Launch = std::function<bool(const QString &, const QStringList &, const QS
 // Prepare and verify a distinct executable before closing a working client.
 // The helper runs outside the installation, so its own previous version can be
 // restored along with the GUI and core.
-inline bool launch(const QString &directory, const std::function<void()> &close,
+inline bool launchWithArguments(const QString &directory, const QStringList &arguments, const std::function<void()> &close,
                    Launch start = [](const QString &file, const QStringList &args, const QString &cwd) {
                        return QProcess::startDetached(file, args, cwd);
                    }) {
 #ifndef Q_OS_WIN
-    Q_UNUSED(directory); Q_UNUSED(close); Q_UNUSED(start);
+    Q_UNUSED(directory); Q_UNUSED(arguments); Q_UNUSED(close); Q_UNUSED(start);
     return false;
 #else
     QFile source(directory + "/updater.exe");
@@ -98,10 +98,14 @@ inline bool launch(const QString &directory, const std::function<void()> &close,
     if (!verify.open(QIODevice::ReadOnly) || QCryptographicHash::hash(verify.readAll(), QCryptographicHash::Sha256) !=
         QCryptographicHash::hash(bytes, QCryptographicHash::Sha256)) return false;
     verify.close();
-    if (!start(name, {"--install-dir", directory, "--rollback"}, directory)) return false;
+    if (!start(name, arguments, directory)) return false;
     helper.setAutoRemove(false);
     close();
     return true;
 #endif
+}
+inline bool launch(const QString &directory, const std::function<void()> &close, Launch start =
+        [](const QString &file, const QStringList &args, const QString &cwd) { return QProcess::startDetached(file, args, cwd); }) {
+    return launchWithArguments(directory, {"--install-dir", directory, "--rollback"}, close, std::move(start));
 }
 }

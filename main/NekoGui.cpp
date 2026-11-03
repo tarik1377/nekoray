@@ -883,7 +883,7 @@ namespace NekoGui {
         for (const auto &dir: search) {
             if (dir.isEmpty()) continue;
             QFileInfo asset(dir + "/" + name);
-            if (asset.exists()) {
+            if (asset.isFile() && asset.isReadable() && asset.size() > 0) {
                 return asset.absoluteFilePath();
             }
         }
