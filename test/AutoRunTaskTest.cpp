@@ -114,7 +114,7 @@ static void sourcesWired() {
     is(QStringLiteral("Windows: отказ в UAC — прежний запуск через Run, автозапуск всё равно работает"),
        win.contains(QStringLiteral("settings.setValue(name, Windows_GenAutoRunString())")));
     is(QStringLiteral("Windows: включён ли — по Run и по задаче в планировщике"),
-       win.contains(QStringLiteral("schtasks.exe")) && win.contains(QStringLiteral("/Query")));
+       win.contains(QStringLiteral("Export-ScheduledTask")) && win.contains(QStringLiteral("taskLaunch()")));
     is(QStringLiteral("Windows: окно узнаёт, что автозапуск идёт с правами"),
        header.contains(QStringLiteral("bool AutoRun_IsElevated();")));
 

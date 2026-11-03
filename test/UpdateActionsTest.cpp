@@ -119,6 +119,21 @@ int main(int argc, char **argv) {
         check("a blocked updater cannot close the running application", fixtureStarts == 1 && f.window.exits == 0);
         check("a blocked updater reports its failure", fixtureWarnings == 1 && fixtureLastWarning.contains("запустить"));
     }
+#ifdef Q_OS_WIN
+    {
+        QTemporaryDir data;
+        const auto previous = QDir::currentPath();
+        QDir().mkpath(data.path()+"/config"); QDir::setCurrent(data.path()+"/config");
+        Fixture f; f.offer(); f.store.flag_use_appdata = true;
+        f.window.CheckUpdate(); f.finishDownload();
+        check("AppData storage retains in-app installation", f.ready == 1 && f.client.downloads == 1 && fixtureStarts == 1 && f.window.exits == 1);
+        check("AppData helper receives separate absolute installation and data roots", fixtureStartArguments.contains("--install-dir") && fixtureStartArguments.contains("--data-dir")
+            && fixtureStartArguments.contains(QApplication::applicationDirPath()) && fixtureStartArguments.last() == QDir::current().absoluteFilePath("../greenrhythm.zip"));
+        check("prepared updater is selected beside downloaded package", QDir::cleanPath(fixtureStartFile) == data.path()+"/updater.next.exe");
+        check("the selected user data root survives installation", QDir::cleanPath(fixtureStartArguments.value(fixtureStartArguments.indexOf("--data-dir")+1)) == data.path());
+        QDir::setCurrent(previous);
+    }
+#endif
     {
         Fixture f; f.offer(); f.retryDownload = true;
         f.client.downloaded.set_error("fixture interrupted download");

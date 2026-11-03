@@ -3,6 +3,7 @@
 #include "3rdparty/QThreadCreateThread.hpp"
 #include "ui/UpdateNotice.hpp"
 #include "ui/UpdateProgress.hpp"
+#include "main/UserDataPaths.hpp"
 #include "go/grpc_server/gen/libcore.pb.h"
 #include <QApplication>
 #include <QFileInfo>
@@ -22,9 +23,12 @@ inline int fixtureWarnings = 0, fixtureInfos = 0;
 inline QString fixtureLastWarning;
 inline bool fixtureStartOK = true;
 inline int fixtureStarts = 0;
+inline QString fixtureStartFile;
+inline QStringList fixtureStartArguments;
 struct FixtureProcess {
-    static bool startDetached(const QString &, const QStringList &, const QString &) {
+    static bool startDetached(const QString &file, const QStringList &arguments, const QString &) {
         ++fixtureStarts;
+        fixtureStartFile = file; fixtureStartArguments = arguments;
         return fixtureStartOK;
     }
 };

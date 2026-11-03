@@ -13,6 +13,9 @@ import (
 )
 
 func runtimeWindows() bool { return runtime.GOOS == "windows" }
+
+var applicationLaunchArgs []string
+
 func main() {
 	exe, err := os.Executable()
 	if err != nil {
@@ -36,14 +39,19 @@ func main() {
 		_, _ = fmt.Fprintln(os.Stdout, "Проверенная локальная версия зарегистрирована.")
 		return
 	}
+	options, err := parseLaunchOptions(exe, os.Args[1:])
+	if err != nil {
+		MessageBoxPlain("Обновление GreenRhythm", err.Error())
+		return
+	}
 	if runtimeWindows() && !strings.HasPrefix(strings.ToLower(filepath.Base(exe)), "greenrhythm-updater-") {
 		// A unique helper outside the installation leaves updater.exe replaceable.
 		// The old fixed updater.old could be locked; Copy/Start errors were ignored.
 		helper, err := copyUpdater(exe)
 		if err == nil {
-			args := append([]string{"--install-dir", filepath.Dir(exe)}, os.Args[1:]...)
+			args := options.forwarded()
 			cmd := exec.Command(helper, args...)
-			cmd.Dir = filepath.Dir(exe)
+			cmd.Dir = options.install
 			err = cmd.Start()
 		}
 		if err != nil {
@@ -51,11 +59,9 @@ func main() {
 		}
 		return
 	}
-	install := filepath.Dir(exe)
-	if len(os.Args) >= 3 && os.Args[1] == "--install-dir" {
-		install = os.Args[2]
-		os.Args = append(os.Args[:1], os.Args[3:]...)
-	}
+	install := options.install
+	applicationLaunchArgs = options.applicationArgs()
+	os.Args = append(os.Args[:1], options.action...)
 	if err = os.Chdir(install); err != nil {
 		MessageBoxPlain("Обновление GreenRhythm", err.Error())
 		return
@@ -96,7 +102,7 @@ func startApplication(install string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(absolute)
+	cmd := exec.Command(absolute, applicationLaunchArgs...)
 	cmd.Dir = install
 	if runtime.GOOS == "linux" && os.Getenv("NKR_FROM_LAUNCHER") == "1" {
 		cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+filepath.Join(install, "usr/lib"), "QT_PLUGIN_PATH="+filepath.Join(install, "usr/plugins"))

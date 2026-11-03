@@ -82,6 +82,12 @@ func installUpdate(archive, install string, options installOptions) error {
 			return fmt.Errorf("в пакете отсутствует обязательный файл %s%s", name, suffix)
 		}
 	}
+	for _, name := range []string{"geoip.db", "geosite.db"} {
+		info, e := os.Lstat(filepath.Join(payload, name))
+		if e != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+			return fmt.Errorf("в пакете отсутствует или пуст обязательный файл %s; прежняя установка сохранена", name)
+		}
+	}
 	tx, err := newInstallTransaction(payload, install, options.rename)
 	if err != nil {
 		return err

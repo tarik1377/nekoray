@@ -3,6 +3,7 @@
 #include "main/TunLifecycle.hpp"
 #include "ui/UpdateNotice.hpp"
 #include "ui/UpdateProgress.hpp"
+#include "main/UserDataPaths.hpp"
 #include "mainwindow.h"
 
 #include "db/Database.hpp"
@@ -787,7 +788,11 @@ void MainWindow::CheckUpdate(bool quiet) {
 
     post([window, response, post] {
         if (!window) return;
+#ifdef Q_OS_WIN
+        const bool allow_updater = true;
+#else
         const auto allow_updater = !NekoGui::dataStore->flag_use_appdata;
+#endif
         const auto note_pre_release = response.is_pre_release() ? " (Pre-release)" : "";
         QMessageBox box(QMessageBox::Question, QObject::tr("Update") + note_pre_release,
             QObject::tr("Update found: %1\nRelease note:\n%2").arg(
@@ -807,19 +812,19 @@ void MainWindow::CheckUpdate(bool quiet) {
             dlg->setMinimumDuration(0);
             dlg->setCancelButton(nullptr);
             dlg->setAutoClose(false); dlg->setAutoReset(false);
-            const auto zipPath = QApplication::applicationDirPath() + "/greenrhythm.zip";
+            const auto zipPath = QDir::current().absoluteFilePath("../greenrhythm.zip");
             const auto poll = QPointer<QTimer>(new QTimer(dlg));
             QObject::connect(poll, &QTimer::timeout, dlg, [dlg, zipPath] {
                 if (!dlg) return;
                 GreenRhythm::Update::refreshProgress(dlg, zipPath);
             });
             poll->start(250); dlg->show();
-            runOnNewThread([window, dlg, poll, post] {
+            runOnNewThread([window, dlg, poll, post, zipPath] {
                 bool downloaded = false;
                 libcore::UpdateReq download;
                 download.set_action(libcore::UpdateAction::Download);
                 const auto response2 = NekoGui_rpc::defaultClient->Update(&downloaded, download);
-                post([window, dlg, poll, downloaded, response2] {
+                post([window, dlg, poll, downloaded, response2, zipPath] {
                     if (poll) poll->stop();
                     if (dlg) { dlg->close(); dlg->deleteLater(); }
                     if (!window) return;
@@ -844,11 +849,13 @@ void MainWindow::CheckUpdate(bool quiet) {
                     if (answer == QMessageBox::Yes && window) {
                         auto updater = QApplication::applicationDirPath() + "/updater";
 #ifdef Q_OS_WIN
-                        updater = QApplication::applicationDirPath() + "/updater.next.exe";
+                        updater = QFileInfo(zipPath).absoluteDir().filePath("updater.next.exe");
 #endif
                         // Start the verified helper while this window is still alive.
                         // A missing/blocked executable must never close a working GUI.
-                        if (!QProcess::startDetached(updater, {}, QApplication::applicationDirPath())) {
+                        auto updaterArgs = GreenRhythm::UserData::updaterArguments(QApplication::applicationDirPath(), QDir::currentPath(), NekoGui::dataStore->flag_use_appdata);
+                        updaterArgs << zipPath;
+                        if (!QProcess::startDetached(updater, updaterArgs, QApplication::applicationDirPath())) {
                             MessageBoxWarning(QObject::tr("Обновление"),
                                 QObject::tr("Не удалось запустить установку. Программа и пакет сохранены; повторите обновление."));
                             return;

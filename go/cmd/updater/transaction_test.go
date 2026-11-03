@@ -22,7 +22,7 @@ func installFixture(t *testing.T) (string, string, map[string]string) {
 	}
 	old := map[string]string{}
 	entries := map[string]string{}
-	for _, base := range []string{"greenrhythm", "greenrhythm_core", "updater", "xray", "Qt6Core.dll"} {
+	for _, base := range []string{"greenrhythm", "greenrhythm_core", "updater", "xray", "Qt6Core.dll", "geoip.db", "geosite.db"} {
 		name := base
 		if !strings.Contains(base, ".") {
 			name += suffix
@@ -106,8 +106,8 @@ func TestInstallRejectsVerificationBeforeMutation(t *testing.T) {
 	}
 }
 func TestInstallRollsBackEveryRenameFailure(t *testing.T) {
-	// Five replacements take two renames each; one newly created asset takes one.
-	for failAt := 1; failAt <= 11; failAt++ {
+	// Seven replacements take two renames each; one newly created asset takes one.
+	for failAt := 1; failAt <= 15; failAt++ {
 		t.Run(string(rune('A'+failAt)), func(t *testing.T) {
 			archive, install, old := installFixture(t)
 			options := fixtureOptions()
@@ -145,7 +145,7 @@ func TestInstallRestartFailureRestoresOriginals(t *testing.T) {
 	}
 }
 func TestInstallRollbackFailureRetainsBackup(t *testing.T) {
-	archive, install, _ := installFixture(t)
+	archive, install, old := installFixture(t)
 	options := fixtureOptions()
 	options.start = func(string) error { return errors.New("fixture start failure") }
 	options.rename = func(src, dst string) error {
@@ -163,7 +163,7 @@ func TestInstallRollbackFailureRetainsBackup(t *testing.T) {
 		t.Fatal(backups)
 	}
 	files, _ := os.ReadDir(backups[0])
-	if len(files) != 5 {
+	if len(files) != len(old) {
 		t.Fatalf("backup missing: %v", files)
 	}
 }
