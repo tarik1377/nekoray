@@ -393,22 +393,24 @@ void MainWindow::neko_start(int _id) {
         // Поэтому при таком отказе конфиг СОБИРАЕТСЯ ЗАНОВО: пересборка берёт
         // новые номера. Раньше человек получал окно с ошибкой и оставался без
         // подключения, хотя следующая же попытка почти наверняка удалась бы.
-        auto looksLikeBindFailure = [](const QString &e) {
-            if (!e.contains(QStringLiteral("bind"), Qt::CaseInsensitive)) return false;
-            return e.contains(QStringLiteral("forbidden"), Qt::CaseInsensitive) ||
-                   e.contains(QStringLiteral("permissions"), Qt::CaseInsensitive) ||
-                   e.contains(QStringLiteral("already in use"), Qt::CaseInsensitive);
-        };
+        const auto looksLikeBindFailure = GreenRhythm::StartupPolicy::isBindFailure;
 
         bool rpcOK = false;
         QString error;
-        for (int attempt = 0; attempt < 3; attempt++) {
+        auto retryReason = GreenRhythm::StartupPolicy::Retry::None;
+        bool adapterRecoveryUsed = false;
+        for (int attempt = 0; attempt < GreenRhythm::StartupPolicy::maxStartAttempts; attempt++) {
             if (!connection_lifecycle.isCurrent(startToken) || core_process->generation() != coreGeneration) return false;
             if (attempt > 0) {
-                auto retry = BuildConfig(ent, false, false);
-                if (!retry->error.isEmpty()) break;
-                cfg = retry;
-                MW_show_log(tr("Порт оказался занят системой — пробую другой."));
+                if (retryReason == GreenRhythm::StartupPolicy::Retry::Port) {
+                    auto retry = BuildConfig(ent, false, false);
+                    if (!retry->error.isEmpty()) break;
+                    cfg = retry;
+                    MW_show_log(tr("Порт оказался занят системой — пробую другой."));
+                } else {
+                    adapterRecoveryUsed = true;
+                    MW_show_log(tr("Повторяю создание/открытие TUN-адаптера один раз после ошибки Windows."));
+                }
             }
 
             libcore::LoadConfigReq req;
@@ -455,7 +457,14 @@ void MainWindow::neko_start(int _id) {
                 return false;
             }
             if (error.isEmpty()) break;
-            if (!looksLikeBindFailure(error)) break;
+            retryReason = GreenRhythm::StartupPolicy::retryAfterError(error, adapterRecoveryUsed,
+#ifdef Q_OS_WIN
+                true
+#else
+                false
+#endif
+            );
+            if (retryReason == GreenRhythm::StartupPolicy::Retry::None) break;
         }
 
         if (!error.isEmpty()) {
@@ -472,11 +481,14 @@ void MainWindow::neko_start(int _id) {
                            "Обычно помогает перезапуск компьютера.\n\n"
                            "Ответ системы: %1")
                               .arg(error);
+            } else if (GreenRhythm::StartupPolicy::isAdapterReopenFailure(error)) {
+                human = tr("Windows не смогла создать VPN-адаптер.\n\nОтвет Windows: %1").arg(error);
             }
             // Причина — на кнопку, коротко. Полный ответ системы остаётся в окне
             // и в журнале: кнопке нужна не точность, а понятность.
             const QString shortReason =
-                looksLikeBindFailure(error) ? tr("система не отдала порт") : tr("сервер не ответил");
+                looksLikeBindFailure(error) ? tr("система не отдала порт") :
+                GreenRhythm::StartupPolicy::isAdapterReopenFailure(error) ? tr("Windows не создала VPN-адаптер") : tr("сервер не ответил");
             runOnUiThread([=] {
                 if (shell != nullptr) {
                     shell->setState(GreenRhythm::MainShell::State::Failed, shortReason);

@@ -44,7 +44,14 @@ int main(int argc, char **argv) {
         return app.exec();
     }
     if (app.arguments().contains("--fixture-silent")) {
-        QTimer::singleShot(20000, &app, &QCoreApplication::quit);
+        QTimer::singleShot(75000, &app, &QCoreApplication::quit);
+        return app.exec();
+    }
+    if (app.arguments().contains("--fixture-delayed")) {
+        QTimer::singleShot(16000, &app, [] {
+            std::fputs("grpc server listening\n", stdout); std::fflush(stdout);
+        });
+        QTimer::singleShot(75000, &app, &QCoreApplication::quit);
         return app.exec();
     }
     MW_show_log = [](const QString &) {};
@@ -73,7 +80,7 @@ int main(int argc, char **argv) {
         const auto failedBefore = coreFailed;
         NekoGui_sys::CoreProcess core(QCoreApplication::applicationFilePath(), {"--fixture-silent"});
         core.start_profile_when_core_is_up = 73;
-        core.Start(); spin(16000);
+        core.Start(); spin(62000);
         check("a core that never opens RPC times out and cancels its pending profile", coreFailed == failedBefore + 1 && core.state() == QProcess::NotRunning && core.start_profile_when_core_is_up == -1);
         check("a startup timeout does not enter an endless restart loop", core.generation() == 1);
     }
@@ -90,6 +97,20 @@ int main(int argc, char **argv) {
         check("a queued restart from the dead core cannot replace the live core", core.generation() == replacement && core.state() == QProcess::Running);
         NekoGui::dataStore->prepare_exit = true;
         core.kill(); core.waitForFinished(500);
+    }
+    {
+        const auto failedBefore = coreFailed, readyBefore = coreReady;
+        NekoGui::dataStore->prepare_exit = false;
+        NekoGui_sys::CoreProcess core(QCoreApplication::applicationFilePath(), {"--fixture-delayed"});
+        core.start_profile_when_core_is_up = 74;
+        NekoGui::dataStore->core_running = false;
+        core.Start(); spin(17000);
+        check("slow startup completes after 15 seconds without killing the core or losing its pending profile",
+              core.state() == QProcess::Running && NekoGui::dataStore->core_running &&
+              coreFailed == failedBefore && coreReady == readyBefore + 1 && core.start_profile_when_core_is_up == -1);
+        NekoGui::dataStore->prepare_exit = true;
+        core.kill(); core.waitForFinished(500);
+        NekoGui::dataStore->prepare_exit = false;
     }
     return failures ? 1 : 0;
 }

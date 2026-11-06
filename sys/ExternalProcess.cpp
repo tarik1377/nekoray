@@ -1,6 +1,7 @@
 #include "ExternalProcess.hpp"
 #include "main/NekoGui.hpp"
 #include "main/RelayTrace.hpp"
+#include "main/StartupPolicy.hpp"
 
 #include <QTimer>
 #include <QDir>
@@ -220,14 +221,17 @@ namespace NekoGui_sys {
         ExternalProcess::Start();
         write((NekoGui::dataStore->core_token + "\n").toUtf8());
         const auto startingGeneration = generation();
+        // Cold Windows process/device initialization can exceed 15 seconds.
+        // Keep a finite limit without killing a valid slow startup prematurely.
         setTimeout([=] {
             if (generation() != startingGeneration || NekoGui::dataStore->core_running || failed_to_start) return;
             failed_to_start = true;
             start_profile_when_core_is_up = -1;
-            MW_show_log(QObject::tr("Ядро не открыло канал управления за 15 секунд."));
+            MW_show_log(QObject::tr("Ядро не открыло канал управления за %1 секунд.")
+                            .arg(GreenRhythm::StartupPolicy::coreReadyMs / 1000));
             MW_dialog_message("ExternalProcess", "CoreStartFailed");
             QProcess::kill();
-        }, this, 15000);
+        }, this, GreenRhythm::StartupPolicy::coreReadyMs);
     }
 
     void CoreProcess::Restart() {
