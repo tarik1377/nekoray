@@ -2835,6 +2835,7 @@ void MainWindow::open_what_broke() {
                 || !GreenRhythm::ProgramRouting::saveState(NekoGui::dataStore->fn,expected,candidate,&error)) {MessageBoxWarning(software_name,error);return;}
             NekoGui::dataStore->game_app_rules=candidate.applications;
             NekoGui::dataStore->roblox_split_processes=candidate.robloxSplit;
+            NekoGui::dataStore->roblox_auto_processes=candidate.robloxAdaptive;
             MW_show_log(tr("«%1» пойдёт напрямую при следующем подключении.").arg(program));
             return;
         }

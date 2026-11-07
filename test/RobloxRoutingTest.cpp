@@ -89,9 +89,9 @@ int main(int argc,char **argv) {
     RobloxRoutingDialog noop(original,true); noop.setCommitter([&](const ProgramRouting::State &,QString *) {++commits;return true;});
     const int before=commits;noop.accept();check(commits==before,"Done without edits does not rewrite settings");
     RobloxRoutingDialog cancel(original,true);cancel.setCommitter([&](const ProgramRouting::State &,QString *){++commits;return true;});
-    cancel.findChild<QComboBox *>("robloxStudioRoute")->setCurrentIndex(2);cancel.reject();check(commits==before,"Cancel never saves a route");
+    cancel.findChild<QComboBox *>("robloxStudioRoute")->setCurrentIndex(cancel.findChild<QComboBox *>("robloxStudioRoute")->findData("proxy"));cancel.reject();check(commits==before,"Cancel never saves a route");
     RobloxRoutingDialog denied(original,true);denied.setCommitter([](const ProgramRouting::State &,QString *error){*error="fixture denied";return false;});
-    denied.findChild<QComboBox *>("robloxStudioRoute")->setCurrentIndex(2);denied.show();denied.accept();
+    denied.findChild<QComboBox *>("robloxStudioRoute")->setCurrentIndex(denied.findChild<QComboBox *>("robloxStudioRoute")->findData("proxy"));denied.show();denied.accept();
     check(denied.isVisible() && denied.findChild<QLabel *>("robloxRouteStatus")->text()=="fixture denied","failed atomic save stays open with the actual error");
     auto white=original;white.whitelist=true;RobloxRoutingDialog whitelist(white,true);
     ProgramRouting::State selected; QString error;
@@ -111,6 +111,32 @@ int main(int argc,char **argv) {
     check(!ProgramRouting::saveState(path,original,smart,&error) && read(path)==updated,"stale Roblox editor cannot overwrite later preferences");
     auto stale=smart;stale.robloxSplit.clear();
     check(!ProgramRouting::saveState(path,stale,smart,&error) && read(path)==updated,"stale detection includes split markers even when the full-VPN fallback is identical");
+    ProgramRouting::State adaptivePlayer,adaptive;
+    check(ProgramRouting::choose(original,"RobloxPlayerBeta.exe","adaptive",&adaptivePlayer,&error)
+        && ProgramRouting::choose(adaptivePlayer,"RobloxStudioBeta.exe","adaptive",&adaptive,&error),"real availability auto is an independent explicit choice for both applications");
+    check(ProgramRouting::overrideMode(adaptive,"RobloxPlayerBeta.exe")=="adaptive"
+        && ProgramRouting::overrideMode(adaptive,"RobloxStudioBeta.exe")=="adaptive" && adaptive.robloxSplit.isEmpty(),"availability auto is distinct from the legacy fixed TCP/UDP split");
+    check(ProgramRouting::listed(adaptive.bypass,"browser.exe")
+        && adaptive.applications.contains("Discord.exe") && adaptive.applications.contains("dota2.exe"),"adaptive selection preserves browser, game and voice preferences");
+    RobloxRoutingDialog adaptiveEditor(original,true);
+    adaptiveEditor.setCommitter([&](const ProgramRouting::State &state,QString *){saved=state;return true;});
+    auto *adaptiveChoice=adaptiveEditor.findChild<QComboBox *>("robloxStudioRoute");
+    adaptiveChoice->setCurrentIndex(adaptiveChoice->findData("adaptive"));adaptiveEditor.accept();
+    check(ProgramRouting::overrideMode(saved,"RobloxStudioBeta.exe")=="adaptive"
+        && ProgramRouting::overrideMode(saved,"RobloxPlayerBeta.exe")=="proxy","actual availability-auto control commits only its selected application");
+    for(const auto &mode:{"proxy","bypass","smart","auto"}) {
+        ProgramRouting::State manualChoice;
+        check(ProgramRouting::choose(adaptive,"RobloxStudioBeta.exe",mode,&manualChoice,&error)
+            && ProgramRouting::overrideMode(manualChoice,"RobloxStudioBeta.exe")==mode
+            && ProgramRouting::overrideMode(manualChoice,"RobloxPlayerBeta.exe")=="adaptive","manual override removes only the selected availability marker");
+    }
+    check(ProgramRouting::saveState(path,smart,adaptive,&error),"adaptive flags are saved with the same atomic backup transaction");
+    const auto adaptiveBytes=read(path);auto staleAdaptive=adaptive;staleAdaptive.robloxAdaptive.clear();
+    check(!ProgramRouting::saveState(path,staleAdaptive,adaptive,&error) && read(path)==adaptiveBytes,"stale detection covers availability markers");
+    check(read(route)=="user routes" && QJsonDocument::fromJson(adaptiveBytes).object().value("unknown")==42,"availability auto never resets route files or unknown settings");
+    const auto expectedAdaptive=GreenRhythm::RobloxRouting::adaptiveRule(GreenRhythm::RobloxRouting::processes());
+    check(expectedAdaptive.value("process_name").toArray().size()==2 && expectedAdaptive.value("outbound")=="roblox-auto"
+        && !expectedAdaptive.contains("domain_suffix") && !expectedAdaptive.contains("network"),"adaptive rule is restricted to the selected applications rather than all Roblox/browser traffic");
     check(!GreenRhythm::GameAppRules::setMode(&apps,"RobloxPlayerBeta.exe","unrecognized"),"unsupported automatic/fallback modes are never persisted as guessed routes");
     std::printf("%d checks, %d failures\n",checks,failures);return failures?1:0;
 }

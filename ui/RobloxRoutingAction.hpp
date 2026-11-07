@@ -8,7 +8,7 @@ namespace GreenRhythm {
 inline void openRobloxRouting(QWidget *parent, std::function<void(const QString &)> inspector = {}) {
     if(auto *existing=parent->findChild<QDialog *>("grRobloxRouting")) { existing->show(); existing->raise(); return; }
     auto *settings=NekoGui::dataStore;
-    const ProgramRouting::State expected{settings->vpn_rule_process,settings->vpn_rule_process_proxy,settings->game_app_rules,settings->vpn_rule_white,settings->roblox_split_processes};
+    const ProgramRouting::State expected{settings->vpn_rule_process,settings->vpn_rule_process_proxy,settings->game_app_rules,settings->vpn_rule_white,settings->roblox_split_processes,settings->roblox_auto_processes};
     auto *dialog=new RobloxRoutingDialog(expected,settings->spmode_vpn && NekoGui::UseInternalTun(),parent);
     if(!inspector) {
         const QPointer<QWidget> owner(parent->window());
@@ -19,6 +19,7 @@ inline void openRobloxRouting(QWidget *parent, std::function<void(const QString 
         if(!ProgramRouting::saveState(settings->fn,expected,candidate,error)) return false;
         settings->vpn_rule_process=candidate.bypass; settings->vpn_rule_process_proxy=candidate.proxy; settings->game_app_rules=candidate.applications;
         settings->roblox_split_processes=candidate.robloxSplit;
+        settings->roblox_auto_processes=candidate.robloxAdaptive;
         MW_show_log(QObject::tr("Выбор Roblox сохранён для следующего подключения. Текущее соединение работает дальше."));
         return true;
     });

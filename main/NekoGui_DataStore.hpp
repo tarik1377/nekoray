@@ -277,6 +277,7 @@ namespace NekoGui {
         bool games_via_tunnel = false;
         QString game_app_rules;
         QString roblox_split_processes;
+        QString roblox_auto_processes;
 
         /**
          * Обход фильтрации на ПРЯМОМ пути — средствами ядра, без драйвера.
