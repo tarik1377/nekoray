@@ -10,10 +10,10 @@ namespace GreenRhythm::ProgramRouting {
 struct State {
     QString bypass, proxy, applications;
     bool whitelist = false;
-    QString robloxSplit;
+    QString robloxSplit, robloxAdaptive;
     bool operator==(const State &other) const {
         return bypass == other.bypass && proxy == other.proxy
-            && applications == other.applications && whitelist == other.whitelist && robloxSplit == other.robloxSplit;
+            && applications == other.applications && whitelist == other.whitelist && robloxSplit == other.robloxSplit && robloxAdaptive == other.robloxAdaptive;
     }
 };
 inline bool listed(const QString &list, const QString &name) {
@@ -37,7 +37,10 @@ inline QString overrideMode(const State &state, const QString &name) {
     if (!GameAppRules::parse(state.applications, &apps)) return "unknown";
     QStringList split;
     if(!RobloxRouting::parse(state.robloxSplit,&split)) return "unknown";
+    QStringList adaptive;
+    if(!RobloxRouting::parse(state.robloxAdaptive,&adaptive)) return "unknown";
     const auto mode = GameAppRules::mode(apps, name);
+    if(mode=="proxy" && adaptive.contains(name,Qt::CaseInsensitive)) return "adaptive";
     if(mode=="proxy" && split.contains(name,Qt::CaseInsensitive)) return "smart";
     if (mode != "auto") return mode;
     if (listed(state.bypass, name)) return state.whitelist ? "proxy" : "bypass";
@@ -69,6 +72,8 @@ inline bool restore(const State &before, const QString &name, State *after, QStr
     auto candidate = before;
     QStringList split;
     if(!RobloxRouting::parse(before.robloxSplit,&split,error)) return false;
+    if(!RobloxRouting::parse(before.robloxAdaptive,nullptr,error)) return false;
+    candidate.robloxAdaptive=without(before.robloxAdaptive,name);
     if(split.contains(name,Qt::CaseInsensitive)) candidate.robloxSplit=without(before.robloxSplit,name);
     candidate.bypass = without(before.bypass, name);
     candidate.proxy = without(before.proxy, name);
@@ -85,15 +90,19 @@ inline bool choose(const State &before, const QString &name, const QString &rout
     if (!GameAppRules::parse(before.applications, &apps, error)) return false;
     QStringList split;
     if(!RobloxRouting::parse(before.robloxSplit,&split,error)) return false;
-    if ((route=="smart" && !RobloxRouting::contains(name)) || !GameAppRules::setMode(&apps, name, route=="smart"?QStringLiteral("proxy"):route)) {
+    if(!RobloxRouting::parse(before.robloxAdaptive,nullptr,error)) return false;
+    const bool automatic=route=="smart" || route=="adaptive";
+    if ((automatic && !RobloxRouting::contains(name)) || !GameAppRules::setMode(&apps, name, automatic?QStringLiteral("proxy"):route)) {
         if (error) *error = QStringLiteral("Выберите точное имя .exe и направление подключения.");
         return false;
     }
     *after = before;
     split.removeAll(name);
     for(auto it=split.begin();it!=split.end();) if(it->compare(name,Qt::CaseInsensitive)==0) it=split.erase(it);else ++it;
-    if(route=="smart") {
-        split.append(name);
+    after->robloxAdaptive=without(before.robloxAdaptive,name);
+    if(route=="adaptive") after->robloxAdaptive += (after->robloxAdaptive.isEmpty()?QString():QStringLiteral("\n"))+name;
+    if(automatic) {
+        if(route=="smart") split.append(name);
         after->bypass=without(before.bypass,name); after->proxy=without(before.proxy,name);
     }
     after->robloxSplit=split.join('\n');
@@ -106,7 +115,8 @@ inline bool saveState(const QString &path, const State &expected, const State &c
     QJsonObject apps;
     QStringList split;
     if (candidate.whitelist != expected.whitelist || !GameAppRules::parse(candidate.applications, &apps, error)
-        || !RobloxRouting::parse(candidate.robloxSplit,&split,error)) {
+        || !RobloxRouting::parse(candidate.robloxSplit,&split,error)
+        || !RobloxRouting::parse(candidate.robloxAdaptive,nullptr,error)) {
         if (error && error->isEmpty()) *error = QStringLiteral("Режим TUN не может меняться вместе с выбором программы.");
         return false;
     }
@@ -120,7 +130,7 @@ inline bool saveState(const QString &path, const State &expected, const State &c
         return false;
     }
     auto settings = document.object();
-    for (const auto *key : {"vpn_bypass_process", "vpn_proxy_process", "game_app_rules", "roblox_split_processes"})
+    for (const auto *key : {"vpn_bypass_process", "vpn_proxy_process", "game_app_rules", "roblox_split_processes", "roblox_auto_processes"})
         if (settings.contains(key) && !settings.value(key).isString()) {
             if (error) *error = QStringLiteral("Нераспознанный формат правил программ. Изменения не записаны.");
             return false;
@@ -130,7 +140,7 @@ inline bool saveState(const QString &path, const State &expected, const State &c
         return false;
     }
     const State saved{settings.value("vpn_bypass_process").toString(), settings.value("vpn_proxy_process").toString(),
-                      settings.value("game_app_rules").toString(), settings.value("vpn_rule_white").toBool(),settings.value("roblox_split_processes").toString()};
+                      settings.value("game_app_rules").toString(), settings.value("vpn_rule_white").toBool(),settings.value("roblox_split_processes").toString(),settings.value("roblox_auto_processes").toString()};
     if (!(saved == expected)) {
         if (error) *error = QStringLiteral("Правила программ уже изменились. Откройте окно снова.");
         return false;
@@ -151,6 +161,7 @@ inline bool saveState(const QString &path, const State &expected, const State &c
     if (candidate.proxy != expected.proxy) settings.insert("vpn_proxy_process", candidate.proxy);
     if (candidate.applications != expected.applications) settings.insert("game_app_rules", candidate.applications);
     if (candidate.robloxSplit != expected.robloxSplit) settings.insert("roblox_split_processes", candidate.robloxSplit);
+    if (candidate.robloxAdaptive != expected.robloxAdaptive) settings.insert("roblox_auto_processes", candidate.robloxAdaptive);
     QSaveFile output(path);
     output.setDirectWriteFallback(false);
     const auto updated = QJsonDocument(settings).toJson(QJsonDocument::Indented);

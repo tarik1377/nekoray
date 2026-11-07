@@ -12,6 +12,7 @@
 #include <QApplication>
 #include <QFile>
 #include <QFileInfo>
+#include <QCryptographicHash>
 
 #define BOX_UNDERLYING_DNS dataStore->core_box_underlying_dns.isEmpty() ? "local" : dataStore->core_box_underlying_dns
 
@@ -877,6 +878,20 @@ namespace NekoGui {
             QStringList robloxSplit;
             if(!GreenRhythm::RobloxRouting::parse(dataStore->roblox_split_processes,&robloxSplit,&gameError)) {
                 status->result->error=gameError; return;
+            }
+            QStringList robloxAdaptive;
+            if(!GreenRhythm::RobloxRouting::parse(dataStore->roblox_auto_processes,&robloxAdaptive,&gameError)) {
+                status->result->error=gameError; return;
+            }
+            const auto adaptiveRoblox=GreenRhythm::RobloxRouting::active(robloxAdaptive,gamePrograms);
+            if(!adaptiveRoblox.isEmpty() && !status->forExport) {
+                const auto scope=QString::fromLatin1(QCryptographicHash::hash(
+                    QJsonDocument(status->outbounds).toJson(QJsonDocument::Compact),QCryptographicHash::Sha256).toHex());
+                const QString adaptiveTag=QStringLiteral("roblox-auto");
+                status->outbounds += QJsonObject{{"type","greenrhythm-roblox-auto"},{"tag",adaptiveTag},
+                    {"direct","bypass"},{"proxy",tagProxy},{"cache_scope",scope},{"cache",true}};
+                status->result->coreConfig.insert("outbounds",status->outbounds);
+                status->routingRulesFirst += GreenRhythm::RobloxRouting::adaptiveRule(adaptiveRoblox);
             }
             const auto activeRoblox=GreenRhythm::RobloxRouting::active(robloxSplit,gamePrograms);
             if(!activeRoblox.isEmpty()) status->routingRulesFirst += GreenRhythm::RobloxRouting::udpRule(activeRoblox);

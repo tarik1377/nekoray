@@ -246,3 +246,15 @@ go test -modfile "$MODFILE" -tags "with_clash_api,with_gvisor,with_quic,with_wir
 маршрут Windows к частному адресу. Признак — те же проверки с рабочим VPN
 проходят без копии `network.go` и помощников выбора интерфейса. Заплатка REALITY
 при этом проверяется и удаляется отдельно.
+
+
+## Roblox per-flow selection (sing-box 1.13.18)
+
+`_overlay/sing-box/route/route.go` adds an optional `SelectConnection` hook before
+TCP/UDP trackers snapshot the selected outbound. Only the opted-in Roblox
+availability outbound implements it. It returns a pinned adapter with the actual
+DIRECT/VPN tag, avoiding both misleading accounting and a second choice between
+tracking and dialing. All other outbound paths are upstream-identical. See
+[availability routing](../docs/roblox-availability-routing.md) and
+`TestRobloxAutoFlowSelectionPrecedesAccounting`. The file is version-checked by
+`_overlay/prepare.sh` like the other pinned overlays.

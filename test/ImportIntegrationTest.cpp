@@ -513,6 +513,7 @@ int main(int argc, char **argv) {
                 GreenRhythm::GameAppRules::serialize({{"Discord.exe","proxy"},{"dota2.exe","bypass"}}),false};
             const auto bypass=NekoGui::dataStore->vpn_rule_process, proxy=NekoGui::dataStore->vpn_rule_process_proxy;
             const auto previousSplit=NekoGui::dataStore->roblox_split_processes;
+            const auto previousAdaptive=NekoGui::dataStore->roblox_auto_processes;
             GreenRhythm::ProgramRouting::State player,forced,automatic;QString error;
             check(GreenRhythm::ProgramRouting::choose(original,"RobloxPlayerBeta.exe","bypass",&player,&error)
                 && GreenRhythm::ProgramRouting::choose(player,"RobloxStudioBeta.exe","proxy",&forced,&error),"Roblox editor creates independent choices without changing a route scheme");
@@ -545,6 +546,31 @@ int main(int argc, char **argv) {
                     "automatic Roblox split leaves unrelated game and voice routes intact");
             }
             NekoGui::dataStore->roblox_split_processes=previousSplit;
+            GreenRhythm::ProgramRouting::State adaptivePlayer,adaptive;
+            check(GreenRhythm::ProgramRouting::choose(original,"RobloxPlayerBeta.exe","adaptive",&adaptivePlayer,&error)
+                && GreenRhythm::ProgramRouting::choose(adaptivePlayer,"RobloxStudioBeta.exe","adaptive",&adaptive,&error),"real auto is accepted by actual config builder");
+            for(bool white:{false,true}) {
+                NekoGui::dataStore->vpn_rule_white=white;
+                NekoGui::dataStore->vpn_rule_process=adaptive.bypass;NekoGui::dataStore->vpn_rule_process_proxy=adaptive.proxy;
+                NekoGui::dataStore->game_app_rules=adaptive.applications;NekoGui::dataStore->roblox_split_processes=adaptive.robloxSplit;
+                NekoGui::dataStore->roblox_auto_processes=adaptive.robloxAdaptive;
+                const auto built=buildCurrent();const auto rules=runtimeRules(built);
+                QJsonObject autoOutbound;int count=0;
+                for(const auto &value:built->coreConfig.value("outbounds").toArray())
+                    if(value.toObject().value("type")=="greenrhythm-roblox-auto"){autoOutbound=value.toObject();++count;}
+                check(count==1 && autoOutbound.value("direct")=="bypass" && autoOutbound.value("proxy")=="proxy"
+                    && autoOutbound.value("cache_scope").toString().size()==64 && autoOutbound.value("cache").toBool(),"actual runtime includes a scoped adaptive outbound with existing direct and VPN detours");
+                for(const auto &name:GreenRhythm::RobloxRouting::processes())
+                    check(byNetwork(rules,name,"tcp")=="roblox-auto" && byNetwork(rules,name,"udp")=="roblox-auto","ordinary and whitelist route both protocols to availability auto before compatible full-VPN fallback");
+                check(routeFor(rules,"Discord.exe")=="proxy" && routeFor(rules,"dota2.exe")=="bypass"
+                    && routeFor(rules,"browser.exe").isEmpty(),"availability auto does not capture browser or unrelated game/voice programs");
+                const auto exported=NekoGui::BuildConfig(NekoGui::profileManager->GetProfile(firstId),false,true);
+                check(!QJsonDocument(exported->coreConfig).toJson().contains("greenrhythm-roblox-auto")
+                    && routeFor(runtimeRules(exported),"RobloxPlayerBeta.exe")=="proxy"
+                    && routeFor(runtimeRules(exported),"RobloxStudioBeta.exe")=="proxy","standard sing-box export uses compatible full-VPN fallback rather than an unsupported custom outbound");
+            }
+            NekoGui::dataStore->roblox_split_processes=previousSplit;
+            NekoGui::dataStore->roblox_auto_processes=previousAdaptive;
             NekoGui::dataStore->vpn_rule_white=false;
             check(GreenRhythm::ProgramRouting::restore(forced,"RobloxStudioBeta.exe",&player,&error)
                 && GreenRhythm::ProgramRouting::restore(player,"RobloxPlayerBeta.exe",&automatic,&error),"site choice removes every selected Roblox override");

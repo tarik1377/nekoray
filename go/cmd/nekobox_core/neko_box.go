@@ -78,6 +78,7 @@ func nekoCreateWithTunLookup(configJSON []byte, lookup tunGatewayLookup) (*box.B
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ctx = include.Context(ctx)
+	registerRobloxAuto(ctx)
 	configJSON, err = prepareTunRouteExclusions(ctx, configJSON, lookup)
 	if err != nil {
 		cancel()

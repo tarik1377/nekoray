@@ -15,7 +15,7 @@ inline bool parse(const QString &text, QStringList *names, QString *error=nullpt
         }
         for(const auto &canonical:processes()) if(canonical.compare(name,Qt::CaseInsensitive)==0) result.append(canonical);
     }
-    *names=result; return true;
+    if(names) *names=result; return true;
 }
 // game_app_rules retains a compatible full-VPN fallback for older clients.
 // A later manual DIRECT choice takes precedence over a leftover split marker.
@@ -27,6 +27,10 @@ inline QStringList active(const QStringList &names,const QJsonObject &programs) 
 inline QJsonObject udpRule(const QStringList &names) {
     QJsonArray array; for(const auto &name:names) array.append(name);
     return {{"process_name",array},{"network","udp"},{"outbound","bypass"}};
+}
+inline QJsonObject adaptiveRule(const QStringList &names) {
+    QJsonArray array; for(const auto &name:names) array.append(name);
+    return {{"process_name",array},{"outbound","roblox-auto"}};
 }
 inline bool isUdpRule(const QJsonObject &rule) {
     if(rule.size()!=3 || rule.value("network")!="udp" || rule.value("outbound")!="bypass" || !rule.value("process_name").isArray()) return false;
