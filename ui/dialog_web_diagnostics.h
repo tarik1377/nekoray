@@ -23,6 +23,7 @@ signals:
     // MainWindow owns mode selection and persistence. This dialog never edits
     // registry, browser state, routes, profiles or system proxy settings.
     void connectBrowsersRequested();
+    void siteRoutingRequested();
 private:
     void beginCheck();
     GreenRhythm::BrowserNetworkProbe *probe = nullptr;

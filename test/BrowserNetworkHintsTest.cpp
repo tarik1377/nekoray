@@ -167,6 +167,16 @@ int main(int argc, char **argv) {
     if (entry) entry->click();
     check(entryCalls == 1 && !shell.isConnecting(), "browser help opens diagnostics without toggling VPN");
     DialogWebDiagnostics dialog; dialog.setProxyEndpoint(2080, QStringLiteral("private-user"), QStringLiteral("private-password"), true); dialog.setHints(hints);
+    int siteEditors=0;
+    QObject::connect(&dialog,&DialogWebDiagnostics::siteRoutingRequested,[&] {++siteEditors;});
+    auto *siteEditor=dialog.findChild<QPushButton *>("grAdaptiveSites");
+    if(siteEditor) siteEditor->click();
+    check(siteEditor && siteEditors==1,"browser help opens the website editor without applying proxy or routes");
+    int settingsSiteEditors=0;
+    QObject::connect(&shell,&MainShell::siteRoutingRequested,[&] {++settingsSiteEditors;});
+    auto *settingsSiteEditor=shell.findChild<QPushButton *>("grSiteRouting");
+    if(settingsSiteEditor) settingsSiteEditor->click();
+    check(settingsSiteEditor && settingsSiteEditors==1 && !shell.isConnecting(),"settings website action emits one editor request without reconnecting");
     auto *connectButton = dialog.findChild<QPushButton *>(QStringLiteral("grConnectBrowsers"));
     auto *leaveButton = dialog.findChild<QPushButton *>(QStringLiteral("grLeaveBrowserSettings"));
     auto *urlEdit = dialog.findChild<QLineEdit *>(QStringLiteral("grWebAddress")); int applyCalls = 0;

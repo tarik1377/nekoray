@@ -1,4 +1,5 @@
 #include "ui/mainwindow_common.hpp"
+#include "ui/SiteRoutingAction.hpp"
 
 #include "main/Interference.hpp"
 #include "main/TunHelper.hpp"
@@ -402,6 +403,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
             auto *dialog = new DialogWebDiagnostics(this);
             dialog->setAttribute(Qt::WA_DeleteOnClose);
             dialog->setProgramRouting(GreenRhythm::currentProgramRouting(), NekoGui::dataStore->spmode_vpn && NekoGui::UseInternalTun());
+            connect(dialog, &DialogWebDiagnostics::siteRoutingRequested, this, [this] { GreenRhythm::openSiteRouting(this); });
             dialog->setRoutingCommitter([](const QString &name, const GreenRhythm::ProgramRouting::State &expected, QString *error) {
                 return GreenRhythm::restoreProgramSiteRules(name, expected, error);
             });
@@ -519,6 +521,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
                 [this] { on_menu_routing_settings_triggered(); });
         connect(shell, &GreenRhythm::MainShell::gameProgramsRequested, this,
                 [this] { GreenRhythm::openGamePrograms(this); });
+        connect(shell, &GreenRhythm::MainShell::siteRoutingRequested, this,
+                [this] { GreenRhythm::openSiteRouting(this); });
         connect(shell, &GreenRhythm::MainShell::routeDefaultsRequested, this, [this] { open_route_review(false); });
         connect(shell, &GreenRhythm::MainShell::restoreRoutesRequested, this, [this] { open_route_review(true); });
         connect(shell, &GreenRhythm::MainShell::maintenanceShown, this, [this] { refresh_maintenance(true); });

@@ -22,6 +22,7 @@ type disk struct {
 }
 type Store struct {
 	Directory, Scope string
+	AllowHost        func(string) bool
 	mu               sync.Mutex
 	last             time.Time
 }
@@ -51,7 +52,11 @@ func (s *Store) Load(network string) map[string]Entry {
 		if len(key) > 300 || !(strings.HasPrefix(key, "tcp:") || strings.HasPrefix(key, "udp:")) || (value.Path != Direct && value.Path != Proxy) || !value.Verified || !value.Expires.After(now) || value.Expires.After(now.Add(10*time.Minute)) {
 			continue
 		}
-		if strings.HasPrefix(key, "tcp:") && !KnownHost(strings.TrimPrefix(key, "tcp:")) {
+		allowed := s.AllowHost
+		if allowed == nil {
+			allowed = KnownHost
+		}
+		if strings.HasPrefix(key, "tcp:") && !allowed(strings.TrimPrefix(key, "tcp:")) {
 			continue
 		}
 		result[key] = value

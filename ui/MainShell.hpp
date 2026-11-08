@@ -261,6 +261,7 @@ namespace GreenRhythm {
         void routesRequested();
         void tunBypassRequested();
         void gameProgramsRequested();
+        void siteRoutingRequested();
         void routeDefaultsRequested();
         void restoreRoutesRequested();
         void geoDataRefreshRequested();
