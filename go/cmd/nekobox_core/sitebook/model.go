@@ -77,8 +77,9 @@ func Host(raw string) (string, error) {
 	return host, nil
 }
 
-// Normalize retains the path only for this anonymous load; Origin is the only
-// URL identity persisted in a library/history. Query/fragment/userinfo never run.
+// Normalize retains the entered navigation URL only for this isolated load;
+// Origin is the only URL identity persisted in a library/history. Userinfo is
+// rejected; URL paths, queries and SPA fragments are not saved.
 func Normalize(raw string) (navigation, origin string, err error) {
 	raw = strings.TrimSpace(raw)
 	if len(raw) == 0 || len(raw) > 4096 {
@@ -123,10 +124,6 @@ func Normalize(raw string) (navigation, origin string, err error) {
 	}
 	u.Scheme = strings.ToLower(u.Scheme)
 	u.Host = authority
-	u.RawQuery = ""
-	u.ForceQuery = false
-	u.Fragment = ""
-	u.RawFragment = ""
 	if u.Path == "" {
 		u.Path = "/"
 	}

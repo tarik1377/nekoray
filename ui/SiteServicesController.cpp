@@ -10,6 +10,7 @@ namespace GreenRhythm {
             if (error == "connect_a_profile_first") return QObject::tr("Подключите профиль, чтобы сравнить его с прямым путём. Приложение само подключение не переключает.");
             if (error == "profile_changed" || error == "scan_missing") return QObject::tr("Профиль изменился во время проверки. Повторите анализ.");
             if (error == "scan_busy") return QObject::tr("Другой анализ уже выполняется. Дождитесь его или отмените.");
+        if (error == "browser_capture_failed") return QObject::tr("Не удалось запустить отдельную сессию браузера. Проверьте установленный Edge/Chrome и ограничения его запуска. Маршруты не изменены.");
             if (error == "scan_cancelled") return QObject::tr("Анализ отменён. Сайты и маршруты сохранены.");
             if (error == "full_update_required" || error.startsWith("site_tools_")) return QObject::tr("Работающее ядро не поддерживает эту функцию. Нужна полная новая сборка; соединение оставлено работающим.");
             return QObject::tr("Анализ или применение не завершены (%1). Текущее подключение не переключалось.").arg(error.left(120));
@@ -53,6 +54,7 @@ namespace GreenRhythm {
         library = next;
         raw = SiteServices::encode(next);
         page->setLibrary(next);
+        page->setRuntime({});
         if (changed) changed(next);
         return true;
     }
@@ -75,6 +77,11 @@ namespace GreenRhythm {
         });
     }
     void SiteServicesController::apply(const QString &scanID) {
+        if (applying) {
+            applyAgain = true;
+            if (!scanID.isEmpty()) queuedScanID = scanID;
+            return;
+        }
         if (!connected()) {
             page->setRuntime({});
             page->setFeedback(tr("Сохранено с резервной копией. Набор загрузится при следующем подключении профиля."));
@@ -82,24 +89,43 @@ namespace GreenRhythm {
         }
         const auto desired = policyText(library);
         const auto capturedRaw = raw;
+        applying = true;
         request("status", {}, [this, desired, capturedRaw, scanID](const QJsonObject &state, const QString &error) {
-            if (raw != capturedRaw) return;
+            if (raw != capturedRaw) {
+                finishApply();
+                return;
+            }
             if (!error.isEmpty()) {
                 page->setRuntime({});
                 page->setFeedback(tr("Сохранено, но пока не применено. ") + message(error));
+                finishApply();
                 return;
             }
             request("apply", {{"scope", state.value("scope")}, {"library", desired}, {"scan_id", scanID}}, [this, capturedRaw](const QJsonObject &, const QString &error) {
-                if (raw != capturedRaw) return;
+                if (raw != capturedRaw) {
+                    finishApply();
+                    return;
+                }
                 if (!error.isEmpty()) {
                     page->setRuntime({});
                     page->setFeedback(tr("Сохранено, но пока не применено. ") + message(error));
+                    finishApply();
                     return;
                 }
                 page->setFeedback(tr("Сохранено и применено к новым соединениям. Текущее подключение и открытые соединения не перезапускались."));
                 refreshRuntime();
+                finishApply();
             });
         });
+    }
+    void SiteServicesController::finishApply() {
+        applying = false;
+        if (applyAgain) {
+            applyAgain = false;
+            const auto scanID = queuedScanID;
+            queuedScanID.clear();
+            apply(scanID);
+        }
     }
     void SiteServicesController::chooseMode(const QString &id, const QString &mode) {
         refresh();

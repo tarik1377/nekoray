@@ -39,11 +39,11 @@ namespace GreenRhythm::SiteServices {
             return false;
         }
         value.setHost(host);
-        value.setQuery(QString());
-        value.setFragment(QString());
         if ((value.scheme() == "https" && value.port() == 443) || (value.scheme() == "http" && value.port() == 80)) value.setPort(-1);
         if (value.path().isEmpty()) value.setPath("/");
         if (navigation) *navigation = value.toString(QUrl::FullyEncoded);
+        value.setQuery(QString());
+        value.setFragment(QString());
         value.setPath(QString());
         if (origin) *origin = value.toString(QUrl::FullyEncoded);
         return true;

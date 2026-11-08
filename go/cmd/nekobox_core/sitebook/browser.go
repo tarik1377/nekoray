@@ -261,6 +261,15 @@ func launchBrowser(ctx context.Context, browser, proxy string) (string, func(), 
 		return "", nil, err
 	}
 	_ = os.Chmod(directory, 0700)
+	// Keep the policy in this disposable profile too, for installed browser
+	// versions that do not yet understand the command-line override.
+	if err = os.Mkdir(filepath.Join(directory, "Default"), 0700); err == nil {
+		err = os.WriteFile(filepath.Join(directory, "Default", "Preferences"), []byte(`{"webrtc":{"ip_handling_policy":"disable_non_proxied_udp"}}`), 0600)
+	}
+	if err != nil {
+		os.RemoveAll(directory)
+		return "", nil, errors.New("cannot initialize isolated browser profile")
+	}
 	cleanupDir := func() {
 		for i := 0; i < 4; i++ {
 			if os.RemoveAll(directory) == nil {
@@ -269,7 +278,7 @@ func launchBrowser(ctx context.Context, browser, proxy string) (string, func(), 
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
-	args := []string{"--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-extensions", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-default-apps", "--mute-audio", "--disable-quic", "--renderer-process-limit=2", "--disk-cache-size=1", "--media-cache-size=1", "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", "--user-data-dir=" + directory, "--proxy-server=" + proxy, "--proxy-bypass-list=<-loopback>", "about:blank"}
+	args := []string{"--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-extensions", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-default-apps", "--mute-audio", "--disable-quic", "--webrtc-ip-handling-policy=disable_non_proxied_udp", "--renderer-process-limit=2", "--disk-cache-size=1", "--media-cache-size=1", "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", "--user-data-dir=" + directory, "--proxy-server=" + proxy, "--proxy-bypass-list=<-loopback>", "about:blank"}
 	command := exec.CommandContext(ctx, browser, args...)
 	prepareBrowser(command)
 	// Nil connects both streams to the null device, without copy goroutines
@@ -356,7 +365,9 @@ func CapturePage(ctx context.Context, browser, navigation, origin string, proxy 
 	}
 	setup("")
 	connection.call("Page.enable", map[string]any{}, "")
-	connection.call("Browser.setDownloadBehavior", map[string]any{"behavior": "deny"}, "")
+	if _, err := connection.call("Browser.setDownloadBehavior", map[string]any{"behavior": "deny"}, ""); err != nil {
+		return nil, errors.New("browser cannot block downloads for isolated analysis")
+	}
 	frame, _ := connection.call("Page.getFrameTree", map[string]any{}, "")
 	var tree struct {
 		FrameTree struct {
@@ -449,8 +460,8 @@ loop:
 		}
 		if json.Unmarshal(title, &value) == nil {
 			captured.Title = strings.TrimSpace(value.Result.Value)
-			if len(captured.Title) > 120 {
-				captured.Title = captured.Title[:120]
+			if runes := []rune(captured.Title); len(runes) > 120 {
+				captured.Title = string(runes[:120])
 			}
 		}
 	}
@@ -472,6 +483,7 @@ func Discover(ctx context.Context, browser, raw string, dial Dial, resolve Resol
 		return Report{}, errors.New("browser_missing: install Edge, Chrome or Chromium for JavaScript dependency discovery")
 	}
 	report := Report{URL: origin, Engine: "chromium", Endpoints: []Endpoint{}, Recommendation: "unknown"}
+	capturedPages := 0
 	union := map[string]*Endpoint{origin: {Origin: origin}}
 	for _, path := range []string{"direct", "proxy"} {
 		if progress != nil {
@@ -491,6 +503,7 @@ func Discover(ctx context.Context, browser, raw string, dial Dial, resolve Resol
 			report.Warning = "browser_capture_failed"
 			continue
 		}
+		capturedPages++
 		report.Partial = report.Partial || captured.Partial
 		if path == "direct" {
 			report.DirectOK = captured.success()
@@ -524,6 +537,9 @@ func Discover(ctx context.Context, browser, raw string, dial Dial, resolve Resol
 			}
 			sort.Strings(endpoint.Types)
 		}
+	}
+	if capturedPages == 0 {
+		return report, errors.New("browser_capture_failed")
 	}
 	if report.Title == "" {
 		host, _ := Address(origin)

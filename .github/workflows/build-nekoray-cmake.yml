@@ -101,6 +101,16 @@ jobs:
           # бы красным на ровном месте.
           (
             cd go/cmd/nekobox_core
+            # The disposable Ubuntu runner restricts unprivileged user
+            # namespaces. Permit Chromium's own sandbox here; the application
+            # never launches arbitrary websites with --no-sandbox.
+            if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+            if command -v google-chrome >/dev/null; then
+              google-chrome --version
+              timeout 15s google-chrome --headless=new --disable-gpu --no-first-run --disable-background-networking --user-data-dir="$RUNNER_TEMP/gr-site-sandbox-probe" --dump-dom about:blank
+            fi
             MODFILE=$(bash _overlay/prepare.sh)
             CORE_TAGS="with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api"
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" ./...

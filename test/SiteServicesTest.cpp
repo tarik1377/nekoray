@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
     registerWidgetTestFonts();
     applyAppFont(app);
     QString navigation, origin, error;
-    check(SiteServices::url("https://EXAMPLE.com:443/a?token=do-not-save#secret", &navigation, &origin, &error) && navigation == "https://example.com/a" && origin == "https://example.com", "URL input removes credentials-bearing query/fragment and saves only the origin");
+    check(SiteServices::url("https://EXAMPLE.com:443/a?token=do-not-save#secret", &navigation, &origin, &error) && navigation == "https://example.com/a?token=do-not-save#secret" && origin == "https://example.com", "URL parameters remain transient for SPA navigation; only the origin is saved");
     for (const auto &bad: {"file:///C:/Windows/", "http://127.0.0.1/", "http://10.44.0.1/", "https://u:p@example.com/", "http://169.254.169.254/", "http://host.local/", "http://[::1]/"}) check(!SiteServices::url(bad, nullptr, nullptr, &error), "reject internal, file and credential URLs");
     QTemporaryDir folder;
     const auto path = folder.filePath("settings.json"), routePath = folder.filePath("Default");
@@ -65,7 +65,7 @@ int main(int argc, char **argv) {
     check(shell.findChild<QPushButton *>("grNav4") && shell.findChild<QStackedWidget *>("grPages")->count() == 5, "Sites is a real left navigation page; old pages retained");
     page->findChild<QLineEdit *>("siteUrlInput")->setText("https://www.example.com/a?token=do-not-save");
     page->findChild<QPushButton *>("siteAnalyze")->click();
-    check(!scanPayload.value("url").toString().contains('?') && !raw.contains("do-not-save") && !raw.contains("/a?"), "real Analyze control never persists URL query or navigation path");
+    check(scanPayload.value("url").toString().contains("?token=do-not-save") && !raw.contains("do-not-save") && !raw.contains("/a?"), "real Analyze control never persists URL query or navigation path");
     QJsonObject library;
     check(SiteServices::parse(raw, &library, &error) && library.value("sites").toArray().size() == 1, "anonymous dependency result automatically becomes a saved card");
     auto site = library.value("sites").toArray().first().toObject();
@@ -105,6 +105,22 @@ int main(int argc, char **argv) {
     }
     check(site.value("history").toArray().size() == 30, "history is bounded and retained for quick reversal");
     {
+        auto *queuedPage = new SitesPage;
+        QString memory = raw, backendHash = hash(SiteServices::encode(SiteServices::policy(library)));
+        QList<QPair<QJsonObject, SiteServicesController::Done>> waiting;
+        SiteServicesController queued(queuedPage, [&](const QString &action, const QJsonObject &payload, SiteServicesController::Done done) {if(action=="status")done({{"scope","owned"},{"configuration_hash",backendHash}},{});else if(action=="apply")waiting.append({payload,std::move(done)});else done({},{}); }, [&] { return memory; }, [&](const QString &, const QJsonObject &next, QString *) {memory=SiteServices::encode(next);return true; }, [] { return true; }, {});
+        queued.chooseMode(id, "direct");
+        queued.chooseMode(id, "proxy");
+        queued.chooseMode(id, "auto");
+        check(waiting.size() == 1, "rapid mode changes serialize core policy replacement");
+        auto acknowledge = [&] {const auto pending=waiting.takeFirst();backendHash=hash(pending.first.value("library").toString());pending.second({},{}); };
+        acknowledge();
+        check(waiting.size() == 1 && waiting.first().first.value("library").toString().contains("\"mode\":\"auto\""), "queued replacement always uses the latest user choice");
+        acknowledge();
+        check(waiting.isEmpty() && backendHash == hash(SiteServices::encode(SiteServices::policy(QJsonDocument::fromJson(memory.toUtf8()).object()))), "final runtime policy matches latest saved choice after delayed replies");
+        delete queuedPage;
+    }
+    {
         SiteServicesController::Done late;
         auto *closing = new SitesPage;
         bool savedAfterClose = false;
@@ -114,6 +130,12 @@ int main(int argc, char **argv) {
         late({{"scope", "owned"}}, {});
         check(!savedAfterClose, "late analysis callback is ignored after its page closes");
     }
+    shell.showPage(4);
+    shell.resize(900, 720);
+    shell.show();
+    app.processEvents();
+    check(shell.width() <= 900 && shell.height() <= 720 && page->rect().contains(page->findChild<QPushButton *>("siteAnalyze")->geometry().bottomRight()), "URL input and actions remain reachable in a compact window");
+    shell.hide();
     if (app.arguments().contains("--preview")) {
         QFile style("res/theme/feiyangqingyun/qss/modern.css");
         if (style.open(QIODevice::ReadOnly)) app.setStyleSheet(QString::fromUtf8(style.readAll()));

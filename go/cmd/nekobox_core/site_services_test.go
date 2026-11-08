@@ -131,4 +131,14 @@ func TestSiteServicesLiveRulesPreserveStreamsAndPorts(t *testing.T) {
 	}
 	group.Wait()
 	expect(old, 'D')
+	if _, err = manager.apply(strings.Repeat("c", 64), ownedSiteLibrary("direct"), ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = manager.apply(strings.Repeat("c", 64), `{"schema":1,"sites":[]}`, ""); err != nil {
+		t.Fatal(err)
+	}
+	if path, _, _ := manager.choose(context.Background(), M.ParseSocksaddr("www.example.com:443")); path != "direct" {
+		t.Fatal("removed manual DIRECT rule changed an in-flight router selection", path)
+	}
+	expect(old, 'D')
 }

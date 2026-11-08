@@ -125,7 +125,9 @@ func (s *siteServicesOutbound) Start() error {
 		data, _ := os.ReadFile(file)
 		var history []siteDecision
 		if json.Unmarshal(data, &history) == nil && len(history) <= 200 {
+			s.historyMu.Lock()
 			s.history = history
+			s.historyMu.Unlock()
 		}
 	}
 	return nil
@@ -224,6 +226,9 @@ func (s *siteServicesOutbound) apply(scope, library, scanID string) (any, error)
 	for key, prior := range old.Active.Items {
 		if _, kept := policies.Items[key]; !kept {
 			path := entries["tcp:"+prior.Origin].Path
+			if prior.Mode == "direct" || prior.Mode == "proxy" {
+				path = robloxauto.Path(prior.Mode)
+			}
 			if path != "direct" && path != "proxy" {
 				path = robloxauto.Proxy
 			}

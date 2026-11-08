@@ -7,7 +7,7 @@ import (
 
 func TestURLSanitizationAndEndpointBoundaries(t *testing.T) {
 	nav, origin, err := Normalize("https://ExAmPle.com:443/a/b?token=private#fragment")
-	if err != nil || nav != "https://example.com/a/b" || origin != "https://example.com" {
+	if err != nil || nav != "https://example.com/a/b?token=private#fragment" || origin != "https://example.com" {
 		t.Fatal(nav, origin, err)
 	}
 	for _, value := range []string{"file:///etc/passwd", "http://localhost/", "https://user:password@example.com/", "http://127.0.0.1/", "http://169.254.169.254/", "http://10.44.0.1/", "https://foo.lan/", "http://[::1]/"} {

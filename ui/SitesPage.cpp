@@ -40,7 +40,7 @@ namespace GreenRhythm {
         font.setPointSizeF(font.pointSizeF() * 1.4);
         heading->setFont(font);
         layout->addWidget(heading);
-        auto *intro = new QLabel(tr("Вставьте URL. GreenRhythm загрузит публичную страницу в отдельной сессии, найдёт увиденные зависимости и сравнит прямой путь с VPN. Ваш браузер и аккаунты не используются."), this);
+        auto *intro = new QLabel(tr("Вставьте URL. GreenRhythm загрузит публичную страницу в отдельной сессии, найдёт увиденные зависимости и сравнит прямой путь с VPN. Отдельная сессия не использует сохранённые входы и расширения вашего браузера."), this);
         intro->setWordWrap(true);
         layout->addWidget(intro);
         auto *input = new QHBoxLayout;
@@ -92,7 +92,7 @@ namespace GreenRhythm {
         mode->addItem(tr("Напрямую"), "direct");
         mode->addItem(tr("Через VPN"), "proxy");
         controls->addWidget(mode, 1);
-        open = new QPushButton(tr("Открыть"), detail);
+        open = new QPushButton(tr("Открыть сайт"), detail);
         open->setObjectName("siteOpen");
         controls->addWidget(open);
         body->addLayout(controls);

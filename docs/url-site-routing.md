@@ -27,8 +27,8 @@ the Sites page. History is bounded and can restore a prior mode.
   may differ. Rescan the relevant URL when needed. This is an availability
   check, not a successful sign-in check. Arbitrary APIs can respond differently
   to anonymous requests; manual mode remains available.
-- Query strings/fragments are dropped before navigation. Paths are transient;
-  only the origin (scheme, exact hostname/IP and port) is saved. No headers,
+- The entered path, query and SPA fragment are transient and used only for that
+  isolated load; only the origin (scheme, exact hostname/IP and port) is saved. No headers,
   response bodies, credentials, full request URLs or cookies are retained.
 - No broad CDN wildcard is generated. Shared endpoint conflicts prefer VPN,
   then Direct, then Auto, and the effective mode appears in the table.

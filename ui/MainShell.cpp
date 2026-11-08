@@ -169,6 +169,14 @@ namespace GreenRhythm {
          * значка и на тон тише: инструменты нужны реже, чем страницы, и не
          * должны спорить с ними за внимание.
          */
+        class SiteShortcutButton final : public QPushButton {
+            QString label;
+        public:
+            SiteShortcutButton(const QString &text, QWidget *parent) : QPushButton(parent), label(text) {setText(text);setMinimumHeight(27);}
+        protected:
+            void resizeEvent(QResizeEvent *event) override {QPushButton::resizeEvent(event);setText(fontMetrics().elidedText(label,Qt::ElideRight,qMax(0,width()-12)));}
+        };
+
         QPushButton *tool(QWidget *p, const QString &text) {
             auto *b = new QPushButton(text, p);
             b->setCursor(Qt::PointingHandCursor);
@@ -760,7 +768,7 @@ namespace GreenRhythm {
         if(!savedSiteBox)return;auto *layout=savedSiteBox->layout();while(auto *item=layout->takeAt(0)){if(item->widget())item->widget()->deleteLater();delete item;}
         const auto sites=library.value("sites").toArray();int count=0;
         for(const auto &value:sites){if(count++>=8)break;const auto site=value.toObject();const auto id=site.value("id").toString();const auto mode=site.value("mode").toString();auto *row=new QWidget(savedSiteBox);auto *line=new QHBoxLayout(row);line->setContentsMargins(0,0,0,0);line->setSpacing(3);
-            auto *name=tool(row,site.value("title").toString().left(24));name->setObjectName("grSavedSiteOpen");name->setProperty("siteId",id);name->setToolTip(site.value("title").toString()+"\n"+site.value("url").toString());name->setStyleSheet("padding: 5px 6px; text-align: left;");name->setMinimumWidth(0);name->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);line->addWidget(name,1);
+            auto *name=new SiteShortcutButton(site.value("title").toString(),row);name->setObjectName("grSavedSiteOpen");name->setProperty("siteId",id);name->setToolTip(site.value("title").toString()+"\n"+site.value("url").toString());name->setStyleSheet("padding: 5px 6px; text-align: left;");name->setMinimumWidth(0);name->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);line->addWidget(name,1);
             connect(name,&QPushButton::clicked,this,[this,id]{selectPage(4);if(sitesPage)sitesPage->selectSite(id);});
             auto *choice=new QPushButton(mode=="proxy"?tr("VPN"):mode=="direct"?tr("Прямо"):tr("Авто"),row);choice->setObjectName("grSavedSiteMode");choice->setProperty("siteId",id);choice->setStyleSheet("QPushButton { padding: 4px 12px 4px 3px; } QPushButton::menu-indicator { subcontrol-position: right center; right: 3px; }");choice->setFixedWidth(66);choice->setMinimumHeight(27);choice->setToolTip(tr("Быстро выбрать путь для сайта и его зависимостей"));auto *menu=new QMenu(choice);
             for(const auto &entry:QList<QPair<QString,QString>>{{tr("Авто"),"auto"},{tr("Напрямую"),"direct"},{tr("Через VPN"),"proxy"}}){auto *action=menu->addAction(entry.first);action->setCheckable(true);action->setChecked(entry.second==mode);connect(action,&QAction::triggered,this,[this,id,entry]{emit siteModeRequested(id,entry.second);});}choice->setMenu(menu);line->addWidget(choice);layout->addWidget(row);

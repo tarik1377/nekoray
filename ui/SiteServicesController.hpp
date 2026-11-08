@@ -22,6 +22,7 @@ namespace GreenRhythm {
         void request(const QString &action, const QJsonObject &payload, Done done);
         bool persist(const QJsonObject &library, QString *error);
         void apply(const QString &scanID = {});
+        void finishApply();
         void poll();
         void finish(const QString &text);
         SitesPage *page;
@@ -30,10 +31,11 @@ namespace GreenRhythm {
         Save save;
         std::function<bool()> connected;
         std::function<void(const QJsonObject &)> changed;
-        QString raw, job, scope;
+        QString raw, job, scope, queuedScanID;
         QJsonObject library;
         QTimer scanTimer, runtimeTimer;
         quint64 generation = 0;
         bool busy = false, polling = false, runtimePending = false, shuttingDown = false;
+        bool applying = false, applyAgain = false;
     };
 } // namespace GreenRhythm
