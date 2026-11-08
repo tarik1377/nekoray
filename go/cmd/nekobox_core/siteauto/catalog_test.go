@@ -23,7 +23,7 @@ func TestExactSuffixAndValidation(t *testing.T) {
 			t.Fatal("overbroad match", host)
 		}
 	}
-	for _, entry := range []string{"domain:cloudfront.net", "domain:one.cloudfront.net", "full:amazonaws.com", "domain:co.uk", "full:127.0.0.1", "domain:foo.local", "domain:foo.lan", "domain:one..com", "domain:EXAMPLE.COM", "regexp:.*", "https://example.com", "domain:com"} {
+	for _, entry := range []string{"domain:cloudfront.net", "domain:one.cloudfront.net", "full:amazonaws.com", "domain:co.uk", "full:127.0.0.1", "domain:foo.local", "domain:foo.lan", "domain:one..com", "domain:EXAMPLE.COM", "regexp:.*", "https://example.com", "domain:com", "domain:full:example.com", "full:domain:example.com"} {
 		if _, err := siteauto.New([]string{entry}); err == nil {
 			t.Fatal("unsafe selector", entry)
 		}

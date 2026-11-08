@@ -51,7 +51,10 @@ func New(patterns []string) (*Catalog, error) {
 		if !full && !suffix {
 			return nil, errors.New("site auto domain needs domain: or full:")
 		}
-		host := strings.TrimPrefix(strings.TrimPrefix(pattern, "domain:"), "full:")
+		host := strings.TrimPrefix(pattern, "domain:")
+		if full {
+			host = strings.TrimPrefix(pattern, "full:")
+		}
 		if !validHost(host) || host != strings.ToLower(host) || host == "co.uk" || host == "co.jp" || host == "com.au" {
 			return nil, errors.New("invalid site auto host")
 		}
