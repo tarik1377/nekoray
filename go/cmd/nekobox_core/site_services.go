@@ -180,7 +180,15 @@ func serviceHeadlessRules(policies *sitebook.Policies) ([]option.HeadlessRule, e
 	for _, key := range keys {
 		entry := groups[key]
 		sort.Strings(entry.Hosts)
-		data, _ := json.Marshal(map[string]any{entry.Field: entry.Hosts, "port": []uint16{entry.Port}})
+		var value any = map[string]any{entry.Field: entry.Hosts, "port": []uint16{entry.Port}}
+		if entry.Field == "ip_cidr" {
+			names := make([]string, 0, len(entry.Hosts))
+			for _, prefix := range entry.Hosts {
+				names = append(names, strings.Split(prefix, "/")[0])
+			}
+			value = map[string]any{"type": "logical", "mode": "and", "rules": []any{value, map[string]any{"type": "logical", "mode": "or", "rules": []any{map[string]any{"domain_regex": []string{".+"}, "invert": true}, map[string]any{"domain": names}}}}}
+		}
+		data, _ := json.Marshal(value)
 		var rule option.HeadlessRule
 		if err := json.Unmarshal(data, &rule); err != nil {
 			return nil, err
@@ -310,9 +318,6 @@ func (s *siteServicesOutbound) choose(ctx context.Context, destination M.Socksad
 		return robloxauto.Proxy, entry.Origin, ""
 	}
 	s.refreshNetwork()
-	if !strings.HasPrefix(entry.Origin, "https://") {
-		return robloxauto.Proxy, entry.Origin, s.engine.Generation()
-	}
 	probe := robloxauto.WebsiteProbe(func(ctx context.Context, path robloxauto.Path, network, address string) (net.Conn, error) {
 		return s.detour(path).DialContext(ctx, network, M.ParseSocksaddr(address))
 	}, func(origin string) string {
@@ -320,7 +325,7 @@ func (s *siteServicesOutbound) choose(ctx context.Context, destination M.Socksad
 			return ""
 		}
 		h, p := sitebook.Address(origin)
-		if p == 443 && robloxauto.KnownHost(h) {
+		if strings.HasPrefix(origin, "https://") && p == 443 && robloxauto.KnownHost(h) {
 			return robloxauto.ProbeURL(h)
 		}
 		return origin + "/"

@@ -1,6 +1,7 @@
 package main
 
 import "strings"
+import "net/netip"
 
 // resolveBeforeDestinationIPRules restores domain-to-IP routing after the
 // removal of legacy inbound.domain_strategy in sing-box 1.13. Inserting at the
@@ -44,6 +45,15 @@ func resolveBeforeDestinationIPRules(config map[string]interface{}) {
 }
 
 func hasDestinationIPMatch(rule map[string]interface{}, definitions map[string]map[string]interface{}, visiting map[string]bool) bool {
+	// An exact-IP service guard explicitly excludes DNS names. Resolving all
+	// names before it would alter the final fallback and break proxy-side DNS.
+	if rule["type"] == "logical" && rule["mode"] == "and" && rule["invert"] != true {
+		for _, raw := range interfaceList(rule["rules"]) {
+			if child, ok := raw.(map[string]interface{}); ok && isLiteralIPNameGuard(child) {
+				return false
+			}
+		}
+	}
 	for _, field := range []string{"ip_cidr", "geoip"} {
 		if len(asStringSlice(rule[field])) > 0 {
 			return true
@@ -85,6 +95,52 @@ func hasDestinationIPMatch(rule map[string]interface{}, definitions map[string]m
 		delete(visiting, tag)
 	}
 	return false
+}
+
+func isLiteralIPNameGuard(rule map[string]interface{}) bool {
+	if rule["type"] != "logical" || rule["mode"] != "or" || rule["invert"] == true {
+		return false
+	}
+	children := interfaceList(rule["rules"])
+	if len(children) != 2 {
+		return false
+	}
+	empty, names := false, false
+	for _, raw := range children {
+		child, ok := raw.(map[string]interface{})
+		if !ok {
+			return false
+		}
+		if child["invert"] == true {
+			patterns := asStringSlice(child["domain_regex"])
+			if len(patterns) != 1 || patterns[0] != ".+" {
+				return false
+			}
+			for key := range child {
+				if key != "type" && key != "invert" && key != "domain_regex" {
+					return false
+				}
+			}
+			empty = true
+		} else {
+			values := asStringSlice(child["domain"])
+			if len(values) == 0 {
+				return false
+			}
+			for key := range child {
+				if key != "type" && key != "domain" {
+					return false
+				}
+			}
+			for _, name := range values {
+				if _, err := netip.ParseAddr(name); err != nil {
+					return false
+				}
+			}
+			names = true
+		}
+	}
+	return empty && names
 }
 
 func unconditionalResolve(rule map[string]interface{}) bool {

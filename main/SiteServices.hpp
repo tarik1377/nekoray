@@ -205,6 +205,15 @@ namespace GreenRhythm::SiteServices {
             rule["domain"] = QJsonArray{value.host()};
         return rule;
     }
+    inline QJsonObject literalIPRule(const QJsonObject &base, bool tcp = false) {
+        QJsonArray names;
+        for (const auto &value: base.value("ip_cidr").toArray()) names.append(value.toString().section('/', 0, 0));
+        const QJsonObject emptyName{{"domain_regex", QJsonArray{".+"}}, {"invert", true}}, namedIPs{{"domain", names}};
+        const QJsonObject guard{{"type", "logical"}, {"mode", "or"}, {"rules", QJsonArray{emptyName, namedIPs}}};
+        QJsonArray children{base, guard};
+        if (tcp) children.append(QJsonObject{{"network", "tcp"}});
+        return {{"type", "logical"}, {"mode", "and"}, {"rules", children}};
+    }
     inline QJsonArray headlessRules(const QJsonObject &library) {
         QMap<QString, QJsonObject> groups;
         for (const auto &entry: effective(library)) {
@@ -219,7 +228,7 @@ namespace GreenRhythm::SiteServices {
             }
         }
         QJsonArray rules;
-        for (const auto &rule: groups) rules.append(rule);
+        for (const auto &rule: groups) rules.append(rule.contains("ip_cidr") ? literalIPRule(rule) : rule);
         if (rules.isEmpty()) rules.append(QJsonObject{{"domain", QJsonArray{"site-services-disabled.invalid"}}, {"port", QJsonArray{65535}}});
         return rules;
     }
@@ -227,7 +236,10 @@ namespace GreenRhythm::SiteServices {
         QJsonArray rules;
         for (const auto &entry: effective(library)) {
             auto rule = endpointRule(entry.origin);
-            rule["network"] = "tcp";
+            if (rule.contains("ip_cidr"))
+                rule = literalIPRule(rule, true);
+            else
+                rule["network"] = "tcp";
             rule["outbound"] = entry.mode == "direct" ? QString("bypass") : proxy;
             rules.append(rule);
         }

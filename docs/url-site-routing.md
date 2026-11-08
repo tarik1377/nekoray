@@ -12,7 +12,7 @@ The result becomes a saved card, with quick **Auto / Direct / VPN** choices in
 the sidebar and a dependency table, rescan action and history. Manual mode
 applies to the whole saved set. Auto keeps per-origin availability decisions,
 scoped to the network, profile and endpoint policy. It prefers confirmed direct
-HTTPS, uses VPN when direct fails, retries expired decisions and invalidates
+HTTP(S), uses VPN when direct fails, retries expired decisions and invalidates
 failed TCP choices for subsequent connections. Existing connections keep their
 selected path. The first eight cards have sidebar shortcuts; all cards are on
 the Sites page. History is bounded and can restore a prior mode.
@@ -36,8 +36,8 @@ the Sites page. History is bounded and can restore a prior mode.
   VPNs retain priority. Advanced domain lists remain unchanged and available
   from the Sites page. The new matcher precedes only the legacy availability
   lists/final fallback. It handles saved TCP web endpoints; it does not change
-  game UDP, TUN settings, system proxy, DNS settings or OS routes. HTTP and
-  unconfirmed paths use VPN conservatively; manual Direct remains available.
+  game UDP, TUN settings, system proxy, DNS settings or OS routes. Unconfirmed
+  paths use VPN conservatively; manual Direct remains available.
 - Saving updates only `site_services`, atomically, with an original-settings
   backup and stale-editor check. If live application fails, the UI says that
   the saved policy is pending. Generic exports contain compatible static rules;

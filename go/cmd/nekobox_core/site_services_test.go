@@ -6,6 +6,7 @@ import (
 	"grpc_server/gen"
 	"io"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"testing"
@@ -47,6 +48,11 @@ func TestSiteServicesLiveRulesPreserveStreamsAndPorts(t *testing.T) {
 	defer box.Close()
 	item, _ := box.Outbound().Outbound(siteServicesTag)
 	manager := item.(*siteServicesOutbound)
+	matcher, _ := box.Router().RuleSet(siteServicesTag)
+	neighbour := adapter.InboundContext{Network: "tcp", Destination: M.ParseSocksaddr("other.example.com:8443"), DestinationAddresses: []netip.Addr{netip.MustParseAddr("203.0.113.9")}}
+	if matcher.Match(&neighbour) {
+		t.Fatal("literal IP URL captured a different hostname on the same shared address")
+	}
 	previous := activeSiteServices.Swap(manager)
 	defer activeSiteServices.Store(previous)
 	response, _ := (&server{}).SiteTools(context.Background(), &gen.SiteToolsReq{Action: "status"})
@@ -67,7 +73,12 @@ func TestSiteServicesLiveRulesPreserveStreamsAndPorts(t *testing.T) {
 	open := func(destination string) net.Conn {
 		t.Helper()
 		client, server := net.Pipe()
-		go box.Router().RouteConnection(context.Background(), server, adapter.InboundContext{Network: "tcp", Destination: M.ParseSocksaddr(destination)})
+		go func() {
+			if err := box.Router().RouteConnection(context.Background(), server, adapter.InboundContext{Network: "tcp", Destination: M.ParseSocksaddr(destination)}); err != nil {
+				t.Log("owned route error", destination, err)
+				server.Close()
+			}
+		}()
 		t.Cleanup(func() { client.Close() })
 		return client
 	}
@@ -130,6 +141,23 @@ func TestSiteServicesLiveRulesPreserveStreamsAndPorts(t *testing.T) {
 		}
 	}
 	group.Wait()
+	expect(old, 'D')
+	// Apply observations through the real Auto manager, not just the standalone
+	// chooser. HTTPS, an exact custom-port IP and explicit HTTP are independent.
+	autoLibrary := strings.Replace(ownedSiteLibrary("auto"), `"https://one.cloudfront.net"`, `"https://one.cloudfront.net","http://assets.example.com:8080"`, 1)
+	manager.jobMu.Lock()
+	manager.jobs["owned-seed"] = &siteScanJob{ID: "owned-seed", Scope: strings.Repeat("c", 64), State: "completed", Report: &sitebook.Report{Endpoints: []sitebook.Endpoint{
+		{Origin: "https://www.example.com", Direct: sitebook.Sample{Requests: 1, OK: 1}, Proxy: sitebook.Sample{Requests: 1, Failed: 1}},
+		{Origin: "http://assets.example.com:8080", Direct: sitebook.Sample{Requests: 1, OK: 1}, Proxy: sitebook.Sample{Requests: 1, Failed: 1}},
+		{Origin: "https://203.0.113.9:8443", Direct: sitebook.Sample{Requests: 1, Failed: 1}, Proxy: sitebook.Sample{Requests: 1, OK: 1}},
+	}}}
+	manager.jobMu.Unlock()
+	if _, err = manager.apply(strings.Repeat("c", 64), autoLibrary, "owned-seed"); err != nil {
+		t.Fatal(err)
+	}
+	expect(open("www.example.com:443"), 'D')
+	expect(open("assets.example.com:8080"), 'D')
+	expect(open("203.0.113.9:8443"), 'P')
 	expect(old, 'D')
 	if _, err = manager.apply(strings.Repeat("c", 64), ownedSiteLibrary("direct"), ""); err != nil {
 		t.Fatal(err)
