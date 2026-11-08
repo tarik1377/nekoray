@@ -8,6 +8,7 @@
 #include "main/RuRoutingPolicy.hpp"
 #include "main/GameVoiceRouting.hpp"
 #include "main/GameAppRules.hpp"
+#include "main/SiteRouting.hpp"
 
 #include <QApplication>
 #include <QFile>
@@ -1029,6 +1030,25 @@ namespace NekoGui {
         if (status->forTest) routingRules = {};
         if (!status->forTest) QJSONARRAY_ADD(routingRules, QString2QJsonObject(dataStore->custom_route_global)["rules"].toArray())
         QJSONARRAY_ADD(routingRules, status->routingRules)
+        // Explicit process/site/IP rules, local DNS and work-VPN routes retain
+        // precedence. Opt-in availability rules precede only the final fallback.
+        if (!status->forTest) {
+            GreenRhythm::SiteRouting::State sites;
+            if (!GreenRhythm::SiteRouting::parse(dataStore->site_routing, &sites, &status->result->error)) return;
+            QJsonArray automaticSites;
+            if (sites.enabled) for (const auto &entry : sites.entries)
+                if (entry.mode == "auto") automaticSites.append(entry.pattern);
+            if (!automaticSites.isEmpty() && !status->forExport) {
+                const auto scope = QString::fromLatin1(QCryptographicHash::hash(
+                    QJsonDocument(status->outbounds).toJson(QJsonDocument::Compact) + GreenRhythm::SiteRouting::serialize(sites).toUtf8(),
+                    QCryptographicHash::Sha256).toHex());
+                status->outbounds.append(QJsonObject{{"type","greenrhythm-site-auto"},{"tag","site-auto"},
+                    {"direct","bypass"},{"proxy",tagProxy},{"cache_scope",scope},{"cache",true},{"site_domains",automaticSites}});
+                status->result->coreConfig.insert("outbounds",status->outbounds);
+            }
+            const auto siteRules = GreenRhythm::SiteRouting::rules(sites,tagProxy,status->forExport);
+            QJSONARRAY_ADD(routingRules, siteRules)
+        }
         if (!status->forTest) QJSONARRAY_ADD(routingRules, schemeRules.fallback)
 
         // ОБХОД ФИЛЬТРАЦИИ НА ПРЯМОМ ПУТИ — СРЕДСТВАМИ ЯДРА, БЕЗ ДРАЙВЕРА.

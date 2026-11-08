@@ -304,6 +304,8 @@ set(PROJECT_SOURCES
         ui/GameProgramsDialog.hpp
         ui/RobloxRoutingDialog.cpp
         ui/RobloxRoutingDialog.hpp
+        ui/SiteRoutingDialog.cpp
+        ui/SiteRoutingDialog.hpp
         ui/dialog_manage_routes.cpp
         ui/dialog_manage_routes.h
         ui/dialog_manage_routes.ui
@@ -913,6 +915,10 @@ add_executable(program_routing_test EXCLUDE_FROM_ALL test/ProgramRoutingTest.cpp
 target_include_directories(program_routing_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(program_routing_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 add_executable(roblox_routing_test EXCLUDE_FROM_ALL test/RobloxRoutingTest.cpp ui/RobloxRoutingDialog.cpp main/AppFont.cpp)
+add_executable(site_routing_test EXCLUDE_FROM_ALL test/SiteRoutingTest.cpp ui/SiteRoutingDialog.cpp main/AppFont.cpp)
+target_include_directories(site_routing_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(site_routing_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
+target_compile_definitions(site_routing_test PRIVATE GR_SITE_FIXTURE="${CMAKE_SOURCE_DIR}/go/cmd/nekobox_core/testdata/site_preset.json")
 target_include_directories(roblox_routing_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(roblox_routing_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 target_compile_definitions(roblox_routing_test PRIVATE GR_ROBLOX_FIXTURE="${CMAKE_SOURCE_DIR}/go/cmd/nekobox_core/testdata/roblox_split_rules.json")
@@ -1017,6 +1023,7 @@ target_include_directories(program_watch_lifetime_test PRIVATE ${CMAKE_SOURCE_DI
 target_link_libraries(program_watch_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
 set(GR_TEST_TARGETS
+        site_routing_test
         service_health_test
         profile_diagnostics_test
         browser_network_hints_test

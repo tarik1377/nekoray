@@ -19,15 +19,17 @@ import (
 	M "github.com/sagernet/sing/common/metadata"
 	"github.com/sagernet/sing/service"
 	"nekobox_core/robloxauto"
+	"nekobox_core/siteauto"
 )
 
 const robloxAutoType = "greenrhythm-roblox-auto"
 
 type robloxAutoOptions struct {
-	Direct string `json:"direct"`
-	Proxy  string `json:"proxy"`
-	Scope  string `json:"cache_scope"`
-	Cache  bool   `json:"cache"`
+	Direct      string   `json:"direct"`
+	Proxy       string   `json:"proxy"`
+	Scope       string   `json:"cache_scope"`
+	Cache       bool     `json:"cache"`
+	SiteDomains []string `json:"site_domains,omitempty"`
 }
 type robloxAutoOutbound struct {
 	outbound.Adapter
@@ -42,13 +44,28 @@ type robloxAutoOutbound struct {
 	mu            sync.Mutex
 	checked       time.Time
 	identity      string
+	sites         *siteauto.Catalog
 }
 
 func registerRobloxAuto(ctx context.Context) {
 	registry := service.FromContext[adapter.OutboundRegistry](ctx).(*outbound.Registry)
 	outbound.Register[robloxAutoOptions](registry, robloxAutoType, newRobloxAuto)
+	outbound.Register[robloxAutoOptions](registry, "greenrhythm-site-auto", newSiteAuto)
+}
+func newSiteAuto(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options robloxAutoOptions) (adapter.Outbound, error) {
+	catalog, err := siteauto.New(options.SiteDomains)
+	if err != nil {
+		return nil, err
+	}
+	return newAvailabilityOutbound(ctx, logger, tag, options, catalog)
 }
 func newRobloxAuto(ctx context.Context, _ adapter.Router, logger log.ContextLogger, tag string, options robloxAutoOptions) (adapter.Outbound, error) {
+	if len(options.SiteDomains) != 0 {
+		return nil, errors.New("Roblox auto does not accept website catalogs")
+	}
+	return newAvailabilityOutbound(ctx, logger, tag, options, nil)
+}
+func newAvailabilityOutbound(ctx context.Context, logger log.ContextLogger, tag string, options robloxAutoOptions, sites *siteauto.Catalog) (adapter.Outbound, error) {
 	if options.Direct == "" || options.Proxy == "" || options.Direct == options.Proxy || options.Direct == tag || options.Proxy == tag {
 		return nil, errors.New("Roblox auto needs independent direct/VPN outbounds")
 	}
@@ -59,10 +76,14 @@ func newRobloxAuto(ctx context.Context, _ adapter.Router, logger log.ContextLogg
 		return nil, errors.New("invalid Roblox cache scope")
 	}
 	engine := robloxauto.New(ctx)
-	s := &robloxAutoOutbound{Adapter: outbound.NewAdapter(robloxAutoType, tag, []string{"tcp", "udp"}, []string{options.Direct, options.Proxy}),
-		ctx: ctx, manager: service.FromContext[adapter.OutboundManager](ctx), network: service.FromContext[adapter.NetworkManager](ctx), logger: logger, options: options, engine: engine}
+	kind, directory := robloxAutoType, ".roblox-auto"
+	if sites != nil {
+		kind, directory = "greenrhythm-site-auto", ".site-auto"
+	}
+	s := &robloxAutoOutbound{Adapter: outbound.NewAdapter(kind, tag, []string{"tcp", "udp"}, []string{options.Direct, options.Proxy}),
+		ctx: ctx, manager: service.FromContext[adapter.OutboundManager](ctx), network: service.FromContext[adapter.NetworkManager](ctx), logger: logger, options: options, engine: engine, sites: sites}
 	if options.Cache {
-		s.store = &robloxauto.Store{Directory: filepath.Join(".", ".roblox-auto"), Scope: strings.ToLower(options.Scope)}
+		s.store = &robloxauto.Store{Directory: filepath.Join(".", directory), Scope: strings.ToLower(options.Scope), AllowHost: s.known}
 		engine.SetPersistence(func(network string, entries map[string]robloxauto.Entry, force bool) {
 			if err := s.store.Save(network, entries, force); err != nil {
 				logger.Warn("Roblox availability cache could not be saved; using in-memory results")
@@ -155,20 +176,47 @@ func autoHost(ctx context.Context, destination M.Socksaddr) string {
 	}
 	return destination.Addr.String()
 }
+func (s *robloxAutoOutbound) known(host string) bool {
+	if s.sites != nil {
+		return s.sites.Contains(host)
+	}
+	return robloxauto.KnownHost(host)
+}
 func (s *robloxAutoOutbound) chooseTCP(ctx context.Context, destination M.Socksaddr) robloxauto.Path {
 	host := autoHost(ctx, destination)
 	if robloxauto.Local(destination.Addr.String()) || robloxauto.Local(host) {
 		return robloxauto.Direct
 	}
+	if s.sites != nil {
+		if metadata := adapter.ContextFrom(ctx); metadata != nil {
+			for _, address := range metadata.DestinationAddresses {
+				if robloxauto.Local(address.String()) {
+					return robloxauto.Direct
+				}
+			}
+		}
+	}
 	// Unknown plugin/service hosts retain the old full-VPN policy and are
 	// never turned into arbitrary health-check/SSRF destinations.
-	if destination.Port != 443 || !robloxauto.KnownHost(host) {
+	if destination.Port != 443 || !s.known(host) {
 		return robloxauto.Proxy
 	}
 	s.refreshNetwork()
-	probe := robloxauto.HTTPSProbe(func(ctx context.Context, path robloxauto.Path, network, address string) (net.Conn, error) {
+	dial := func(ctx context.Context, path robloxauto.Path, network, address string) (net.Conn, error) {
 		return s.detour(path).DialContext(ctx, network, M.ParseSocksaddr(address))
-	})
+	}
+	probe := robloxauto.HTTPSProbe(dial)
+	if s.sites != nil {
+		probe = robloxauto.WebsiteProbe(dial, func(host string) string {
+			if !s.sites.Contains(host) {
+				return ""
+			}
+			if robloxauto.KnownHost(host) {
+				return robloxauto.ProbeURL(host)
+			}
+			return s.sites.ProbeURL(host)
+		})
+	}
 	return s.engine.TCP(ctx, host, probe)
 }
 func (s *robloxAutoOutbound) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
@@ -195,7 +243,7 @@ func (s *robloxAutoOutbound) DialContext(ctx context.Context, network string, de
 	conn, err := s.detour(path).DialContext(ctx, network, destination)
 	if err != nil {
 		s.engine.InvalidateTCP(autoHost(ctx, destination), s.engine.Generation(), path)
-	} else if destination.Port == 443 && robloxauto.KnownHost(autoHost(ctx, destination)) {
+	} else if destination.Port == 443 && s.known(autoHost(ctx, destination)) {
 		host, generation := autoHost(ctx, destination), s.engine.Generation()
 		conn = robloxauto.TrackTCP(conn, 4*time.Second, func() { s.engine.InvalidateTCP(host, generation, path) })
 	}
@@ -239,7 +287,7 @@ func (s *robloxSelectedOutbound) DialContext(ctx context.Context, network string
 		return nil, err
 	}
 	if s.key == "" {
-		if !strings.HasPrefix(network, "udp") && robloxauto.KnownHost(s.host) && destination.Port == 443 {
+		if !strings.HasPrefix(network, "udp") && s.parent.known(s.host) && destination.Port == 443 {
 			return robloxauto.TrackTCP(conn, 4*time.Second, func() { s.parent.engine.InvalidateTCP(s.host, s.generation, s.path) }), nil
 		}
 		return conn, nil
@@ -264,6 +312,11 @@ func (s *robloxAutoOutbound) chooseUDP(ctx context.Context, destination M.Socksa
 	host := autoHost(ctx, destination)
 	if robloxauto.Local(destination.Addr.String()) || robloxauto.Local(host) {
 		return robloxauto.Direct, "", ""
+	}
+	// Site availability is HTTPS-only. Never infer QUIC/voice health from TCP
+	// or opt an unrelated UDP flow into the Roblox UDP learner.
+	if s.sites != nil {
+		return robloxauto.Proxy, "", ""
 	}
 	s.refreshNetwork()
 	key := destination.String()

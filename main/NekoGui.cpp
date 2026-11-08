@@ -295,6 +295,7 @@ namespace NekoGui {
         _add(new configItem("game_app_rules", &game_app_rules, itemType::string));
         _add(new configItem("roblox_split_processes", &roblox_split_processes, itemType::string));
         _add(new configItem("roblox_auto_processes", &roblox_auto_processes, itemType::string));
+        _add(new configItem("site_routing", &site_routing, itemType::string));
         _add(new configItem("dpi_fragment", &dpi_fragment, itemType::boolean));
         _add(new configItem("dpi_module_enabled", &dpi_module_enabled, itemType::boolean));
         _add(new configItem("dpi_module_strategy", &dpi_module_strategy, itemType::string));

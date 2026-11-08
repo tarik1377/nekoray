@@ -15,6 +15,7 @@
 #include "main/RuRoutingPolicy.hpp"
 #include "main/GameVoiceRouting.hpp"
 #include "main/ProgramRouting.hpp"
+#include "main/SiteRouting.hpp"
 #include "main/HealthProfiles.hpp"
 #include "sub/GroupUpdater.hpp"
 
@@ -622,6 +623,31 @@ int main(int argc, char **argv) {
     NekoGui::dataStore->vpn_internal_tun = previousTun;
     NekoGui::dataStore->spmode_vpn = previousVpn;
     NekoGui::dataStore->routing_defaults_choice = originalChoice;
+
+    {
+        const auto previousSites=NekoGui::dataStore->site_routing;
+        const auto untouchedRoute=GreenRhythm::RouteState::completeSnapshot(*NekoGui::dataStore->routing);
+        const auto disabled=buildCurrent();
+        check(!QJsonDocument(disabled->coreConfig).toJson().contains("greenrhythm-site-auto"),"unconfigured website auto emits no outbound or route");
+        GreenRhythm::SiteRouting::State sites;QString siteError;
+        check(GreenRhythm::SiteRouting::fromLists(true,"domain:owned-site.example", "full:direct.owned-site.example", "full:vpn.owned-site.example",&sites,&siteError),"website catalog parses for actual builder");
+        NekoGui::dataStore->site_routing=GreenRhythm::SiteRouting::serialize(sites);
+        const auto built=buildCurrent();
+        check(built->error.isEmpty(),"actual website runtime config builds without modifying profile settings");
+        QJsonObject autoOutbound;int outbounds=0;
+        for(const auto &value:built->coreConfig.value("outbounds").toArray())if(value.toObject().value("type")=="greenrhythm-site-auto"){autoOutbound=value.toObject();++outbounds;}
+        check(outbounds==1 && autoOutbound.value("site_domains").toArray()==QJsonArray{"domain:owned-site.example"}
+            && autoOutbound.value("cache_scope").toString().size()==64,"actual builder sends only opted-in auto hosts to a profile-scoped outbound");
+        const auto rules=runtimeRules(built);int index=-1;
+        for(int i=0;i<rules.size();++i)if(rules.at(i).toObject().value("outbound")=="site-auto")index=i;
+        check(index>=0 && rules.at(index).toObject().value("network")=="tcp" && rules.at(index).toObject().value("port").toArray()==QJsonArray{443},"actual browser route uses domains rather than a browser-wide process override");
+        const auto exported=NekoGui::BuildConfig(NekoGui::profileManager->GetProfile(firstId),false,true);
+        check(!QJsonDocument(exported->coreConfig).toJson().contains("greenrhythm-site-auto") && !QJsonDocument(exported->coreConfig).toJson().contains("\"site-auto\""),"generic export contains no unsupported website outbound");
+        const auto latency=NekoGui::BuildConfig(NekoGui::profileManager->GetProfile(firstId),true,false);
+        check(!QJsonDocument(latency->coreConfig).toJson().contains("greenrhythm-site-auto"),"latency checks cannot start website probing");
+        NekoGui::dataStore->site_routing=previousSites;
+        check(GreenRhythm::RouteState::completeSnapshot(*NekoGui::dataStore->routing)==untouchedRoute,"website config generation preserves the complete original route scheme");
+    }
 
     check(NekoGui::dataStore->geodata_auto_update
           && defaultConfig->coreConfig.value("geodata_update").toObject().value("enabled").toBool(),

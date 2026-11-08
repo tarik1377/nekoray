@@ -577,6 +577,10 @@ namespace GreenRhythm {
         connect(shareToLanToggle, &QPushButton::clicked, this, &MainShell::shareToLanToggled);
         shareToLanDetail = addRow(tr("Раздавать VPN другим устройствам"), QString(), "gr-devices", shareToLanToggle); shareToLanDetail->setObjectName("grShareToLanDetail");
         beginSection(tr("Сайты, игры и рабочие VPN"));
+        auto *siteRouting = new QPushButton(tr("Настроить"), page); siteRouting->setObjectName("grSiteRouting");
+        siteRouting->setAccessibleName(tr("Умный выбор пути для сайтов"));
+        connect(siteRouting, &QPushButton::clicked, this, &MainShell::siteRoutingRequested);
+        addRow(tr("Умный выбор пути для сайтов"), tr("Авто, напрямую или через VPN для списка доменов. Набор Roblox и CDN добавляется одной кнопкой."), "gr-routes", siteRouting);
 #ifdef Q_OS_WIN
         auto *gateways = new QPushButton(tr("Настроить"), page); gateways->setObjectName("grTunBypass");
         gateways->setAccessibleName(tr("Рабочие VPN и виртуальные машины"));

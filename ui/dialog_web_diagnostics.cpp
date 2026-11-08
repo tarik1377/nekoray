@@ -21,6 +21,8 @@ DialogWebDiagnostics::DialogWebDiagnostics(QWidget *parent) : QDialog(parent) {
     auto *explanation = new QLabel(tr("Если сайт открывается в другом клиенте или внутренний ресурс не находится, сравните два пути подключения."), this);
     explanation->setWordWrap(true); layout->addWidget(explanation);
     hintsText = new QLabel(this); hintsText->setObjectName(QStringLiteral("grBrowserDnsHints")); hintsText->setWordWrap(true); layout->addWidget(hintsText);
+    auto *sites = new QPushButton(tr("Умный выбор пути для сайтов…"), this); sites->setObjectName("grAdaptiveSites"); layout->addWidget(sites);
+    connect(sites, &QPushButton::clicked, this, &DialogWebDiagnostics::siteRoutingRequested);
     routingHint = new QLabel(this); routingHint->setObjectName("grBrowserRoutingHint"); routingHint->setWordWrap(true); routingHint->setTextFormat(Qt::PlainText); layout->addWidget(routingHint);
     auto *routingActions = new QHBoxLayout;
     routingBrowser = new QComboBox(this); routingBrowser->setObjectName("grRoutingBrowser"); routingBrowser->setAccessibleName(tr("Браузер с отдельным правилом"));

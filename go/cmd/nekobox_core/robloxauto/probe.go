@@ -17,10 +17,19 @@ func HTTPSProbe(dial Dial) Probe {
 	return httpsProbe(dial, &tls.Config{MinVersion: tls.VersionTLS12})
 }
 
+// WebsiteProbe is limited to a separately validated user-selected catalog.
+// It never probes captured URLs, follows redirects or forwards account data.
+func WebsiteProbe(dial Dial, urlFor func(string) string) Probe {
+	return policyProbe(dial, &tls.Config{MinVersion: tls.VersionTLS12}, urlFor)
+}
+
 // TLS roots are injectable only by same-package owned-server tests.
 func httpsProbe(dial Dial, tlsOptions *tls.Config) Probe {
+	return policyProbe(dial, tlsOptions, ProbeURL)
+}
+func policyProbe(dial Dial, tlsOptions *tls.Config, urlFor func(string) string) Probe {
 	return func(ctx context.Context, path Path, host string) Health {
-		url := ProbeURL(host)
+		url := urlFor(host)
 		if url == "" {
 			return Unknown
 		}
@@ -36,7 +45,7 @@ func httpsProbe(dial Dial, tlsOptions *tls.Config) Probe {
 		if err != nil {
 			return Unknown
 		}
-		request.Header.Set("User-Agent", "GreenRhythm-Roblox-Availability/1")
+		request.Header.Set("User-Agent", "GreenRhythm-Availability/1")
 		response, err := client.Do(request)
 		if err != nil {
 			return Failed
