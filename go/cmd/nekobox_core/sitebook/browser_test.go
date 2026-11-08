@@ -34,7 +34,7 @@ func TestBrowserGuardianCleansAfterParentExit(t *testing.T) {
 	if FindBrowser() == "" {
 		t.Skip("Chromium browser not installed")
 	}
-	directory := t.TempDir()
+	directory := shortBrowserTestTemp(t)
 	for _, key := range []string{"TEMP", "TMP", "TMPDIR"} {
 		t.Setenv(key, directory)
 	}
@@ -59,12 +59,24 @@ func TestBrowserGuardianCleansAfterParentExit(t *testing.T) {
 	t.Fatal("guardian left a browser profile after its parent exited")
 }
 
+// Chromium creates AF_UNIX socket names below TMPDIR. Go's per-test directory
+// embeds the long test name and exceeds Linux's 108-byte socket-path limit.
+func shortBrowserTestTemp(t *testing.T) string {
+	t.Helper()
+	directory, err := os.MkdirTemp("", "gr-site-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(directory) })
+	return directory
+}
+
 func TestRealBrowserCapturesJSXHRFramesAndCleansItsProfile(t *testing.T) {
 	browser := FindBrowser()
 	if browser == "" {
 		t.Skip("Chromium browser not installed")
 	}
-	privateTemp := t.TempDir()
+	privateTemp := shortBrowserTestTemp(t)
 	for _, key := range []string{"TEMP", "TMP", "TMPDIR"} {
 		t.Setenv(key, privateTemp)
 	}

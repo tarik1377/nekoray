@@ -765,7 +765,7 @@ namespace GreenRhythm {
 
     void MainShell::setSavedSites(const QJsonObject &library) {
         if(sitesPage)sitesPage->setLibrary(library);
-        if(!savedSiteBox)return;auto *layout=savedSiteBox->layout();while(auto *item=layout->takeAt(0)){if(item->widget())item->widget()->deleteLater();delete item;}
+        if(!savedSiteBox)return;auto *layout=savedSiteBox->layout();while(auto *item=layout->takeAt(0)){if(item->widget()){item->widget()->hide();item->widget()->deleteLater();}delete item;}
         const auto sites=library.value("sites").toArray();int count=0;
         for(const auto &value:sites){if(count++>=8)break;const auto site=value.toObject();const auto id=site.value("id").toString();const auto mode=site.value("mode").toString();auto *row=new QWidget(savedSiteBox);auto *line=new QHBoxLayout(row);line->setContentsMargins(0,0,0,0);line->setSpacing(3);
             auto *name=new SiteShortcutButton(site.value("title").toString(),row);name->setObjectName("grSavedSiteOpen");name->setProperty("siteId",id);name->setToolTip(site.value("title").toString()+"\n"+site.value("url").toString());name->setStyleSheet("padding: 5px 6px; text-align: left;");name->setMinimumWidth(0);name->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);line->addWidget(name,1);

@@ -70,7 +70,7 @@ func (e *Engine) Restore(network string, entries map[string]Entry) {
 		return
 	}
 	for k, v := range entries {
-		e.entries[k] = v
+		e.putLocked(k, v)
 	}
 }
 func (s *Store) Save(network string, entries map[string]Entry, force bool) error {

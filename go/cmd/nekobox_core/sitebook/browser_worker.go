@@ -125,7 +125,7 @@ func startBrowser(ctx context.Context, browser, proxy string) (*cdp, func(), err
 	case <-ctx.Done():
 		cleanup()
 		return nil, nil, ctx.Err()
-	case <-time.After(10 * time.Second):
+	case <-time.After(12 * time.Second):
 		cleanup()
 		return nil, nil, errors.New("browser launch timed out")
 	}

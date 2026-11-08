@@ -278,7 +278,7 @@ func launchBrowser(ctx context.Context, browser, proxy string) (string, func(), 
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
-	args := []string{"--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-extensions", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-default-apps", "--mute-audio", "--disable-quic", "--webrtc-ip-handling-policy=disable_non_proxied_udp", "--renderer-process-limit=2", "--disk-cache-size=1", "--media-cache-size=1", "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", "--user-data-dir=" + directory, "--proxy-server=" + proxy, "--proxy-bypass-list=<-loopback>", "about:blank"}
+	args := []string{"--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-extensions", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-default-apps", "--mute-audio", "--disable-quic", "--disable-features=HttpsFirstBalancedModeAutoEnable", "--webrtc-ip-handling-policy=disable_non_proxied_udp", "--renderer-process-limit=2", "--disk-cache-size=1", "--media-cache-size=1", "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", "--user-data-dir=" + directory, "--proxy-server=" + proxy, "--proxy-bypass-list=<-loopback>", "about:blank"}
 	command := exec.CommandContext(ctx, browser, args...)
 	prepareBrowser(command)
 	// Nil connects both streams to the null device, without copy goroutines
@@ -304,7 +304,7 @@ func launchBrowser(ctx context.Context, browser, proxy string) (string, func(), 
 	}
 	cleanup := func() { contain(); command.Process.Kill(); command.Wait(); cleanupDir() }
 	port := 0
-	deadline := time.Now().Add(7 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		data, e := os.ReadFile(filepath.Join(directory, "DevToolsActivePort"))
 		if e == nil {
