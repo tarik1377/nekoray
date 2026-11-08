@@ -47,7 +47,9 @@ SiteRoutingDialog::SiteRoutingDialog(const QString &saved, QWidget *parent) : QD
     text(tr("Авто проверяет HTTPS на порту 443 без cookies и входа в аккаунт. Это проверка доступности, а не успешного входа. Если сайт ограничивает страну аккаунта, выберите «Через VPN». Работающие соединения не переносятся; QUIC/UDP остаётся по вашей схеме."));
     text(tr("Явные правила программ, существующие правила сайтов/IP и рабочие VPN имеют приоритет. Для браузера используйте «Помощь браузеру → По правилам сайтов» и системный прокси либо TUN. Расширение прокси браузера может выбирать другой путь."));
     text(tr("Сохраняется только этот набор с резервной копией. Применение — при следующем подключении GreenRhythm. Ваши остальные маршруты и текущее подключение сохраняются."));
-    status = new QLabel(canvas); status->setObjectName("siteRoutingStatus"); status->setWordWrap(true); status->setTextFormat(Qt::PlainText); layout->addWidget(status);
+    // Save feedback belongs beside the fixed footer. A pasted-list error must
+    // not appear below the viewport and make a working Save button look inert.
+    status = new QLabel(this); status->setObjectName("siteRoutingStatus"); status->setWordWrap(true); status->setTextFormat(Qt::PlainText); outer->addWidget(status);
     SiteRouting::State state; QString error;
     valid = SiteRouting::parse(saved,&state,&error); enabled->setChecked(state.enabled);
     for (const auto &entry : state.entries) (entry.mode == "auto" ? automatic : entry.mode == "direct" ? direct : proxy)->appendPlainText(entry.pattern);

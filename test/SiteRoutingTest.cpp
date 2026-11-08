@@ -66,8 +66,10 @@ int main(int argc,char **argv) {
     check(commits==0 && dialog.findChild<QCheckBox *>("siteRoutingEnabled")->isChecked(),"preset changes only a draft until Save");
     save->click();check(commits==1 && SiteRouting::parse(result,&state,&error) && state.enabled && state.entries.size()==72,"actual Save button persists a deduplicated enabled preset");
     SiteRoutingDialog bad({});bad.setCommitter([&](const QString &,QString *){++commits;return true;});
-    bad.findChild<QPlainTextEdit *>("siteAutoList")->setPlainText("not-a-domain");bad.accept();
+    bad.findChild<QPlainTextEdit *>("siteAutoList")->setPlainText("not-a-domain");bad.show();app.processEvents();bad.accept();app.processEvents();
     check(commits==1 && !bad.findChild<QLabel *>("siteRoutingStatus")->text().isEmpty(),"invalid pasted input stays open with an actionable error and no write");
+    auto *errorLabel=bad.findChild<QLabel *>("siteRoutingStatus");
+    check(errorLabel->isVisible() && bad.rect().contains(QRect(errorLabel->mapTo(&bad,QPoint{}),errorLabel->size())),"Save error remains visible beside the fixed footer without scrolling");
     SiteRoutingDialog cancelled(good);cancelled.setCommitter([&](const QString &,QString *){++commits;return true;});cancelled.reject();
     check(commits==1,"Cancel leaves even an existing enabled set unchanged");
     SiteRoutingDialog bulk(good);bulk.setCommitter([&](const QString &text,QString *){++commits;result=text;return true;});
