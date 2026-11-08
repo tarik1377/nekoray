@@ -633,7 +633,10 @@ int main(int argc, char **argv) {
         check(GreenRhythm::SiteRouting::fromLists(true,"domain:owned-site.example", "full:direct.owned-site.example", "full:vpn.owned-site.example",&sites,&siteError),"website catalog parses for actual builder");
         NekoGui::dataStore->site_routing=GreenRhythm::SiteRouting::serialize(sites);
         const auto built=buildCurrent();
-        check(built->error.isEmpty(),"actual website runtime config builds without modifying profile settings");
+        // GUI-only CI runs before the GeoIP/GeoSite package is assembled. Keep
+        // that pre-existing asset diagnostic, rather than pretending a route
+        // fixture is also a complete installed distribution.
+        check(built->error==disabled->error && built->coreConfig.contains("route"),"website config adds no build error and preserves existing asset validation");
         QJsonObject autoOutbound;int outbounds=0;
         for(const auto &value:built->coreConfig.value("outbounds").toArray())if(value.toObject().value("type")=="greenrhythm-site-auto"){autoOutbound=value.toObject();++outbounds;}
         check(outbounds==1 && autoOutbound.value("site_domains").toArray()==QJsonArray{"domain:owned-site.example"}
