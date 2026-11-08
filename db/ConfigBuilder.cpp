@@ -9,6 +9,7 @@
 #include "main/GameVoiceRouting.hpp"
 #include "main/GameAppRules.hpp"
 #include "main/SiteRouting.hpp"
+#include "main/SiteServices.hpp"
 
 #include <QApplication>
 #include <QFile>
@@ -1030,6 +1031,20 @@ namespace NekoGui {
         if (status->forTest) routingRules = {};
         if (!status->forTest) QJSONARRAY_ADD(routingRules, QString2QJsonObject(dataStore->custom_route_global)["rules"].toArray())
         QJSONARRAY_ADD(routingRules, status->routingRules)
+        QJsonArray serviceRuleSets;
+        if(!status->forTest){
+            QJsonObject library;
+            if(!GreenRhythm::SiteServices::parse(dataStore->site_services,&library,&status->result->error))return;
+            if(status->forExport){const auto serviceRules=GreenRhythm::SiteServices::exportRules(library,tagProxy);QJSONARRAY_ADD(routingRules,serviceRules)}
+            else{
+                const auto scope=QString::fromLatin1(QCryptographicHash::hash(QJsonDocument(status->outbounds).toJson(QJsonDocument::Compact),QCryptographicHash::Sha256).toHex());
+                status->outbounds.append(QJsonObject{{"type","greenrhythm-site-services"},{"tag","site-services"},{"direct","bypass"},{"proxy",tagProxy},
+                    {"cache_scope",scope},{"cache",true},{"fallback",dataStore->routing->def_outbound},{"library",GreenRhythm::SiteServices::encode(GreenRhythm::SiteServices::policy(library))}});
+                status->result->coreConfig.insert("outbounds",status->outbounds);
+                serviceRuleSets.append(QJsonObject{{"type","inline"},{"tag","site-services"},{"rules",GreenRhythm::SiteServices::headlessRules(library)}});
+                routingRules.append(QJsonObject{{"network","tcp"},{"rule_set",QJsonArray{"site-services"}},{"outbound","site-services"}});
+            }
+        }
         // Explicit process/site/IP rules, local DNS and work-VPN routes retain
         // precedence. Opt-in availability rules precede only the final fallback.
         if (!status->forTest) {
@@ -1138,6 +1153,7 @@ namespace NekoGui {
             routeObj.remove("geosite");
             routeObj.remove("auto_detect_interface");
         }
+        if(!serviceRuleSets.isEmpty())routeObj.insert("rule_set",serviceRuleSets);
         status->result->coreConfig.insert("route", routeObj);
         // Core-owned local GeoIP cache keeps offline startup independent of
         // GitHub availability. Exported configs remain standard sing-box JSON.

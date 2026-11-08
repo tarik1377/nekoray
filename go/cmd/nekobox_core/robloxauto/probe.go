@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -29,8 +30,8 @@ func httpsProbe(dial Dial, tlsOptions *tls.Config) Probe {
 }
 func policyProbe(dial Dial, tlsOptions *tls.Config, urlFor func(string) string) Probe {
 	return func(ctx context.Context, path Path, host string) Health {
-		url := urlFor(host)
-		if url == "" {
+		requestURL := urlFor(host)
+		if requestURL == "" {
 			return Unknown
 		}
 		transport := &http.Transport{Proxy: nil, DisableKeepAlives: true, MaxResponseHeaderBytes: 16384,
@@ -41,7 +42,7 @@ func policyProbe(dial Dial, tlsOptions *tls.Config, urlFor func(string) string) 
 		defer transport.CloseIdleConnections()
 		client := &http.Client{Transport: transport, Timeout: 3 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 		if err != nil {
 			return Unknown
 		}
@@ -55,7 +56,11 @@ func policyProbe(dial Dial, tlsOptions *tls.Config, urlFor func(string) string) 
 		if err != nil {
 			return Failed
 		}
-		return Classify(host, response.StatusCode, response.Header.Get("Content-Type"), body)
+		classificationHost := host
+		if parsed, err := url.Parse(requestURL); err == nil {
+			classificationHost = parsed.Hostname()
+		}
+		return Classify(classificationHost, response.StatusCode, response.Header.Get("Content-Type"), body)
 	}
 }
 

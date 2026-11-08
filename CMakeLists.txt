@@ -306,6 +306,8 @@ set(PROJECT_SOURCES
         ui/RobloxRoutingDialog.hpp
         ui/SiteRoutingDialog.cpp
         ui/SiteRoutingDialog.hpp
+        ui/SiteServicesController.cpp
+        ui/SiteServicesController.hpp
         ui/dialog_manage_routes.cpp
         ui/dialog_manage_routes.h
         ui/dialog_manage_routes.ui
@@ -916,6 +918,10 @@ target_include_directories(program_routing_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(program_routing_test PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 add_executable(roblox_routing_test EXCLUDE_FROM_ALL test/RobloxRoutingTest.cpp ui/RobloxRoutingDialog.cpp main/AppFont.cpp)
 add_executable(site_routing_test EXCLUDE_FROM_ALL test/SiteRoutingTest.cpp ui/SiteRoutingDialog.cpp main/AppFont.cpp)
+add_executable(site_services_test EXCLUDE_FROM_ALL test/SiteServicesTest.cpp ui/SiteServicesController.cpp ui/SiteServicesController.hpp ui/MainShell.cpp ui/Icons.cpp ui/ServerCardDelegate.cpp res/neko.qrc main/AppFont.cpp)
+set_target_properties(site_services_test PROPERTIES AUTOMOC ON AUTORCC ON)
+target_include_directories(site_services_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(site_services_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::Svg)
 target_include_directories(site_routing_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(site_routing_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
 target_compile_definitions(site_routing_test PRIVATE GR_SITE_FIXTURE="${CMAKE_SOURCE_DIR}/go/cmd/nekobox_core/testdata/site_preset.json")
@@ -990,6 +996,9 @@ if (NOT NKR_NO_GRPC)
     add_executable(rpc_deadline_test EXCLUDE_FROM_ALL test/RpcDeadlineTest.cpp rpc/gRPC.cpp)
     target_include_directories(rpc_deadline_test PRIVATE ${CMAKE_SOURCE_DIR})
     target_link_libraries(rpc_deadline_test PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network myproto)
+    add_executable(site_tools_rpc_test EXCLUDE_FROM_ALL test/SiteToolsRpcTest.cpp rpc/SiteToolsRpc.cpp)
+    target_include_directories(site_tools_rpc_test PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(site_tools_rpc_test PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network myproto)
     add_executable(traffic_update_queue_test
             test/TrafficUpdateQueueTest.cpp
             db/traffic/TrafficLooper.cpp
@@ -1023,6 +1032,7 @@ target_include_directories(program_watch_lifetime_test PRIVATE ${CMAKE_SOURCE_DI
 target_link_libraries(program_watch_lifetime_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
 set(GR_TEST_TARGETS
+        site_services_test
         site_routing_test
         service_health_test
         profile_diagnostics_test
@@ -1120,6 +1130,7 @@ if (NOT NKR_NO_GRPC)
     list(APPEND GR_TEST_TARGETS update_progress_test)
     list(APPEND GR_TEST_TARGETS traffic_update_queue_test)
     list(APPEND GR_TEST_TARGETS rpc_deadline_test)
+    list(APPEND GR_TEST_TARGETS site_tools_rpc_test)
 endif ()
 add_custom_target(build-tests DEPENDS ${GR_TEST_TARGETS})
 
@@ -1166,3 +1177,23 @@ foreach (gr_test IN LISTS GR_TEST_TARGETS)
         endif ()
     endif ()
 endforeach ()
+
+# MainShell's URL-based Sites page is real in the application and every shell
+# fixture. Compile it once rather than maintaining fake pages in UI tests.
+add_library(gr_sites_ui STATIC ui/SitesPage.cpp ui/SitesPage.hpp)
+set_target_properties(gr_sites_ui PROPERTIES AUTOMOC ON)
+target_include_directories(gr_sites_ui PUBLIC ${CMAKE_SOURCE_DIR})
+target_link_libraries(gr_sites_ui PUBLIC Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
+get_property(GR_ALL_TARGETS DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(gr_target IN LISTS GR_ALL_TARGETS)
+    get_target_property(gr_sources ${gr_target} SOURCES)
+    foreach(gr_source IN LISTS gr_sources)
+        if(gr_source MATCHES "(^|/)ui/MainShell\\.cpp$")
+            target_link_libraries(${gr_target} PRIVATE gr_sites_ui)
+            break()
+        endif()
+    endforeach()
+endforeach()
+if(NOT NKR_NO_GRPC)
+    target_sources(greenrhythm PRIVATE rpc/SiteToolsRpc.cpp rpc/SiteToolsRpc.hpp)
+endif()

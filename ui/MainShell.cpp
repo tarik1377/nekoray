@@ -1,4 +1,6 @@
 #include "ui/MainShell.hpp"
+#include "ui/SitesPage.hpp"
+#include <QJsonArray>
 #include "ui/Icons.hpp"
 #include "ui/Palette.hpp"
 #include "ui/SubscriptionSchedule.hpp"
@@ -309,6 +311,7 @@ namespace GreenRhythm {
         connectPage->findChild<QScrollArea *>("grConnectScroll")->viewport()->setPalette(pagePalette);
         pages->addWidget(connectPage); // 0 — pinned heading, scrollable connection actions
         pages->addWidget(buildSettingsPage()); // moved to 3 when legacy pages are adopted
+        sitesPage=new SitesPage(this);pages->addWidget(sitesPage); // moved to 4 by adopt()
         selectPage(0);
     }
 
@@ -344,6 +347,7 @@ namespace GreenRhythm {
                                           {tr("Серверы"), "gr-nav-servers", 1},
                                           {tr("Журнал"), "gr-nav-log", 2},
                                           {tr("Маршруты"), "gr-routes", -1},
+                                          {tr("Сайты"), "gr-routes", 4},
                                           {tr("Настройки"), "gr-sliders", 3},
                                           {tr("Купить VPN"), "gr-arrow-right", -2}}) {
             auto *button = new QPushButton(Icons::icon(item.icon, QColor(kMuted), QColor(kAccent), 20), "  " + item.label, bar);
@@ -366,6 +370,7 @@ namespace GreenRhythm {
             });
             if (item.page >= 0) navButtons << button;
             box->addWidget(button);
+            if(item.page==4){savedSiteBox=new QWidget(bar);savedSiteBox->setObjectName("grSavedSiteShortcuts");auto *shortcuts=new QVBoxLayout(savedSiteBox);shortcuts->setContentsMargins(10,0,0,0);shortcuts->setSpacing(3);box->addWidget(savedSiteBox);savedSiteBox->hide();}
         }
         box->addStretch();
         // Новая версия — блоком, а не окном: окно посреди работы раздражает, а
@@ -749,6 +754,19 @@ namespace GreenRhythm {
     }
 
     void MainShell::showPage(int index) { selectPage(index); }
+
+    void MainShell::setSavedSites(const QJsonObject &library) {
+        if(sitesPage)sitesPage->setLibrary(library);
+        if(!savedSiteBox)return;auto *layout=savedSiteBox->layout();while(auto *item=layout->takeAt(0)){if(item->widget())item->widget()->deleteLater();delete item;}
+        const auto sites=library.value("sites").toArray();int count=0;
+        for(const auto &value:sites){if(count++>=8)break;const auto site=value.toObject();const auto id=site.value("id").toString();const auto mode=site.value("mode").toString();auto *row=new QWidget(savedSiteBox);auto *line=new QHBoxLayout(row);line->setContentsMargins(0,0,0,0);line->setSpacing(3);
+            auto *name=tool(row,site.value("title").toString().left(24));name->setObjectName("grSavedSiteOpen");name->setProperty("siteId",id);name->setToolTip(site.value("title").toString()+"\n"+site.value("url").toString());name->setStyleSheet("padding: 5px 6px; text-align: left;");name->setMinimumWidth(0);name->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);line->addWidget(name,1);
+            connect(name,&QPushButton::clicked,this,[this,id]{selectPage(4);if(sitesPage)sitesPage->selectSite(id);});
+            auto *choice=new QPushButton(mode=="proxy"?tr("VPN"):mode=="direct"?tr("Прямо"):tr("Авто"),row);choice->setObjectName("grSavedSiteMode");choice->setProperty("siteId",id);choice->setStyleSheet("QPushButton { padding: 4px 12px 4px 3px; } QPushButton::menu-indicator { subcontrol-position: right center; right: 3px; }");choice->setFixedWidth(66);choice->setMinimumHeight(27);choice->setToolTip(tr("Быстро выбрать путь для сайта и его зависимостей"));auto *menu=new QMenu(choice);
+            for(const auto &entry:QList<QPair<QString,QString>>{{tr("Авто"),"auto"},{tr("Напрямую"),"direct"},{tr("Через VPN"),"proxy"}}){auto *action=menu->addAction(entry.first);action->setCheckable(true);action->setChecked(entry.second==mode);connect(action,&QAction::triggered,this,[this,id,entry]{emit siteModeRequested(id,entry.second);});}choice->setMenu(menu);line->addWidget(choice);layout->addWidget(row);
+        }
+        savedSiteBox->setVisible(!sites.isEmpty());
+    }
 
     void MainShell::selectPage(int index) {
         if (index < 0 || index >= pages->count()) return;

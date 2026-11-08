@@ -258,3 +258,13 @@ tracking and dialing. All other outbound paths are upstream-identical. See
 [availability routing](../docs/roblox-availability-routing.md) and
 `TestRobloxAutoFlowSelectionPrecedesAccounting`. The file is version-checked by
 `_overlay/prepare.sh` like the other pinned overlays.
+
+## Saved URL services
+
+`route/rule/rule_set_services.go` exposes an in-memory replacement for the
+dedicated inline `site-services` rule set using the existing immutable
+`reloadRules` snapshot mechanism. It does not reload the box or other rule
+sets, change routes or migrate open streams. Domain and literal-IP matchers
+remain exact and restricted to observed web ports. See
+[saved URL services](../docs/url-site-routing.md) and
+`TestSiteServicesLiveRulesPreserveStreamsAndPorts`.

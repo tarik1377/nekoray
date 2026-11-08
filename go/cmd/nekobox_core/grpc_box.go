@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 
@@ -16,6 +17,61 @@ import (
 
 type server struct {
 	grpc_server.BaseServer
+}
+
+func (s *server) SiteTools(ctx context.Context, in *gen.SiteToolsReq) (*gen.SiteToolsResp, error) {
+	out := &gen.SiteToolsResp{}
+	if ctx.Err() != nil {
+		out.Error = "request_cancelled"
+		return out, nil
+	}
+	services := activeSiteServices.Load()
+	if services == nil || services.ctx.Err() != nil {
+		out.Error = "site_services_unavailable"
+		return out, nil
+	}
+	if len(in.PayloadJson) > 2<<20 {
+		out.Error = "request_too_large"
+		return out, nil
+	}
+	var request struct {
+		Scope   string `json:"scope"`
+		URL     string `json:"url"`
+		ID      string `json:"id"`
+		Library string `json:"library"`
+		ScanID  string `json:"scan_id"`
+	}
+	if in.PayloadJson != "" && json.Unmarshal([]byte(in.PayloadJson), &request) != nil {
+		out.Error = "invalid_request"
+		return out, nil
+	}
+	var result any
+	var err error
+	switch in.Action {
+	case "status":
+		result = services.status()
+	case "apply":
+		result, err = services.apply(request.Scope, request.Library, request.ScanID)
+	case "scan":
+		result, err = services.startScan(request.Scope, request.URL)
+	case "scan_status":
+		result, err = services.scanStatus(request.ID, false)
+	case "cancel":
+		result, err = services.scanStatus(request.ID, true)
+	default:
+		err = errors.New("unsupported_site_action")
+	}
+	if err != nil {
+		out.Error = err.Error()
+		return out, nil
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		out.Error = "result_unavailable"
+	} else {
+		out.ResultJson = string(data)
+	}
+	return out, nil
 }
 
 func (s *server) Start(ctx context.Context, in *gen.LoadConfigReq) (out *gen.ErrorResp, _ error) {
@@ -42,6 +98,13 @@ func (s *server) Start(ctx context.Context, in *gen.LoadConfigReq) (out *gen.Err
 	// passed from the C++ side, so no manual injection is needed.
 	rememberClashAPI([]byte(in.CoreConfig))
 	instance, instance_cancel, err = nekoCreateWithTunLookup([]byte(in.CoreConfig), tunSystemLookupForRequest(ctx))
+	if err == nil && instance != nil {
+		if item, ok := instance.Outbound().Outbound(siteServicesTag); ok {
+			if tools, ok := item.(*siteServicesOutbound); ok {
+				activeSiteServices.Store(tools)
+			}
+		}
+	}
 
 	return
 }
@@ -61,6 +124,7 @@ func (s *server) Stop(ctx context.Context, in *gen.EmptyReq) (out *gen.ErrorResp
 	}
 
 	instance_cancel()
+	activeSiteServices.Store(nil)
 	instance.Close()
 
 	instance = nil

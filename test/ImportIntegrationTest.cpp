@@ -16,6 +16,7 @@
 #include "main/GameVoiceRouting.hpp"
 #include "main/ProgramRouting.hpp"
 #include "main/SiteRouting.hpp"
+#include "main/SiteServices.hpp"
 #include "main/HealthProfiles.hpp"
 #include "sub/GroupUpdater.hpp"
 
@@ -652,6 +653,23 @@ int main(int argc, char **argv) {
         check(GreenRhythm::RouteState::completeSnapshot(*NekoGui::dataStore->routing)==untouchedRoute,"website config generation preserves the complete original route scheme");
     }
 
+    {
+        const auto before=NekoGui::dataStore->site_services;
+        const auto routeBefore=GreenRhythm::RouteState::completeSnapshot(*NekoGui::dataStore->routing);
+        const auto legacyBefore=NekoGui::dataStore->site_routing;
+        const auto baseline=buildCurrent();
+        QJsonObject library=GreenRhythm::SiteServices::empty();QString id,error;
+        check(GreenRhythm::SiteServices::recordScan(&library,QJsonObject{{"url","https://owned.example.org"},{"title","Owned URL"},{"direct_ok",true},{"proxy_ok",true},{"endpoints",QJsonArray{QJsonObject{{"origin","https://203.0.113.9:8443"}}}}},&id,&error),"URL card can be used by the actual builder");
+        NekoGui::dataStore->site_services=GreenRhythm::SiteServices::encode(library);
+        const auto built=buildCurrent();check(built->error==baseline->error,"URL services preserve existing package validation");
+        QJsonObject helper;for(const auto &value:built->coreConfig.value("outbounds").toArray())if(value.toObject().value("type")=="greenrhythm-site-services")helper=value.toObject();
+        check(helper.value("library")==GreenRhythm::SiteServices::encode(GreenRhythm::SiteServices::policy(library))&&helper.value("cache_scope").toString().size()==64,"actual runtime receives only the saved endpoint policy with profile scope");
+        const auto sets=built->coreConfig.value("route").toObject().value("rule_set").toArray();check(sets.size()==1&&sets.first().toObject().value("tag")=="site-services","dedicated inline matcher enables hot site-only replacement");
+        const auto headless=sets.first().toObject().value("rules").toArray();bool ip=false;for(const auto &value:headless)ip|=value.toObject().value("ip_cidr").toArray()==QJsonArray{"203.0.113.9/32"}&&value.toObject().value("port").toArray()==QJsonArray{8443};check(ip,"public IP URL is restricted to its exact address and web port");
+        const auto exported=NekoGui::BuildConfig(NekoGui::profileManager->GetProfile(firstId),false,true);check(!QJsonDocument(exported->coreConfig).toJson().contains("greenrhythm-site-services"),"export has standard static fallback instead of app-only hot routing");
+        const auto latency=NekoGui::BuildConfig(NekoGui::profileManager->GetProfile(firstId),true,false);check(!QJsonDocument(latency->coreConfig).toJson().contains("greenrhythm-site-services"),"latency tests do not launch URL analysis or service managers");
+        NekoGui::dataStore->site_services=before;check(GreenRhythm::RouteState::completeSnapshot(*NekoGui::dataStore->routing)==routeBefore&&NekoGui::dataStore->site_routing==legacyBefore,"URL config builder leaves complete route scheme and advanced domain lists unchanged");
+    }
     check(NekoGui::dataStore->geodata_auto_update
           && defaultConfig->coreConfig.value("geodata_update").toObject().value("enabled").toBool(),
           "new installations enable managed GeoIP updates in the actual runtime config");
