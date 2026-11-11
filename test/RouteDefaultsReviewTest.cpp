@@ -9,6 +9,7 @@
 #include <QJsonDocument>
 #include <QTemporaryDir>
 #include <QScrollBar>
+#include <QStyleOptionButton>
 #include <cstdio>
 static int checks = 0, failures = 0;
 static void check(bool ok, const char *message) {
@@ -173,7 +174,12 @@ int main(int argc, char **argv) {
     check(tunConfirm->isVisible() && !tunApply->isEnabled()
           && tunSummary.contains("System") && tunSummary.contains("1500"),
           "TUN-only reset is visible and requires the existing reset confirmation");
-    click(tunConfirm, tunConfirm->rect().center());
+    QStyleOptionButton confirmStyle;
+    confirmStyle.initFrom(tunConfirm);
+    confirmStyle.text = tunConfirm->text();
+    const auto indicator = tunConfirm->style()->subElementRect(QStyle::SE_CheckBoxIndicator, &confirmStyle, tunConfirm);
+    click(tunConfirm, indicator.center());
+    check(tunConfirm->isChecked() && tunApply->isEnabled(), "clicking the checkbox indicator acknowledges the TUN reset");
     click(tunApply, tunApply->rect().center());
     check(tunOnly.result() == QDialog::Accepted, "the full reset accepts a TUN-only change");
 
