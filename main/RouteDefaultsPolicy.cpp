@@ -1,6 +1,7 @@
 #include "RouteDefaultsPolicy.hpp"
 #include "DefaultRoutes.hpp"
 #include "VideoRoutes.hpp"
+#include "fmt/Preset.hpp"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -14,6 +15,27 @@
 
 namespace GreenRhythm::RouteDefaultsPolicy {
 namespace {
+const QStringList tunFields{"vpn_impl", "vpn_mtu"};
+
+QJsonObject storedTun(const QJsonObject &settings) {
+    QJsonObject result;
+    for (const auto &key : tunFields)
+        if (settings.contains(key)) result.insert(key, settings.value(key));
+    return result;
+}
+
+QJsonObject effectiveTun(const QJsonObject &settings) {
+    return {{"vpn_impl", settings.value("vpn_impl").toInt(Preset::SingBox::DefaultTunImplementation)},
+            {"vpn_mtu", settings.value("vpn_mtu").toInt(Preset::SingBox::DefaultTunMtu)}};
+}
+
+void setTun(QJsonObject &settings, const QJsonObject &tun) {
+    for (const auto &key : tunFields) {
+        if (tun.contains(key)) settings.insert(key, tun.value(key));
+        else settings.remove(key);
+    }
+}
+
 QByteArray hash(const QByteArray &data) {
     return QCryptographicHash::hash(data, QCryptographicHash::Sha256).toHex();
 }
@@ -125,6 +147,7 @@ Result commit(const QString &routePath, const QString &settingsPath, const QByte
     }
     result.scheme = QJsonDocument::fromJson(afterRoute).object();
     result.hasScheme = true;
+    result.tunChanged = effectiveTun(currentSettings) != effectiveTun(settings);
     result.settings = settings;
     result.success = true;
     return result;
@@ -161,7 +184,8 @@ bool readRoute(const QString &path, QJsonObject *object, QByteArray *bytes, QStr
 
 bool needsReview(int reviewedRevision) { return reviewedRevision < Revision; }
 
-Preview preview(const QJsonObject &current, const QJsonObject &preset, Mode mode, const QString &globalRules) {
+Preview preview(const QJsonObject &current, const QJsonObject &preset, Mode mode,
+                const QString &globalRules, const QJsonObject &tun) {
     Preview result;
     result.mode = mode;
     result.after = current;
@@ -182,6 +206,12 @@ Preview preview(const QJsonObject &current, const QJsonObject &preset, Mode mode
     }
     for (const auto &key : result.after.keys())
         if (current.value(key) != result.after.value(key)) result.changedFields.append(key);
+    if (mode == Mode::ResetRoutes) {
+        result.expectedTun = effectiveTun(tun);
+        const auto defaults = effectiveTun({});
+        for (const auto &key : tunFields)
+            if (result.expectedTun.value(key) != defaults.value(key)) result.changedFields.append(key);
+    }
     auto oldRules = rules(current), newRules = rules(result.after);
     for (const auto &rule : newRules) {
         const auto at = oldRules.indexOf(rule);
@@ -224,10 +254,23 @@ Result apply(const QString &routePath, const QString &settingsPath, const Previe
         return failure;
     }
     const auto name = QUuid::createUuid().toString(QUuid::WithoutBraces) + ".json";
-    const QJsonObject backup{{"version", 1}, {"route_name", QFileInfo(routePath).fileName()},
-                             {"before", QString::fromLatin1(before.toBase64())},
-                             {"before_sha256", QString::fromLatin1(hash(before))},
-                             {"after_sha256", QString::fromLatin1(hash(after))}};
+    QJsonObject backup{{"version", 1}, {"route_name", QFileInfo(routePath).fileName()},
+                       {"before", QString::fromLatin1(before.toBase64())},
+                       {"before_sha256", QString::fromLatin1(hash(before))},
+                       {"after_sha256", QString::fromLatin1(hash(after))}};
+    if (plan.mode == Mode::ResetRoutes) {
+        const auto current = effectiveTun(settings);
+        const auto defaults = effectiveTun({});
+        if (current != plan.expectedTun) {
+            failure.error = QStringLiteral("Параметры TUN изменились. Откройте предпросмотр заново.");
+            return failure;
+        }
+        if (current != defaults) {
+            backup.insert("tun_before", storedTun(settings));
+            backup.insert("tun_after", defaults);
+            setTun(settings, defaults);
+        }
+    }
     if (!writeBytes(QDir(directory).filePath(name), QJsonDocument(backup).toJson(), &failure.error)) return failure;
     settings.insert("routing_defaults_review_revision", Revision);
     settings.insert("routing_defaults_choice", plan.mode == Mode::SafeUpgrade ? "upgrade" : "reset");
@@ -258,6 +301,13 @@ Result restore(const QString &routePath, const QString &settingsPath) {
     if (hash(before) != backup.value("after_sha256").toString().toLatin1()) {
         failure.error = QStringLiteral("После применения вы меняли маршруты. Возврат отменён, чтобы сохранить эти правки.");
         return failure;
+    }
+    if (backup.value("tun_before").isObject()) {
+        if (storedTun(settings) != backup.value("tun_after").toObject()) {
+            failure.error = QStringLiteral("После сброса параметры TUN изменились. Откат отменён.");
+            return failure;
+        }
+        setTun(settings, backup.value("tun_before").toObject());
     }
     const auto restored = QByteArray::fromBase64(backup.value("before").toString().toLatin1());
     settings.insert("routing_defaults_review_revision", Revision);

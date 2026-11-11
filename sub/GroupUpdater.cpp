@@ -6,6 +6,8 @@
 #include "GroupUpdater.hpp"
 
 #include <QInputDialog>
+#include <QMutexLocker>
+#include <QSet>
 #include <QUrlQuery>
 
 #ifndef NKR_NO_YAML
@@ -41,8 +43,7 @@ namespace NekoGui_sub {
     }
 
     void RawUpdater::AddParsed(const std::shared_ptr<NekoGui::ProxyEntity> &ent) {
-        if (!collect_only) NekoGui::profileManager->AddProfile(ent, gid_add_to);
-        updated_order += ent;
+        if (collect_only || NekoGui::profileManager->AddProfile(ent, gid_add_to)) updated_order += ent;
     }
 
     void RawUpdater::update(const QString &input) {
@@ -481,7 +482,7 @@ namespace NekoGui_sub {
 
         if (_sub_gid < 0 && (content.startsWith("http://") || content.startsWith("https://"))) {
             auto items = QStringList{
-                QObject::tr("As Subscription (add to this group)"),
+                QObject::tr("Добавить подписку (отдельная группа, если эта занята)"),
                 QObject::tr("As Subscription (create new group)"),
                 QObject::tr("As link"),
             };
@@ -495,158 +496,192 @@ namespace NekoGui_sub {
             if (items.indexOf(a) == 1) createNewGroup = true;
         }
 
+        auto *manager = NekoGui::profileManager;
+        const auto group = _sub_gid < 0 ? manager->CurrentGroup() : manager->GetGroup(_sub_gid);
         runOnNewThread([=] {
-            auto gid = _sub_gid;
-            if (createNewGroup) {
-                auto group = NekoGui::ProfileManager::NewGroup();
-                group->name = QUrl(content).host();
-                group->url = content;
-                NekoGui::profileManager->AddGroup(group);
-                gid = group->id;
-                MW_dialog_message("SubUpdater", "NewGroup");
-            }
-            Update(content, gid, asURL);
+            const int gid = updateGroup(content, group, asURL || _sub_gid >= 0, createNewGroup, _sub_gid >= 0);
             emit asyncUpdateCallback(gid);
-            if (finish != nullptr) finish();
+            if (finish) finish();
         });
     }
 
-    void GroupUpdater::Update(const QString &_str, int _sub_gid, bool _not_sub_as_url) {
-        // 创建 rawUpdater
-        NekoGui::dataStore->imported_count = 0;
-        auto rawUpdater = std::make_unique<RawUpdater>();
-        rawUpdater->collect_only = true;
-
-        // 准备
-        QString sub_user_info;
-        bool asURL = _sub_gid >= 0 || _not_sub_as_url; // 把 _str 当作 url 处理（下载内容）
-        const auto source = NormalizeImport(_str);
-        auto content = source;
-        const int targetGid = asURL && _sub_gid < 0 ? NekoGui::dataStore->current_group : _sub_gid;
-        rawUpdater->gid_add_to = targetGid;
-        auto group = NekoGui::profileManager->GetGroup(targetGid);
-        if (group != nullptr && group->archive) return;
-
-        // 网络请求
-        if (asURL) {
-            auto groupName = group == nullptr ? QUrl(content).host() : group->name;
-            MW_show_log(">>>>>>>> " + QObject::tr("Requesting subscription: %1").arg(groupName));
-
-            auto resp = NetworkRequestHelper::HttpGet(content);
-            if (!resp.error.isEmpty()) {
-                auto safeError = resp.error;
-                safeError.replace(source, QObject::tr("подписка"));
-                MW_show_log("<<<<<<<< " + QObject::tr("Requesting subscription %1 error: %2").arg(groupName, safeError));
-                if (group != nullptr) group->last_update_outcome = 2; // renew hint in the group row
-                return;
-            }
-
-            content = resp.data;
-            sub_user_info = NetworkRequestHelper::GetHeader(resp.header, "Subscription-UserInfo");
-
-            MW_show_log("<<<<<<<< " + QObject::tr("Subscription request fininshed: %1").arg(groupName));
-        }
-
-        rawUpdater->update(content);
-        if (rawUpdater->updated_order.isEmpty()) {
-            if (group != nullptr) group->last_update_outcome = 2;
-            MW_show_log(QObject::tr("Не найдено поддерживаемых профилей. Существующие серверы сохранены. Проверьте ссылку подписки или формат ответа."));
-            return;
-        }
-
-        QList<std::shared_ptr<NekoGui::ProxyEntity>> in;          // 更新前
-        QList<std::shared_ptr<NekoGui::ProxyEntity>> out_all;     // 更新前 + 更新后
-        QList<std::shared_ptr<NekoGui::ProxyEntity>> out;         // 更新后
-        QList<std::shared_ptr<NekoGui::ProxyEntity>> only_in;     // 只在更新前有的
-        QList<std::shared_ptr<NekoGui::ProxyEntity>> only_out;    // 只在更新后有的
-        QList<std::shared_ptr<NekoGui::ProxyEntity>> update_del;  // 更新前后都有的，需要删除的新配置
-        QList<std::shared_ptr<NekoGui::ProxyEntity>> update_keep; // 更新前后都有的，被保留的旧配置
-
-        // 订阅解析前
-        if (group != nullptr) {
-            in = group->Profiles();
-            if (asURL) group->url = source;
-            group->sub_last_update = QDateTime::currentMSecsSinceEpoch() / 1000;
-            group->info = sub_user_info;
-            group->order.clear();
-            group->Save();
-            //
-            if (NekoGui::dataStore->sub_clear) {
-                MW_show_log(QObject::tr("Clearing servers..."));
-                for (const auto &profile: in) {
-                    NekoGui::profileManager->DeleteProfile(profile->id);
-                }
-            }
-        }
-
-        // 解析并添加 profile
-        for (const auto &ent : rawUpdater->updated_order) {
-            NekoGui::profileManager->AddProfile(ent, targetGid);
-        }
-
-        if (group != nullptr) {
-            group->last_update_outcome = group->Profiles().isEmpty() ? 2 : 1;
-            out_all = group->Profiles();
-
-            QString change_text;
-
-            if (NekoGui::dataStore->sub_clear) {
-                // all is new profile
-                for (const auto &ent: out_all) {
-                    change_text += "[+] " + ent->bean->DisplayTypeAndName() + "\n";
-                }
-            } else {
-                // find and delete not updated profile by ProfileFilter
-                NekoGui::ProfileFilter::OnlyInSrc_ByPointer(out_all, in, out);
-                NekoGui::ProfileFilter::OnlyInSrc(in, out, only_in);
-                NekoGui::ProfileFilter::OnlyInSrc(out, in, only_out);
-                NekoGui::ProfileFilter::Common(in, out, update_keep, update_del, false);
-
-                QString notice_added;
-                QString notice_deleted;
-                for (const auto &ent: only_out) {
-                    notice_added += "[+] " + ent->bean->DisplayTypeAndName() + "\n";
-                }
-                for (const auto &ent: only_in) {
-                    notice_deleted += "[-] " + ent->bean->DisplayTypeAndName() + "\n";
-                }
-
-                // sort according to order in remote
-                group->order = {};
-                for (const auto &ent: rawUpdater->updated_order) {
-                    auto deleted_index = update_del.indexOf(ent);
-                    if (deleted_index >= 0) {
-                        if (deleted_index >= update_keep.count()) continue; // should not happen
-                        auto ent2 = update_keep[deleted_index];
-                        group->order.append(ent2->id);
-                    } else {
-                        group->order.append(ent->id);
-                    }
-                }
-                group->Save();
-
-                // cleanup
-                for (const auto &ent: out_all) {
-                    if (!group->order.contains(ent->id)) {
-                        NekoGui::profileManager->DeleteProfile(ent->id);
-                    }
-                }
-
-                change_text = "\n" + QObject::tr("Added %1 profiles:\n%2\nDeleted %3 Profiles:\n%4")
-                                         .arg(only_out.length())
-                                         .arg(notice_added)
-                                         .arg(only_in.length())
-                                         .arg(notice_deleted);
-                if (only_out.length() + only_in.length() == 0) change_text = QObject::tr("Nothing");
-            }
-
-            MW_show_log("<<<<<<<< " + QObject::tr("Change of %1:").arg(group->name) + "\n" + change_text);
-            MW_dialog_message("SubUpdater", "finish-dingyue");
-        } else {
-            NekoGui::dataStore->imported_count = rawUpdater->updated_order.count();
-            MW_dialog_message("SubUpdater", "finish");
-        }
+    void GroupUpdater::Update(const QString &source, int gid, bool asURL) {
+        auto *manager = NekoGui::profileManager;
+        updateGroup(NormalizeImport(source), gid < 0 ? manager->CurrentGroup() : manager->GetGroup(gid),
+                    asURL || gid >= 0, false, gid >= 0);
     }
+
+    int GroupUpdater::updateGroup(const QString &source, std::shared_ptr<NekoGui::Group> group,
+                                  bool subscription, bool newGroup, bool refresh) {
+        using Entity = NekoGui::ProxyEntity;
+        auto *manager = NekoGui::profileManager;
+        QString originalUrl;
+        {
+            QMutexLocker locker(&manager->mutex);
+            if (!newGroup && (!group || group->archive || manager->GetGroup(group->id) != group)) return -1;
+            if (group) {
+                originalUrl = group->url;
+            }
+        }
+        if (refresh && !originalUrl.isEmpty() && originalUrl != source) return -1;
+        static std::atomic<quint64> nextRequest{0};
+        const quint64 request = subscription ? ++nextRequest : 0;
+        const auto reportFailure = [&] {
+            QMutexLocker locker(&manager->mutex);
+            if (subscription && !newGroup && group && manager->GetGroup(group->id) == group
+                && group->url == source && group->last_subscription_request <= request) {
+                group->last_update_outcome = 2;
+            }
+        };
+
+        QString content = source;
+        QString userInfo;
+        if (subscription) {
+            MW_show_log(QObject::tr("Запрашиваю подписку %1").arg(QUrl(source).host()));
+            const auto response = NetworkRequestHelper::HttpGet(source);
+            if (!response.error.isEmpty()) {
+                auto error = response.error;
+                error.replace(source, QObject::tr("подписка"));
+                MW_show_log(QObject::tr("Не удалось загрузить подписку %1. %2").arg(QUrl(source).host(), error));
+                reportFailure();
+                return -1;
+            }
+            content = response.data;
+            userInfo = NetworkRequestHelper::GetHeader(response.header, "Subscription-UserInfo");
+        }
+
+        RawUpdater parser;
+        parser.collect_only = true;
+        parser.update(content);
+        if (parser.updated_order.isEmpty()) {
+            reportFailure();
+            MW_show_log(QObject::tr("Не найдено поддерживаемых профилей. Проверьте ссылку или формат ответа."));
+            return -1;
+        }
+
+        // Download and parsing run outside the store lock. A complete update
+        // sees one current set of profiles and one subscription owner.
+        QMutexLocker locker(&manager->mutex);
+        if (!newGroup && (manager->GetGroup(group->id) != group || group->archive)) return -1;
+        if (!subscription) {
+            int added = 0;
+            for (const auto &ent : parser.updated_order)
+                if (manager->AddProfile(ent, group->id)) ++added;
+            if (added != parser.updated_order.size())
+                MW_show_log(QObject::tr("Не удалось сохранить часть профилей."));
+            MW_dialog_message("SubUpdater", QStringLiteral("finish:%1").arg(added));
+            return added > 0 ? group->id : -1;
+        }
+
+        if (refresh && group->url != originalUrl && group->url != source) return -1;
+        if (!newGroup && !group->url.isEmpty() && group->url != source) {
+            if (refresh) return -1;
+            // A group holds a single subscription URL. Route a different URL
+            // to its existing group, or create one after a successful download.
+            for (const auto &[id, candidate] : manager->groups) {
+                if (!candidate->archive && candidate->url == source) {
+                    group = candidate;
+                    break;
+                }
+            }
+            newGroup = group->url != source;
+        }
+        if (newGroup) {
+            group = NekoGui::ProfileManager::NewGroup();
+            group->name = QUrl(source).host();
+            if (!manager->AddGroup(group)) {
+                MW_show_log(QObject::tr("Не удалось сохранить группу подписки."));
+                return -1;
+            }
+        }
+        if (group->last_subscription_request > request) return -1;
+
+        const auto previous = group->ProfilesWithOrder();
+        QList<std::shared_ptr<Entity>> eligible;
+        const bool sameSubscription = group->url == source;
+        if (sameSubscription) {
+            // Older clients did not record where a profile came from. Adopt
+            // exact matches and keep profiles whose ownership is ambiguous.
+            for (const auto &ent : previous)
+                if (ent->origin == Entity::Subscription
+                    && (!NekoGui::dataStore->sub_clear || ent->id == NekoGui::dataStore->started_id))
+                    eligible.append(ent);
+            for (const auto &ent : previous)
+                if (ent->origin == Entity::Unclassified) eligible.append(ent);
+        }
+
+        const auto &incoming = parser.updated_order;
+        QList<std::shared_ptr<Entity>> retained, matches;
+        NekoGui::ProfileFilter::Common(eligible, incoming, retained, matches, false);
+        QList<int> added;
+        QList<int> order;
+        const auto discardAdded = [&] {
+            for (const int id : added) manager->DeleteProfile(id);
+            if (newGroup) manager->DeleteGroup(group->id);
+        };
+        for (const auto &ent : incoming) {
+            const auto match = matches.indexOf(ent);
+            if (match >= 0) {
+                order.append(retained.at(match)->id);
+                continue;
+            }
+            ent->origin = Entity::Subscription;
+            if (!manager->AddProfile(ent, group->id)) {
+                discardAdded();
+                MW_show_log(QObject::tr("Не удалось сохранить профили подписки. Повторите импорт."));
+                return -1;
+            }
+            added.append(ent->id);
+            order.append(ent->id);
+        }
+
+        const QSet<int> incomingIds(order.begin(), order.end());
+        QList<int> obsolete;
+        for (const auto &ent : previous) {
+            if (incomingIds.contains(ent->id)) continue;
+            if (sameSubscription && ent->origin == Entity::Subscription && ent->id != NekoGui::dataStore->started_id)
+                obsolete.append(ent->id);
+            else
+                order.append(ent->id);
+        }
+
+        const auto previousUrl = group->url;
+        const auto previousInfo = group->info;
+        const auto previousStamp = group->sub_last_update;
+        const auto previousOrder = group->order;
+        group->url = source;
+        group->info = userInfo;
+        group->sub_last_update = QDateTime::currentSecsSinceEpoch();
+        group->order = order;
+        if (group->ToJsonBytes() != group->last_save_content && !group->Save()) {
+            group->url = previousUrl;
+            group->info = previousInfo;
+            group->sub_last_update = previousStamp;
+            group->order = previousOrder;
+            discardAdded();
+            MW_show_log(QObject::tr("Не удалось сохранить настройки подписки. Повторите импорт."));
+            return -1;
+        }
+
+        for (const auto &ent : retained) {
+            if (ent->origin != Entity::Unclassified) continue;
+            ent->origin = Entity::Subscription;
+            if (!ent->Save()) ent->origin = Entity::Unclassified;
+        }
+        int removed = 0;
+        for (const int id : obsolete) {
+            manager->DeleteProfile(id);
+            if (!manager->GetProfile(id)) ++removed;
+        }
+        group->last_subscription_request = request;
+        group->last_update_outcome = 1;
+        if (newGroup) MW_dialog_message("SubUpdater", "NewGroup");
+        MW_show_log(QObject::tr("Подписка %1 обновлена (+%2 / −%3 профилей).")
+                    .arg(group->name).arg(added.size()).arg(removed));
+        MW_dialog_message("SubUpdater", "finish-dingyue");
+        return group->id;
+    }
+
 } // namespace NekoGui_sub
 
 bool UI_update_all_groups_Updating = false;

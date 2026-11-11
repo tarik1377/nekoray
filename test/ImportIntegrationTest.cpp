@@ -19,6 +19,7 @@
 #include "main/SiteServices.hpp"
 #include "main/HealthProfiles.hpp"
 #include "sub/GroupUpdater.hpp"
+#include "ui/widget/MyTableWidget.h"
 
 #include <QApplication>
 #include <QDir>
@@ -127,6 +128,7 @@ int main(int argc, char **argv) {
     QApplication app(argc, argv);
     QTemporaryDir temp;
     check(temp.isValid() && QDir::setCurrent(temp.path()), "isolated store created");
+    if (failures) return 1;
     for (const auto &dir : {"groups", "profiles", "temp", "routes_box"}) QDir().mkdir(dir);
     MW_show_log = [](QString) {};
     MW_dialog_message = [](QString, QString) {};
@@ -145,6 +147,15 @@ int main(int argc, char **argv) {
     NekoGui::dataStore->current_group = 0;
     NekoGui::dataStore->routing = std::make_unique<NekoGui::Routing>();
     NekoGui::profileManager->LoadManager();
+    {
+        MyTableWidget table;
+        table.setRowCount(3);
+        table.row2Id = {0, 1, 2};
+        table.order = {2, 2, 99, 0};
+        table.update_order(false);
+        check(table.row2Id == QList<int>{2, 0, 1} && table.id2Row.size() == 3,
+              "an incomplete saved order displays every profile exactly once");
+    }
 
     // Exercise the same complete snapshot and replacement helpers used by the
     // route dialog, with the real Routing constructor/JsonStore implementation.
@@ -301,6 +312,10 @@ int main(int argc, char **argv) {
     int firstId = -1;
     for (const auto &p : profiles) if (p->bean->name == "subscription") firstId = p->id;
     check(firstId >= 0, "downloaded profile is present");
+    const auto manual = raw.updated_order.first();
+    const auto manualBytes = read(manual->fn);
+    check(manual->origin == NekoGui::ProxyEntity::Manual && profiles.contains(manual),
+          "attaching a subscription to a group preserves manual profiles");
     NekoGui_sub::groupUpdater->Update(url, group->id, true);
     check(NekoGui::profileManager->GetProfile(firstId) != nullptr, "first unchanged profile keeps identity on refresh");
     const auto count = group->Profiles().size();
@@ -314,6 +329,54 @@ int main(int argc, char **argv) {
     status = 503;
     NekoGui_sub::groupUpdater->Update(url, group->id, true);
     check(group->Profiles().size() == count, "HTTP failure preserves profiles");
+    {
+        status = 200;
+        const auto secondUrl = url + "2";
+        const auto firstBytes = read(NekoGui::profileManager->GetProfile(firstId)->fn);
+        body = fixture("second-subscription").toUtf8().toBase64();
+        NekoGui_sub::groupUpdater->Update(secondUrl, -1, true);
+        std::shared_ptr<NekoGui::Group> second;
+        for (const auto &[id, candidate] : NekoGui::profileManager->groups)
+            if (candidate->url == secondUrl) second = candidate;
+        check(second && second != group && second->Profiles().size() == 1
+              && group->url == url && read(NekoGui::profileManager->GetProfile(firstId)->fn) == firstBytes,
+              "another subscription in the same selected group gets its own group and preserves the first");
+        if (second && !second->Profiles().isEmpty()) {
+            const auto old = second->Profiles().first();
+            auto local = NekoGui::ProfileManager::NewProxyEntity("vless");
+            local->TrojanVLESSBean()->TryParseLink(fixture("local-server"));
+            check(NekoGui::profileManager->AddProfile(local, second->id)
+                  && second->ProfilesWithOrder().contains(local),
+                  "a manually added profile is visible in a subscription's saved order");
+            const auto localBytes = read(local->fn);
+            body = fixture("rotated-subscription").toUtf8().toBase64();
+            NekoGui_sub::groupUpdater->Update(secondUrl, second->id, true);
+            check(!NekoGui::profileManager->GetProfile(old->id) && second->Profiles().size() == 2
+                  && second->Profiles().contains(local) && read(local->fn) == localBytes
+                  && read(manual->fn) == manualBytes,
+                  "clear and refresh replace only managed profiles and keep manual files");
+            const auto order = second->order;
+            const auto groupBytes = read(second->fn);
+            const auto profilesBefore = second->Profiles();
+            const auto profilesPath = temp.filePath("profiles");
+            const auto offlinePath = temp.filePath("profiles-offline");
+            check(QDir().rename(profilesPath, offlinePath), "temporarily make isolated profile directory unavailable");
+            body = fixture("must-not-replace-on-save-error").toUtf8().toBase64();
+            NekoGui_sub::groupUpdater->Update(secondUrl, second->id, true);
+            check(QDir().rename(offlinePath, profilesPath), "restore isolated profile directory");
+            check(second->Profiles() == profilesBefore && second->order == order && read(second->fn) == groupBytes,
+                  "failed profile save preserves the existing subscription and its order");
+            NekoGui::dataStore->sub_clear = false;
+            const auto duplicate = fixture("rotated-subscription");
+            body = (duplicate + "\n" + duplicate).toUtf8().toBase64();
+            NekoGui_sub::groupUpdater->Update(secondUrl, second->id, true);
+            const auto duplicateOrder = second->order;
+            NekoGui_sub::groupUpdater->Update(secondUrl, second->id, true);
+            check(second->ProfilesWithOrder().size() == 3 && second->order == duplicateOrder,
+                  "repeated subscription entries retain separate stable IDs through refresh");
+            NekoGui::dataStore->sub_clear = true;
+        }
+    }
 
     auto originalRouting = std::move(NekoGui::dataStore->routing);
     NekoGui::dataStore->routing = std::make_unique<NekoGui::Routing>(1);

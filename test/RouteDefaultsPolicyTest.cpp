@@ -103,6 +103,40 @@ int main(int argc, char **argv) {
     write(route, original); write(settings, originalSettings);
     result = Policy::apply(route, settings, safe, original + "stale");
     check(!result.success && read(route) == original && read(settings) == originalSettings, "stale preview changes nothing");
+    const QJsonObject customTun{{"vpn_impl", 2}, {"vpn_mtu", 9000}, {"future", 7}};
+    const auto customSettings = QJsonDocument(customTun).toJson();
+    const auto tunOnly = Policy::preview(old, old, Policy::Mode::ResetRoutes, {}, customTun);
+    check(tunOnly.changedFields == QStringList{"vpn_impl", "vpn_mtu"} && tunOnly.after == old,
+          "full reset detects TUN changes with an already standard route scheme");
+    write(settings, customSettings);
+    result = Policy::apply(route, settings, safe, original);
+    check(result.success && !result.tunChanged && result.settings["vpn_impl"] == 2 && result.settings["vpn_mtu"] == 9000,
+          "safe update retains custom TUN settings");
+    result = Policy::restore(route, settings);
+    check(result.success && !result.tunChanged && read(route) == original,
+          "route-only backup restores without changing TUN");
+    result = Policy::apply(route, settings, tunOnly, original);
+    check(result.success && result.tunChanged && !result.routeChanged && read(route) == original
+          && result.settings["vpn_impl"] == 1 && result.settings["vpn_mtu"] == 1500
+          && result.settings["future"] == 7,
+          "confirmed TUN-only reset persists System and MTU 1500");
+    const auto resetSettings = read(settings);
+    auto changedTun = result.settings;
+    changedTun["vpn_mtu"] = 1400;
+    write(settings, QJsonDocument(changedTun).toJson());
+    const auto interveningSettings = read(settings);
+    result = Policy::restore(route, settings);
+    check(!result.success && read(settings) == interveningSettings,
+          "restore preserves later TUN edits");
+    write(settings, resetSettings);
+    result = Policy::restore(route, settings);
+    check(result.success && result.tunChanged && !result.routeChanged
+          && result.settings["vpn_impl"] == 2 && result.settings["vpn_mtu"] == 9000,
+          "restoring a full reset returns the previous TUN values");
+    result = Policy::apply(route, settings, reset, original);
+    check(!result.success && read(route) == original,
+          "a reset reviewed against stale TUN values cannot be committed");
+    write(settings, originalSettings);
 #ifdef Q_OS_WIN
     auto lock = [](const QString &path) { return CreateFileW(reinterpret_cast<LPCWSTR>(path.utf16()),
         GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr); };

@@ -159,6 +159,24 @@ int main(int argc, char **argv) {
     click(optionalApply, optionalApply->rect().center());
     check(optionalReset.result() == QDialog::Accepted, "confirmed real reset remains usable through mouse input");
 
+    const auto tunPlan = GreenRhythm::RouteDefaultsPolicy::preview(
+        empty.after, empty.after, GreenRhythm::RouteDefaultsPolicy::Mode::ResetRoutes,
+        {}, QJsonObject{{"vpn_impl", 2}, {"vpn_mtu", 9000}});
+    GreenRhythm::RouteDefaultsReview tunOnly(empty, tunPlan);
+    tunOnly.show();
+    app.processEvents();
+    auto *tunChoice = tunOnly.findChild<QRadioButton*>("routeDefaultsReset");
+    click(tunChoice, tunChoice->rect().center());
+    auto *tunApply = tunOnly.findChild<QPushButton*>("routeDefaultsApplyConfirmed");
+    auto *tunConfirm = tunOnly.findChild<QCheckBox*>("routeDefaultsResetConfirm");
+    const auto tunSummary = tunOnly.findChild<QLabel*>("routeDefaultsPreview")->text();
+    check(tunConfirm->isVisible() && !tunApply->isEnabled()
+          && tunSummary.contains("System") && tunSummary.contains("1500"),
+          "TUN-only reset is visible and requires the existing reset confirmation");
+    click(tunConfirm, tunConfirm->rect().center());
+    click(tunApply, tunApply->rect().center());
+    check(tunOnly.result() == QDialog::Accepted, "the full reset accepts a TUN-only change");
+
     GreenRhythm::RouteDefaultsPolicy::Preview large = safe;
     for (int i = 0; i < 90; ++i) large.changedFields.append(QStringLiteral("future-private-field-%1").arg(i));
     GreenRhythm::RouteDefaultsReview many(large, reset);

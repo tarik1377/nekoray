@@ -117,7 +117,9 @@ private:
             {"dns_final_out", tr("Куда направлять остальные DNS-запросы")},
             {"sniffing_mode", tr("Определение сайтов и протоколов трафика")},
             {"domain_strategy", tr("Выбор IPv4 и IPv6 при подключении")},
-            {"outbound_domain_strategy", tr("Выбор IPv4 и IPv6 для подключения к серверу")}};
+            {"outbound_domain_strategy", tr("Выбор IPv4 и IPv6 для подключения к серверу")},
+            {"vpn_impl", tr("Стек TUN → System")},
+            {"vpn_mtu", tr("MTU TUN → 1500")}};
         for (const auto &label : labels) if (label.first == field) return label.second;
         // A future field is visible as an additional change without presenting
         // internal keys or user-supplied configuration as product instructions.
@@ -127,10 +129,18 @@ private:
         const bool safe = safeOption->isChecked();
         const auto &plan = safe ? safePlan : resetPlan;
         const bool hasChanges = !plan.changedFields.isEmpty();
+        const int tunChanges = int(plan.changedFields.contains("vpn_impl")) + int(plan.changedFields.contains("vpn_mtu"));
+        const bool routesChange = plan.changedFields.size() > tunChanges;
+        QString description = safe
+            ? tr("Обновятся узнаваемые устаревшие значения и добавятся недостающие правила. Приоритет ваших правил сохранится.")
+            : tr("Ваши списки сайтов и IP-адресов, DNS интернета и правила программ этой схемы будут заменены стандартными.");
+        if (tunChanges) {
+            const auto tunDescription = tr("Для TUN будут установлены стек System и MTU 1500.");
+            description = routesChange ? description + QStringLiteral("\n") + tunDescription : tunDescription;
+        }
         summary->setText(tr("Настроек к изменению: %1. Правила: добавить %2, удалить %3.\n%4")
             .arg(plan.changedFields.size()).arg(plan.addedRules).arg(plan.removedRules)
-            .arg(safe ? tr("Обновятся узнаваемые устаревшие значения и добавятся недостающие правила. Приоритет ваших правил сохранится.")
-                      : tr("Ваши списки сайтов и IP-адресов, DNS интернета и правила программ этой схемы будут заменены стандартными.")));
+            .arg(description));
         QStringList fields;
         for (const auto &field : plan.changedFields) fields.append(QStringLiteral("• ") + fieldLabel(field));
         changes->setText(fields.join(QLatin1Char('\n')));
@@ -140,6 +150,9 @@ private:
             ? tr("Обновление не требуется. Текущие маршруты сохранятся. Нажмите «Готово», чтобы закрыть окно.")
             : tr("В этой схеме уже установлены стандартные маршруты. Повторный сброс не требуется. Нажмите «Готово», чтобы закрыть окно."));
         noChanges->setVisible(!hasChanges);
+        acknowledgement->setText(tunChanges && !routesChange
+            ? tr("Восстановить стандартные параметры TUN")
+            : tr("Я согласен заменить мои маршруты и правила программ этой схемы"));
         acknowledgement->setVisible(!safe && hasChanges);
         acknowledgement->setEnabled(hasChanges);
         note->setVisible(hasChanges);
