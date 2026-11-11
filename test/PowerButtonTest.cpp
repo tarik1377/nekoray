@@ -29,6 +29,7 @@
 #include <QDialog>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QTimer>
@@ -151,6 +152,10 @@ int main(int argc, char **argv) {
     shell.setServerRemovalEnabled(true);
     removeServers->click();
     is(QStringLiteral("удаление выделенного сервера передаётся окну"), removalClicks == 1);
+    shell.setServerImportStatus(QStringLiteral("HTTP 404"), true);
+    auto *importStatus = shell.findChild<QLabel *>("grServerImportStatus");
+    is(QStringLiteral("ошибка импорта видна рядом со списком серверов"),
+       importStatus && importStatus->isVisible() && importStatus->text() == QStringLiteral("HTTP 404"));
     auto *search = shell.findChild<QLineEdit *>(QStringLiteral("grServerSearch"));
     QString query;
     QObject::connect(&shell, &GreenRhythm::MainShell::serverSearchChanged, [&query](const QString &text) { query = text; });
@@ -158,7 +163,8 @@ int main(int argc, char **argv) {
     is(QStringLiteral("видимый поиск передаёт запрос"), search->isVisible() && query == QStringLiteral("Berlin"));
     shell.showPage(0);
     shell.setServers({{42, QStringLiteral("Berlin"), QStringLiteral("32 ms"), 1, QStringLiteral("Orsana"), QStringLiteral("berlin.example:443")},
-                      {43, QStringLiteral("Paris"), QString(), 2, QStringLiteral("Резерв"), QStringLiteral("paris.example:443")}}, 42);
+                      {43, QStringLiteral("Paris"), QString(), 2, QStringLiteral("Резерв"), QStringLiteral("paris.example:443")}}, -1);
+    shell.setServerSelection(-1, 42);
     int chosen = -99;
     QObject::connect(&shell, &GreenRhythm::MainShell::serverChosen, [&chosen](int id) { chosen = id; });
     QTimer::singleShot(0, [&] {
@@ -169,6 +175,8 @@ int main(int argc, char **argv) {
         auto *buttons = dialog->findChild<QDialogButtonBox *>();
         auto *groupFilter = dialog->findChild<QComboBox *>("grServerPickerGroup");
         is(QStringLiteral("быстрый выбор показывает обе группы"), groupFilter->count() == 3 && !list->item(2)->isHidden());
+        is(QStringLiteral("при открытии выбран подключённый сервер"),
+           list->currentRow() == 1 && list->item(1)->data(Qt::AccessibleTextRole).toString().contains(QStringLiteral("Подключён")));
         groupFilter->setCurrentIndex(groupFilter->findData(2));
         is(QStringLiteral("фильтр оставляет только серверы выбранной группы"),
            list->item(0)->isHidden() && list->item(1)->isHidden() && !list->item(2)->isHidden());
@@ -181,6 +189,12 @@ int main(int argc, char **argv) {
     shell.findChild<QPushButton *>(QStringLiteral("grServerChoice"))->click();
     is(QStringLiteral("поиск и выбор сохраняют ID сервера"), chosen == 43);
     is(QStringLiteral("выбор сам не нажимает подключение"), toggled == 2);
+    shell.setConnectionState(true, QStringLiteral("Berlin"), {}, true);
+    is(QStringLiteral("проблема связи оставляет кнопку отключения доступной"),
+       power->isEnabled() && power->accessibleName() == QStringLiteral("Отключить VPN"));
+    shell.setConnectionState(true, QStringLiteral("Berlin"), {}, false);
+    is(QStringLiteral("после успешной проверки возвращается обычный статус"),
+       power->accessibleName() != QStringLiteral("Отключить VPN"));
 
     return finish();
 }

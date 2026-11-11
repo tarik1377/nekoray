@@ -59,7 +59,8 @@ namespace GreenRhythm {
          * («Подключаюсь…») не перебивает и отказ не стирает. Прежде перебивал,
          * и оба состояния жили не дольше двух секунд.
          */
-        void setConnectionState(bool connected, const QString &server, const QString &latency);
+        void setConnectionState(bool connected, const QString &server, const QString &latency,
+                                bool probeFailed = false);
 
         /** Показать страницу по номеру: 0 подключение, 1 серверы, 2 журнал. */
         void showPage(int index);
@@ -68,6 +69,8 @@ namespace GreenRhythm {
         void focusServerSearch();
         void focusSearch();
         void setSearchResultCount(int visible, int total);
+        void setServerImportStatus(const QString &message, bool warning);
+        bool isServersPageVisible() const;
         void setServerRemovalEnabled(bool enabled);
 
         /**
@@ -165,6 +168,7 @@ namespace GreenRhythm {
          * @param currentId выбранный сейчас; -1 — автовыбор самого быстрого
          */
         void setServers(const QList<ServerItem> &servers, int currentId);
+        void setServerSelection(int preferredId, int activeId);
 
         /**
          * Режимы: туннель, системный прокси, игры через туннель.
@@ -389,11 +393,14 @@ namespace GreenRhythm {
         QLineEdit *serverSearch = nullptr;
         QPushButton *removeServers = nullptr;
         QLabel *searchResult = nullptr;
+        QLabel *serverImportStatus = nullptr;
         QLabel *modeSummary = nullptr;
         QLabel *statusTitle = nullptr;
         QLabel *sidebarStatus = nullptr;
         QList<ServerItem> availableServers;
         int selectedServerId = -1;
+        int activeServerId = -1;
+        bool trafficProbeFailed = false;
         QString idleServerName;
         bool connected = false;
 

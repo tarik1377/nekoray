@@ -231,6 +231,7 @@ int main(int argc, char *argv[]) {
                        {7, QStringLiteral("Личный сервер"), QStringLiteral("106 мс"), 2,
                        QStringLiteral("Мои серверы"), QStringLiteral("203.0.113.40:443")}},
                       4);
+    shell->setServerSelection(4, 4);
     shell->setServerRemovalEnabled(true);
     shell->setSearchResultCount(ui.proxyListTable->rowCount(), ui.proxyListTable->rowCount());
     w.setCentralWidget(shell);

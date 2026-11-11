@@ -46,12 +46,19 @@ void check(bool ok, const char *name) {
 QString fixture(const QString &name = "fixture") {
     return QStringLiteral("vless://11111111-1111-4111-8111-111111111111@203.0.113.1:443?security=reality&type=tcp&flow=xtls-rprx-vision&sni=example.com&fp=chrome&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sid=0123456789abcdef#") + name;
 }
-int importSubscriptionInteractively(const QString &url) {
+int importSubscriptionInteractively(const QString &url, QString *message = nullptr, bool *warning = nullptr) {
     QEventLoop loop;
     int groupId = -2;
+    int events = 0;
     QObject::connect(NekoGui_sub::groupUpdater, &NekoGui_sub::GroupUpdater::subscriptionImportFinished,
                      &loop, [&](int gid) {
         groupId = gid;
+    });
+    QObject::connect(NekoGui_sub::groupUpdater, &NekoGui_sub::GroupUpdater::serverOperationStatusChanged,
+                     &loop, [&](const QString &text, bool isWarning) {
+        if (++events == 1) return; // progress
+        if (message) *message = text;
+        if (warning) *warning = isWarning;
         loop.quit();
     });
     QTimer::singleShot(0, &loop, [] {
@@ -59,7 +66,7 @@ int importSubscriptionInteractively(const QString &url) {
     });
     QTimer::singleShot(15000, &loop, &QEventLoop::quit);
     NekoGui_sub::groupUpdater->AsyncUpdate(url);
-    if (groupId == -2) loop.exec();
+    if (events < 2) loop.exec();
     return groupId;
 }
 QByteArray read(const QString &path) {
@@ -314,8 +321,9 @@ int main(int argc, char **argv) {
             QObject::connect(s, &QTcpSocket::disconnected, s, &QObject::deleteLater);
             auto respond = [&, s] {
                 if (!s->bytesAvailable()) return;
-                s->readAll();
-                s->write("HTTP/1.1 " + QByteArray::number(status) + " Result\r\nContent-Type: text/plain\r\nContent-Length: " + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+                const auto request = s->readAll();
+                const int responseCode = request.startsWith("GET /batch-missing?") ? 404 : status;
+                s->write("HTTP/1.1 " + QByteArray::number(responseCode) + " Result\r\nContent-Type: text/plain\r\nContent-Length: " + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
                 s->disconnectFromHost();
             };
             QObject::connect(s, &QTcpSocket::readyRead, s, respond);
@@ -349,6 +357,21 @@ int main(int argc, char **argv) {
     NekoGui_sub::groupUpdater->Update(url, group->id, true);
     check(group->Profiles().size() == count, "HTTP failure preserves profiles");
     {
+        QEventLoop loop;
+        QString refreshError;
+        QObject::connect(NekoGui_sub::groupUpdater, &NekoGui_sub::GroupUpdater::serverOperationStatusChanged,
+                         &loop, [&](const QString &message, bool warning) {
+            if (!warning) return;
+            refreshError = message;
+            loop.quit();
+        });
+        QTimer::singleShot(15000, &loop, &QEventLoop::quit);
+        NekoGui_sub::groupUpdater->RefreshSubscription(url, group->id);
+        loop.exec();
+        check(refreshError.contains("503") && group->Profiles().size() == count,
+              "manual refresh reports the server failure and preserves existing profiles");
+    }
+    {
         status = 200;
         const auto secondUrl = url + "2";
         const auto firstBytes = read(NekoGui::profileManager->GetProfile(firstId)->fn);
@@ -373,11 +396,45 @@ int main(int argc, char **argv) {
             auto emptyGroup = NekoGui::ProfileManager::NewGroup();
             check(NekoGui::profileManager->AddGroup(emptyGroup), "empty group created for repeat import");
             NekoGui::dataStore->current_group = emptyGroup->id;
+            old->latency = 25;
+            check(NekoGui::profileManager->AutoConnectProfile(emptyGroup->id) != nullptr,
+                  "Auto can find a profile while an empty group is open");
+            const auto first = NekoGui::profileManager->GetProfile(firstId);
+            first->latency = -1;
+            check(NekoGui::profileManager->AutoConnectProfile(second->id) == old,
+                  "Auto selects a healthy profile in its preferred group");
+            second->archive = true;
+            check(NekoGui::profileManager->AutoConnectProfile(second->id) != old,
+                  "Auto skips archived groups");
+            second->archive = false;
             check(importSubscriptionInteractively(secondUrl) == second->id && emptyGroup->Profiles().isEmpty(),
                   "reimporting the same subscription from an empty group selects the existing group");
             NekoGui::dataStore->current_group = group->id;
             check(NekoGui::profileManager->DeleteGroup(emptyGroup->id) && !QFileInfo::exists(emptyGroup->fn),
                   "unused group is removed from disk");
+            const auto localBase = QStringLiteral("http://127.0.0.1:%1").arg(http.serverPort());
+            QString result;
+            bool warning = false;
+            const auto batchGroup = importSubscriptionInteractively(
+                localBase + "/batch-a\r\n\r\n" + localBase + "/batch-missing?key=private-fixture-token\r\n"
+                + localBase + "/batch-b\r\n" + fixture("batch-manual"),
+                &result, &warning);
+            const auto last = NekoGui::profileManager->GetGroup(batchGroup);
+            int batchGroups = 0;
+            for (const auto &[_, candidate] : NekoGui::profileManager->groups) {
+                if (candidate->url == localBase + "/batch-a" || candidate->url == localBase + "/batch-b")
+                    batchGroups += candidate->ProfilesWithOrder().size() == 1;
+            }
+            check(last && last->url == localBase + "/batch-b" && batchGroups == 2
+                  && group->url == url && second->url == secondUrl,
+                  "batch import keeps each successful subscription visible even when another fails");
+            check(warning && result.contains("404") && !result.contains("private-fixture-token"),
+                  "batch reports the HTTP failure without disclosing the subscription token");
+            bool manualImported = false;
+            for (const auto &profile : group->Profiles())
+                manualImported |= profile->bean->DisplayName() == QStringLiteral("batch-manual")
+                    && profile->origin == NekoGui::ProxyEntity::Manual;
+            check(manualImported, "mixed batch imports manual server in original group");
             auto local = NekoGui::ProfileManager::NewProxyEntity("vless");
             local->TrojanVLESSBean()->TryParseLink(fixture("local-server"));
             check(NekoGui::profileManager->AddProfile(local, second->id)

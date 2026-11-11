@@ -24,6 +24,7 @@ namespace NekoGui_sub {
 
     public:
         void AsyncUpdate(const QString &str, int _sub_gid = -1, const std::function<void()> &finish = nullptr);
+        void RefreshSubscription(const QString &url, int groupId, const std::function<void()> &finish = {});
 
         void Update(const QString &_str, int _sub_gid = -1, bool _not_sub_as_url = false);
 
@@ -31,10 +32,18 @@ namespace NekoGui_sub {
 
         void asyncUpdateCallback(int gid);
         void subscriptionImportFinished(int gid);
+        void serverOperationStatusChanged(const QString &message, bool warning);
 
     private:
-        int updateGroup(const QString &source, std::shared_ptr<NekoGui::Group> group,
-                        bool subscription, bool newGroup, bool refresh);
+        struct ImportResult {
+            int groupId = -1;
+            int added = 0;
+            QString problem;
+        };
+        ImportResult updateGroup(const QString &source, std::shared_ptr<NekoGui::Group> group,
+                                 bool subscription, bool newGroup, bool refresh);
+        void refreshSubscription(const QString &url, int groupId, const std::function<void()> &finish,
+                                 bool reportResult);
     };
 
     extern GroupUpdater *groupUpdater;

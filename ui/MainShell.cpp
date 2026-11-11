@@ -714,6 +714,7 @@ namespace GreenRhythm {
         list->setObjectName("grServerPicker");
         list->setSpacing(4);
         enum { ServerId = Qt::UserRole, GroupId, SearchText };
+        const int initialServer = activeServerId >= 0 ? activeServerId : selectedServerId;
         auto append = [&](const ServerItem &server) {
             if (server.groupId >= 0 && groups->findData(server.groupId) < 0)
                 groups->addItem(server.group, server.groupId);
@@ -724,7 +725,8 @@ namespace GreenRhythm {
             item->setData(ServerId, server.id);
             item->setData(GroupId, server.groupId);
             item->setData(SearchText, server.name + ' ' + detail);
-            item->setData(Qt::AccessibleTextRole, server.name + ' ' + detail + ' ' + server.latency);
+            const auto connection = server.id >= 0 && server.id == activeServerId ? tr("Подключён") : QString();
+            item->setData(Qt::AccessibleTextRole, server.name + ' ' + detail + ' ' + server.latency + ' ' + connection);
             item->setSizeHint(QSize(0, server.id < 0 ? 44 : 60));
 
             auto *card = new QWidget(list);
@@ -749,12 +751,18 @@ namespace GreenRhythm {
             }
             row->addLayout(labels, 1);
             if (!server.latency.isEmpty()) row->addWidget(muted(card, server.latency, 0.9));
+            if (!connection.isEmpty()) {
+                auto *active = new QLabel(connection, card);
+                active->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(kAccent));
+                row->addWidget(active);
+            }
             list->setItemWidget(item, card);
             item->setToolTip(server.name + (server.address.isEmpty() ? QString() : '\n' + server.address));
-            if (server.id == selectedServerId) list->setCurrentItem(item);
+            if (server.id == initialServer) list->setCurrentItem(item);
         };
         append({-1, tr("Автовыбор")});
         for (const auto &server : availableServers) append(server);
+        if (!list->currentItem()) list->setCurrentRow(0);
         groups->setVisible(groups->count() > 1);
         box->addWidget(list, 1);
         auto *empty = muted(&dialog, tr("Серверы не найдены."));
@@ -865,8 +873,14 @@ namespace GreenRhythm {
             scan->setToolTip(tr("Сканирование QR недоступно в этой сборке"));
 #endif
             compactAction(tr("Проверить задержку серверов"), "gr-activity", &MainShell::testServersRequested);
-            compactAction(tr("Обновить подписки"), "gr-refresh", &MainShell::updateSubscriptionRequested);
+            compactAction(tr("Обновить текущую подписку"), "gr-refresh", &MainShell::updateSubscriptionRequested);
             box->addLayout(details);
+            serverImportStatus = new QLabel(page);
+            serverImportStatus->setObjectName("grServerImportStatus");
+            serverImportStatus->setTextFormat(Qt::PlainText);
+            serverImportStatus->setWordWrap(true);
+            serverImportStatus->hide();
+            box->addWidget(serverImportStatus);
         }
         box->addWidget(content, 1);
         return page;
@@ -905,8 +919,9 @@ namespace GreenRhythm {
     }
 
     void MainShell::setConnectionState(bool isConnected, const QString &server,
-                                       const QString &latency) {
+                                       const QString &latency, bool probeFailed) {
         connected = isConnected;
+        trafficProbeFailed = isConnected && probeFailed;
         if (isConnected && !server.isEmpty()) {
             currentTitle->setText(server);
             currentMeta->setText(latency.isEmpty() ? tr("задержка не измерена")
@@ -1055,6 +1070,22 @@ namespace GreenRhythm {
         selectedServerId = currentId;
     }
 
+    void MainShell::setServerSelection(int preferredId, int activeId) {
+        selectedServerId = preferredId;
+        activeServerId = activeId;
+    }
+
+    bool MainShell::isServersPageVisible() const { return pages->currentIndex() == 1; }
+
+    void MainShell::setServerImportStatus(const QString &message, bool warning) {
+        if (!serverImportStatus) return;
+        serverImportStatus->setStyleSheet(QStringLiteral(
+            "QLabel { color: %1; background: %2; padding: 9px 12px; border-radius: 8px; }")
+            .arg(warning ? kAmber : kText, kSurfaceUp));
+        serverImportStatus->setText(message);
+        serverImportStatus->setVisible(!message.isEmpty());
+    }
+
     void MainShell::setSearchResultCount(int visible, int total) {
         if (!searchResult) return;
         searchResult->setText(total == 0 ? tr("Серверов пока нет. Добавьте ссылку или вставьте её из буфера.") :
@@ -1182,9 +1213,11 @@ namespace GreenRhythm {
                 enabled = false;
                 break;
             case State::Connected:
-                ring = glyph = kAccent;
-                fill = QStringLiteral("rgba(186,214,91,0.12)");
-                hint = tr("Подключено — нажмите, чтобы отключить");
+                ring = glyph = trafficProbeFailed ? kAmber : kAccent;
+                fill = trafficProbeFailed ? QStringLiteral("rgba(227,160,8,0.12)")
+                                          : QStringLiteral("rgba(186,214,91,0.12)");
+                hint = trafficProbeFailed ? tr("Проверка соединения не прошла. Откройте диагностику ниже.")
+                                          : tr("Подключено — нажмите, чтобы отключить");
                 break;
             case State::Failed:
                 ring = glyph = kRed;
@@ -1197,11 +1230,13 @@ namespace GreenRhythm {
         }
 
         stateDot->setStyleSheet(QStringLiteral("background: %1; border-radius: 5px;")
-                                    .arg(next == State::Connected ? QString(kAccent)
+                                    .arg(next == State::Connected ? QString(glyph)
                                                                   : QString(kLine)));
         power->setEnabled(enabled);
-        power->setAccessibleName(hint);
-        power->setToolTip(hint);
+        const auto actionHint = next == State::Connected && trafficProbeFailed
+            ? tr("Отключить VPN") : hint;
+        power->setAccessibleName(actionHint);
+        power->setToolTip(actionHint);
         power->setStyleSheet(
             QStringLiteral("QPushButton#grPower { min-width: 144px; max-width: 144px;"
                            " min-height: 144px; max-height: 144px; padding: 0;"
@@ -1215,12 +1250,12 @@ namespace GreenRhythm {
         // янтарь, не вышло — красный. В покое кнопка стоит на ровном фоне.
         if (glow != nullptr) glow->set(QColor(glyph), next != State::Idle);
         powerHint->setText(next == State::Idle ? tr("Выберите сервер и нажмите кнопку") : hint);
-        const QString status = next == State::Connected ? tr("Подключено") : next == State::Connecting ? tr("Подключение…") : next == State::Failed ? tr("Не удалось подключиться") : tr("Не подключено");
+        const QString status = next == State::Connected ? (trafficProbeFailed ? tr("Проблема с соединением") : tr("Подключено")) : next == State::Connecting ? tr("Подключение…") : next == State::Failed ? tr("Не удалось подключиться") : tr("Не подключено");
         if (statusTitle) statusTitle->setText(status);
         if (sidebarStatus) sidebarStatus->setText(status);
         powerHint->setStyleSheet(
-            QStringLiteral("color: %1;").arg(next == State::Failed ? QString(kRed)
-                                                                   : QString(kMuted)));
+            QStringLiteral("color: %1;").arg(next == State::Failed ? kRed
+                : (next == State::Connected && trafficProbeFailed) ? kAmber : kMuted));
     }
 
     void MainShell::setServerTags(const QStringList &tags) {

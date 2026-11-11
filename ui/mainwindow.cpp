@@ -15,6 +15,7 @@
 
 #include <QDateTime>
 #include <QDir>
+#include <QPointer>
 #include <QScopedValueRollback>
 #include <QThread>
 #include <memory>
@@ -49,12 +50,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     };
     connect(NekoGui_sub::groupUpdater, &NekoGui_sub::GroupUpdater::subscriptionImportFinished,
             this, [this](int gid) {
-        if (gid >= 0) {
-            refresh_groups(gid);
-        } else {
-            QMessageBox::warning(this, tr("Добавление подписки"),
-                                 tr("Не удалось добавить подписку. Подробности в разделе «Журнал»."));
-        }
+        if (gid >= 0) refresh_groups(gid);
+    });
+    connect(NekoGui_sub::groupUpdater, &NekoGui_sub::GroupUpdater::serverOperationStatusChanged,
+            this, [this](const QString &message, bool warning) {
+        if (shell) shell->setServerImportStatus(message, warning);
+        if (warning && (!shell || !shell->isServersPageVisible()))
+            QMessageBox::warning(this, tr("Серверы и подписки"), message);
     });
 
 #ifdef Q_OS_MACOS
@@ -1807,7 +1809,8 @@ void MainWindow::refresh_status(const QString &traffic_update) {
                 const auto ms = running->latency;
                 if (ms > 0) latency = tr("%1 мс").arg(ms);
             }
-            shell->setConnectionState(up, nm, latency);
+            shell->setServerSelection(chosen_server_id, up ? running->id : -1);
+            shell->setConnectionState(up, nm, latency, conn_health == Health_NoTraffic);
 
             // Метки под именем: протокол и транспорт. Берём у самого профиля, а
             // не выдумываем — DisplayType() уже собирает это для таблицы.
@@ -1836,20 +1839,11 @@ void MainWindow::refresh_status(const QString &traffic_update) {
                                 dpi_module != nullptr ? dpi_module->stateText() : QString());
             sync_dpi_module();
 
-            // Пока не подключено, карточка называет того, кого подключит кнопка:
-            // выбранного под кнопкой, иначе запомненного, иначе самого быстрого.
+            // Remembered profiles are used by startup, not by the manual Auto choice.
             if (!up) {
-                QString idle;
-                auto named = [](int id) -> QString {
-                    if (id < 0) return {};
-                    auto p = NekoGui::profileManager->GetProfile(id);
-                    return p == nullptr ? QString() : p->bean->DisplayName().left(26);
-                };
-                idle = named(chosen_server_id);
-                if (idle.isEmpty()) idle = named(NekoGui::dataStore->remember_id);
-                if (idle.isEmpty() && !NekoGui::profileManager->profiles.empty()) {
-                    idle = tr("Самый быстрый сервер");
-                }
+                const auto selected = NekoGui::profileManager->GetProfile(chosen_server_id);
+                const auto idle = selected ? selected->bean->DisplayName().left(26)
+                    : NekoGui::profileManager->profiles.empty() ? QString() : tr("Автовыбор сервера");
                 shell->setIdleServer(idle);
             }
         }
@@ -2052,7 +2046,8 @@ void MainWindow::sync_shell_servers() {
             if (!group) continue;
             for (const auto &profile : group->ProfilesWithOrder()) {
                 if (!profile || !profile->bean) continue;
-                const auto latency = profile->latency > 0 ? tr("%1 мс").arg(profile->latency) : QString();
+                const auto latency = profile->latency > 0 ? tr("%1 мс").arg(profile->latency)
+                    : profile->latency < 0 ? tr("Проверка не прошла") : QString();
                 items.append({profile->id, profile->bean->DisplayName(), latency, gid,
                               labels.value(gid), profile->bean->DisplayAddress()});
             }
@@ -2197,35 +2192,25 @@ static void RegisterGreenRhythmScheme() {
 
 
 
-// Smart connect: pick the fastest already-tested server in the «Зелёный Ритм» group
-// (lowest positive latency; first server if none tested yet) and connect. Falls back
-// to the current group so it also works as a generic "connect to best" action.
 void MainWindow::smart_connect_greenrhythm() {
-    std::shared_ptr<NekoGui::Group> gr;
+    auto *manager = NekoGui::profileManager;
+    int preferredGroup = -1;
     {
-        QMutexLocker locker(&NekoGui::profileManager->mutex);
-        for (const auto &[gid, g]: NekoGui::profileManager->groups) {
-            if (g == nullptr) continue;
+        QMutexLocker locker(&manager->mutex);
+        for (const auto &[gid, g]: manager->groups) {
+            if (g->archive) continue;
             if (g->name == GreenRhythm::kServiceName || g->url.contains(QStringLiteral("verdantvibe"), Qt::CaseInsensitive)) {
-                gr = g;
+                preferredGroup = gid;
                 break;
             }
         }
     }
-    if (gr == nullptr) gr = NekoGui::profileManager->CurrentGroup();
-    if (gr == nullptr) return;
-
-    auto profiles = gr->Profiles();
-    if (profiles.isEmpty()) {
+    const auto best = manager->AutoConnectProfile(preferredGroup);
+    if (!best) {
         MessageBoxWarning(tr("Быстрое подключение"),
-                          tr("Нет серверов. Импортируйте подписку «Зелёный Ритм»."));
+                          tr("Нет серверов для автовыбора. Откройте «Серверы», чтобы добавить подписку или выбрать сервер вручную."));
         return;
     }
-    std::shared_ptr<NekoGui::ProxyEntity> best;
-    for (const auto &p: profiles) {
-        if (p->latency > 0 && (best == nullptr || p->latency < best->latency)) best = p;
-    }
-    if (best == nullptr) best = profiles.first(); // nothing tested yet — take the first
     neko_start(best->id);
 }
 
@@ -2673,14 +2658,31 @@ void MainWindow::on_menu_delete_repeat_triggered() {
     }
 }
 
-bool mw_sub_updating = false;
-
 void MainWindow::on_menu_update_subscription_triggered() {
-    auto group = NekoGui::profileManager->CurrentGroup();
-    if (group->url.isEmpty()) return;
-    if (mw_sub_updating) return;
-    mw_sub_updating = true;
-    NekoGui_sub::groupUpdater->AsyncUpdate(group->url, group->id, [&] { mw_sub_updating = false; });
+    if (profile_update_in_progress) return;
+    auto *manager = NekoGui::profileManager;
+    QString url;
+    int groupId = -1;
+    {
+        QMutexLocker locker(&manager->mutex);
+        const auto group = manager->CurrentGroup();
+        if (group && !group->archive) {
+            url = group->url;
+            groupId = group->id;
+        }
+    }
+    if (url.isEmpty()) {
+        const auto message = tr("Выберите группу с подпиской, чтобы обновить её серверы.");
+        if (shell && shell->isServersPageVisible()) shell->setServerImportStatus(message, false);
+        else QMessageBox::information(this, tr("Подписки"), message);
+        return;
+    }
+    profile_update_in_progress = true;
+    const QPointer<MainWindow> window(this);
+    NekoGui_sub::groupUpdater->RefreshSubscription(url, groupId, [window] {
+        QMetaObject::invokeMethod(QCoreApplication::instance(),
+            [window] { if (window) window->profile_update_in_progress = false; }, Qt::QueuedConnection);
+    });
 }
 
 void MainWindow::on_menu_remove_unavailable_triggered() {
@@ -2719,8 +2721,8 @@ void MainWindow::on_menu_resolve_domain_triggered() {
                               tr("Resolving domain to IP, if support.")) != QMessageBox::StandardButton::Yes) {
         return;
     }
-    if (mw_sub_updating) return;
-    mw_sub_updating = true;
+    if (profile_update_in_progress) return;
+    profile_update_in_progress = true;
     NekoGui::dataStore->resolve_count = profiles.count();
 
     for (const auto &profile: profiles) {
@@ -2728,7 +2730,7 @@ void MainWindow::on_menu_resolve_domain_triggered() {
             profile->Save();
             if (--NekoGui::dataStore->resolve_count != 0) return;
             refresh_proxy_list();
-            mw_sub_updating = false;
+            profile_update_in_progress = false;
         });
     }
 }

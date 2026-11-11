@@ -71,7 +71,9 @@ namespace NekoGui_network {
         }
         //
         auto result = NekoHTTPResponse{_reply->error() == QNetworkReply::NetworkError::NoError ? "" : _reply->errorString(),
-                                       _reply->readAll(), _reply->rawHeaderPairs()};
+                                       _reply->readAll(), _reply->rawHeaderPairs(),
+                                       _reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),
+                                       _reply->error()};
         _reply->deleteLater();
         return result;
     }

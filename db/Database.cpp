@@ -423,6 +423,30 @@ namespace NekoGui {
         return GetGroup(dataStore->current_group);
     }
 
+    std::shared_ptr<ProxyEntity> ProfileManager::AutoConnectProfile(int preferredGroup) const {
+        QMutexLocker locker(&mutex);
+        auto order = groupsTabOrder;
+        order.removeAll(dataStore->current_group);
+        order.prepend(dataStore->current_group);
+        order.removeAll(preferredGroup);
+        order.prepend(preferredGroup);
+        std::shared_ptr<ProxyEntity> previousFailure;
+        for (int gid : order) {
+            const auto entry = groups.find(gid);
+            if (entry == groups.end() || entry->second->archive) continue;
+            std::shared_ptr<ProxyEntity> fastest, untested;
+            for (const auto &profile : entry->second->ProfilesWithOrder()) {
+                if (profile->latency > 0 && (!fastest || profile->latency < fastest->latency))
+                    fastest = profile;
+                if (profile->latency == 0 && !untested) untested = profile;
+                if (profile->latency < 0 && !previousFailure) previousFailure = profile;
+            }
+            if (fastest) return fastest;
+            if (untested) return untested;
+        }
+        return previousFailure;
+    }
+
     QList<std::shared_ptr<ProxyEntity>> Group::Profiles() const {
         // Central reader — most profile-list access funnels through here (UI refresh,
         // config build, subscription workers). Lock so it can't iterate the shared map

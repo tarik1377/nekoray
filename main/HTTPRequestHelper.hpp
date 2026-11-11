@@ -15,12 +15,13 @@ namespace NekoGui_network {
         /**
          * Код ответа HTTP. Ноль — до сервера не дошли вовсе.
          *
-         * Заполняет только HttpPost: активации код нужен по существу — 402 это
+         * Активации код нужен по существу — 402 это
          * «подписка кончилась», 409 «лимит устройств», и путать их с «сеть не
          * ответила» нельзя. Первое требует стереть реквизиты, последнее —
          * оставить всё как было.
          */
         int status = 0;
+        QNetworkReply::NetworkError networkError = QNetworkReply::NoError;
     };
 
     class NetworkRequestHelper : QObject {
