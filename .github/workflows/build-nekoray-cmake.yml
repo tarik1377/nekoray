@@ -101,10 +101,20 @@ jobs:
           # бы красным на ровном месте.
           (
             cd go/cmd/nekobox_core
+            # The disposable Ubuntu runner restricts unprivileged user
+            # namespaces. Permit Chromium's own sandbox here; the application
+            # never launches arbitrary websites with --no-sandbox.
+            if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+            if command -v google-chrome >/dev/null; then
+              google-chrome --version
+              timeout 15s google-chrome --headless=new --disable-gpu --no-first-run --disable-background-networking --user-data-dir="$RUNNER_TEMP/gr-site-sandbox-probe" --dump-dom about:blank
+            fi
             MODFILE=$(bash _overlay/prepare.sh)
             CORE_TAGS="with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api"
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" ./...
-            go test -race -modfile "$MODFILE" -timeout 2m ./robloxauto ./siteauto
+            go test -race -modfile "$MODFILE" -timeout 2m ./robloxauto ./siteauto ./sitebook
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/common/tls -run TestRealityMLDSA65
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/route -run 'TestPrivateDestinationInterface|TestAutoDetect'
             go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-tun -run TestSystemResetPacket
@@ -237,7 +247,7 @@ jobs:
           cd go/cmd/nekobox_core
           MODFILE=$(bash _overlay/prepare.sh)
           CORE_TAGS="with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_v2ray_api"
-          go test -modfile "$MODFILE" -tags "$CORE_TAGS" -timeout 5m -v -run 'TestTunDNSGuard|TestWindowsRealTunDNSLoopGuard|TestProcessNamePlatformCaseMatching|TestGameVoiceUDPAndTCPRoutes|TestRobloxAuto|TestSiteAuto|TestWebsiteDomainRule|TestTunExclusions|TestWindowsRealTunGatewayExclusion' . 2>&1 | tee tun-regression.log
+          go test -modfile "$MODFILE" -tags "$CORE_TAGS" -timeout 5m -v -run 'TestTunDNSGuard|TestWindowsRealTunDNSLoopGuard|TestProcessNamePlatformCaseMatching|TestGameVoiceUDPAndTCPRoutes|TestRobloxAuto|TestSiteAuto|TestSiteServices|TestWebsiteDomainRule|TestTunExclusions|TestWindowsRealTunGatewayExclusion' . 2>&1 | tee tun-regression.log
           go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-box/route -run 'TestAutoDetect|TestPrivateDestinationInterface'
           go test -modfile "$MODFILE" -tags "$CORE_TAGS" github.com/sagernet/sing-tun -run 'TestFirewallExecutablePath|TestSystemResetPacket'
       - name: Stop test capture

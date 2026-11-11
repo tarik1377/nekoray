@@ -118,6 +118,9 @@ func (e *Engine) Snapshot() (string, map[string]Entry) {
 	return e.snapshotLocked()
 }
 func (e *Engine) Generation() string { e.mu.Lock(); defer e.mu.Unlock(); return e.network }
+
+// NotifyChanges queues persistence after a trusted, scoped browser-load seed.
+func (e *Engine) NotifyChanges() { e.publish() }
 func (e *Engine) InvalidateTCP(host, network string, path Path) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

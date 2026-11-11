@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QWidget>
+#include <QJsonObject>
 
 class QLineEdit;
 class QLabel;
@@ -10,6 +11,7 @@ class QTimer;
 class QVBoxLayout;
 
 namespace GreenRhythm {
+    class SitesPage;
 
     class PowerGlow;
     class MaintenancePanel;
@@ -61,6 +63,8 @@ namespace GreenRhythm {
 
         /** Показать страницу по номеру: 0 подключение, 1 серверы, 2 журнал. */
         void showPage(int index);
+        SitesPage *sitesWidget() const { return sitesPage; }
+        void setSavedSites(const QJsonObject &library);
         void focusServerSearch();
         void focusSearch();
         void setSearchResultCount(int visible, int total);
@@ -262,6 +266,7 @@ namespace GreenRhythm {
         void tunBypassRequested();
         void gameProgramsRequested();
         void siteRoutingRequested();
+        void siteModeRequested(const QString &id,const QString &mode);
         void routeDefaultsRequested();
         void restoreRoutesRequested();
         void geoDataRefreshRequested();
@@ -321,6 +326,8 @@ namespace GreenRhythm {
         void paintUpdates();
 
         QStackedWidget *pages = nullptr;
+        SitesPage *sitesPage = nullptr;
+        QWidget *savedSiteBox = nullptr;
         QList<QPushButton *> navButtons;
 
         QPushButton *power = nullptr;

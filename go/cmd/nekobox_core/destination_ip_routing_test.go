@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"nekobox_core/sitebook"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -228,5 +229,39 @@ func TestDestinationIPRoutingOverHTTPAndSOCKS(t *testing.T) {
 	}
 	if publicQueries.Load() == 0 || officeQueries.Load() == 0 {
 		t.Fatal("public/split DNS was not exercised")
+	}
+}
+
+func TestSiteServicesLiteralIPGuardPreservesResolverPlacement(t *testing.T) {
+	_, policies, err := sitebook.Parse(ownedSiteLibrary("auto"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	headless, err := serviceHeadlessRules(policies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(headless)
+	var definitions []interface{}
+	json.Unmarshal(data, &definitions)
+	for _, country := range []bool{false, true} {
+		serviceRule := map[string]interface{}{"network": "tcp", "rule_set": []string{siteServicesTag}, "outbound": siteServicesTag}
+		rules := []interface{}{map[string]interface{}{"domain": "explicit.test", "outbound": "proxy"}, serviceRule}
+		if country {
+			rules = append(rules, map[string]interface{}{"ip_is_private": true, "outbound": "bypass"})
+		}
+		config := map[string]interface{}{"route": map[string]interface{}{"rules": rules, "rule_set": []interface{}{map[string]interface{}{"type": "inline", "tag": siteServicesTag, "rules": definitions}}}}
+		resolveBeforeDestinationIPRules(config)
+		result := config["route"].(map[string]interface{})["rules"].([]interface{})
+		if !reflect.DeepEqual(result[:2], rules[:2]) {
+			t.Fatal("IP URL introduced DNS lookup ahead of explicit rules or site matcher")
+		}
+		if country {
+			if len(result) != 4 || !unconditionalResolve(result[2].(map[string]interface{})) {
+				t.Fatal("ordinary private-IP rule lost its original resolver placement")
+			}
+		} else if len(result) != 2 {
+			t.Fatal("IP URL forced DNS for unrelated fallback names")
+		}
 	}
 }

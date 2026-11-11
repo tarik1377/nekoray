@@ -2,11 +2,33 @@ package robloxauto
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestBrowserSeedBatchesKeepCacheBounded(t *testing.T) {
+	e := engine(t)
+	for batch := 0; batch < 4; batch++ {
+		entries := map[string]Entry{}
+		for n := 0; n < 80; n++ {
+			entries[fmt.Sprintf("tcp:https://batch-%d-host-%d.example.com", batch, n)] = Entry{Path: Direct, Verified: true, Expires: time.Now().Add(time.Minute)}
+		}
+		e.Restore(e.Generation(), entries)
+		_, snapshot := e.Snapshot()
+		if len(snapshot) > 128 {
+			t.Fatal("merged browser observations exceeded cache bound", len(snapshot))
+		}
+	}
+	_, before := e.Snapshot()
+	e.Restore("another-network", map[string]Entry{"tcp:https://wrong.example.com": {Path: Proxy}})
+	_, after := e.Snapshot()
+	if len(before) != len(after) {
+		t.Fatal("foreign network seed accepted")
+	}
+}
 
 func engine(t *testing.T) *Engine {
 	t.Helper()

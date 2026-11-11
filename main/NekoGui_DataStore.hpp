@@ -279,6 +279,7 @@ namespace NekoGui {
         QString roblox_split_processes;
         QString roblox_auto_processes;
         QString site_routing;
+        QString site_services;
 
         /**
          * Обход фильтрации на ПРЯМОМ пути — средствами ядра, без драйвера.

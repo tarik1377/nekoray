@@ -44,7 +44,7 @@ int main(int argc, char **argv) {
         std::cout << (ok ? "PASS " : "FAIL ") << name << '\n';
     };
     check(!theme.isEmpty(), "compact window uses production font and theme");
-    check(pages && pages->count() == 4, "existing pages are retained");
+    check(pages && pages->count() == 5, "existing pages and the new Sites page are retained");
     check(logs && routes && buy, "log, routing and purchase are available in sidebar");
     QObject::connect(&shell, &GreenRhythm::MainShell::routesRequested, [&] { ++routeCalls; });
     QObject::connect(&shell, &GreenRhythm::MainShell::buyRequested, [&] { ++buyCalls; });

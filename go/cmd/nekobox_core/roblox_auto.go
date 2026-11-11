@@ -45,12 +45,15 @@ type robloxAutoOutbound struct {
 	checked       time.Time
 	identity      string
 	sites         *siteauto.Catalog
+	knownHost     func(string) bool
+	extraIdentity func() string
 }
 
 func registerRobloxAuto(ctx context.Context) {
 	registry := service.FromContext[adapter.OutboundRegistry](ctx).(*outbound.Registry)
 	outbound.Register[robloxAutoOptions](registry, robloxAutoType, newRobloxAuto)
 	outbound.Register[robloxAutoOptions](registry, "greenrhythm-site-auto", newSiteAuto)
+	outbound.Register[siteServicesOptions](registry, siteServicesType, newSiteServices)
 }
 func newSiteAuto(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options robloxAutoOptions) (adapter.Outbound, error) {
 	catalog, err := siteauto.New(options.SiteDomains)
@@ -115,6 +118,9 @@ func (s *robloxAutoOutbound) refreshNetwork() {
 	}
 	s.checked = time.Now()
 	parts := []string{}
+	if s.extraIdentity != nil {
+		parts = append(parts, "sites:"+s.extraIdentity())
+	}
 	if s.network != nil {
 		if selected := s.network.DefaultNetworkInterface(); selected != nil {
 			data, _ := json.Marshal(selected)
@@ -177,6 +183,9 @@ func autoHost(ctx context.Context, destination M.Socksaddr) string {
 	return destination.Addr.String()
 }
 func (s *robloxAutoOutbound) known(host string) bool {
+	if s.knownHost != nil {
+		return s.knownHost(host)
+	}
 	if s.sites != nil {
 		return s.sites.Contains(host)
 	}
