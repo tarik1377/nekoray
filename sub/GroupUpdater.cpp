@@ -500,7 +500,7 @@ namespace NekoGui_sub {
         const auto group = _sub_gid < 0 ? manager->CurrentGroup() : manager->GetGroup(_sub_gid);
         runOnNewThread([=] {
             const int gid = updateGroup(content, group, asURL || _sub_gid >= 0, createNewGroup, _sub_gid >= 0);
-            emit asyncUpdateCallback(gid);
+            emit asyncUpdateCallback(gid >= 0 ? gid : _sub_gid);
             if (finish) finish();
         });
     }
