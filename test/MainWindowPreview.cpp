@@ -12,7 +12,7 @@
  * настройки и сеть.
  *
  * В выпуск не входит: EXCLUDE_FROM_ALL.
- *   ninja mainwindow_preview && ./mainwindow_preview main.png [страница] [высота|end|page]
+ *   ninja mainwindow_preview && ./mainwindow_preview main.png [страница] [высота|end|page|picker]
  *
  * Для длинных страниц: «Настройки» не влезают в 720 точек, и снимок обычной
  * высоты не показывал бы нижние разделы вовсе. Высота помогает до размера
@@ -39,6 +39,9 @@
 #include <QScrollBar>
 #include <QTranslator>
 #include <QTableWidgetItem>
+#include <QDialog>
+#include <QPushButton>
+#include <QTimer>
 
 namespace {
 
@@ -93,15 +96,9 @@ int main(int argc, char *argv[]) {
     }
     if (qss.isOpen()) w.setStyleSheet(QString::fromUtf8(qss.readAll()));
 
-    // Данные — настоящие, с машины владельца: те же имена и адреса. Выдуманные
-    // «Server 1, Server 2» скрыли бы ровно то, на что он жалуется: имя теряется
-    // между протоколом и адресом.
-    addServer(ui.proxyListTable, "VLESS", "203.0.113.30:443", "Germanyyy-admin", "");
-    addServer(ui.proxyListTable, "VLESS", "203.0.113.20:443", "elvin", "");
-    addServer(ui.proxyListTable, "VLESS", "203.0.113.10:443", "lockdowner", "");
-    addServer(ui.proxyListTable, "VLESS", "31.77.129.38:443", "Germany-admin", "");
-    addServer(ui.proxyListTable, "VLESS", "192.124.181.171:443", "tarik", "32 ms");
-    addServer(ui.proxyListTable, "VLESS", "orsana.adshkola.ru:443", "orsana-admin", "106 ms");
+    addServer(ui.proxyListTable, "VLESS", "main.example:443", QStringLiteral("Основной"), "32 ms");
+    addServer(ui.proxyListTable, "VLESS", "fi.example:443", QStringLiteral("Финляндия"), "51 ms");
+    addServer(ui.proxyListTable, "VLESS", "de.example:443", QStringLiteral("Германия"), "");
 
     // ТАБЛИЦА СОЕДИНЕНИЙ — С НАСТОЯЩИМИ СТРОКАМИ со снимка владельца 05.09.2026,
     // через те же подписи, что и в живом окне (ConnectionRow). Три строки
@@ -175,7 +172,7 @@ int main(int argc, char *argv[]) {
         ui.down_tab->setCurrentIndex(1);
     }
 
-    ui.label_running->setText(QStringLiteral("[По умолчанию] Germanyyy-admin"));
+    ui.label_running->setText(QStringLiteral("[Основная подписка] Основной"));
     ui.label_inbound->setText(QStringLiteral("Mixed: 127.0.0.1:2080"));
     ui.label_speed->setText(QStringLiteral("Через прокси: 38.80 KiB↑ 72.84 MiB↓\n"
                                            "Напрямую: 653.00 B↑ 332.00 B↓"));
@@ -198,11 +195,13 @@ int main(int argc, char *argv[]) {
     ui.proxyListTable->verticalHeader()->setDefaultSectionSize(76);
     ui.proxyListTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui.proxyListTable->selectRow(0);
-    ui.tabWidget->tabBar()->setVisible(ui.tabWidget->count() > 1);
+    ui.tabWidget->setTabText(0, QStringLiteral("Основная подписка"));
+    ui.tabWidget->addTab(new QWidget, QStringLiteral("Резерв"));
+    ui.tabWidget->addTab(new QWidget, QStringLiteral("Мои серверы"));
 
     auto *shell = new GreenRhythm::MainShell(&w);
     shell->adopt(ui.tabWidget, ui.down_tab);
-    shell->setConnectionState(true, QStringLiteral("Germanyyy-admin"), QStringLiteral("32 мс"));
+    shell->setConnectionState(true, QStringLiteral("Основной"), QStringLiteral("32 мс"));
     // Подписка — с настоящими числами, а не «Lorem»: по ним видно, влезает ли
     // строка в колонку и не переносится ли она посреди слова.
     // Живые числа с настоящего снимка владельца: 60 через VPN, 123 напрямую.
@@ -219,13 +218,21 @@ int main(int argc, char *argv[]) {
     // то окно, которое увидит человек, а не то, что было до этих кнопок.
     shell->setModes(true, false, false, true);
     shell->setAppOptions(true, false, 120);
-    shell->setAppVersion(QStringLiteral("1.8.3"));
+    shell->setAppVersion(QStringLiteral("2.7.2"));
     shell->setConnectionOptions(true, true, true, QStringLiteral("192.168.1.5"), 2080);
-    shell->setUpdateAvailable(true, QStringLiteral("1.8.4"));
-    shell->setServers({{4, QStringLiteral("tarik"), QStringLiteral("32 мс")},
-                       {1, QStringLiteral("Germany-admin"), QString()},
-                       {5, QStringLiteral("orsana-admin"), QStringLiteral("106 мс")}},
+    shell->setServers({{4, QStringLiteral("Основной"), QStringLiteral("32 мс"), 0,
+                       QStringLiteral("Основная подписка"), QStringLiteral("main.example:443")},
+                       {5, QStringLiteral("Финляндия"), QStringLiteral("51 мс"), 0,
+                       QStringLiteral("Основная подписка"), QStringLiteral("fi.example:443")},
+                       {6, QStringLiteral("Германия"), {}, 0,
+                       QStringLiteral("Основная подписка"), QStringLiteral("de.example:443")},
+                       {1, QStringLiteral("Резервный"), QStringLiteral("54 мс"), 1,
+                       QStringLiteral("Резерв"), QStringLiteral("reserve.example:443")},
+                       {7, QStringLiteral("Личный сервер"), QStringLiteral("106 мс"), 2,
+                       QStringLiteral("Мои серверы"), QStringLiteral("203.0.113.40:443")}},
                       4);
+    shell->setServerRemovalEnabled(true);
+    shell->setSearchResultCount(ui.proxyListTable->rowCount(), ui.proxyListTable->rowCount());
     w.setCentralWidget(shell);
 
     // Страница выбирается доводом: посмотреть надо каждую, а не только первую.
@@ -234,6 +241,7 @@ int main(int argc, char *argv[]) {
     const QString tail = argc > 3 ? QString::fromLocal8Bit(argv[3]) : QString();
     const bool toEnd = tail == QStringLiteral("end");
     const bool wholePage = tail == QStringLiteral("page");
+    const bool picker = tail == QStringLiteral("picker");
     const int height = toEnd || wholePage ? 0 : tail.toInt();
     w.resize(1180, height > 0 ? height : 720);
     w.show();
@@ -245,7 +253,18 @@ int main(int argc, char *argv[]) {
         app.processEvents();
     }
 
-    QPixmap shot = w.grab();
+    QPixmap shot;
+    if (picker) {
+        QTimer::singleShot(0, &w, [&] {
+            if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget())) {
+                shot = dialog->grab();
+                dialog->reject();
+            }
+        });
+        shell->findChild<QPushButton *>("grServerChoice")->click();
+    } else {
+        shot = w.grab();
+    }
     if (wholePage) {
         // Содержимое прокрутки на фоне страницы — цвет берётся с окна, как его
         // нарисовала тема: у содержимого своего фона нет.

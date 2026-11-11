@@ -575,17 +575,15 @@ namespace NekoGui_sub {
         }
 
         if (refresh && group->url != originalUrl && group->url != source) return -1;
-        if (!newGroup && !group->url.isEmpty() && group->url != source) {
-            if (refresh) return -1;
-            // A group holds a single subscription URL. Route a different URL
-            // to its existing group, or create one after a successful download.
+        if (!newGroup && !refresh && group->url != source) {
+            // Reuse the same subscription even when importing from an empty group.
             for (const auto &[id, candidate] : manager->groups) {
                 if (!candidate->archive && candidate->url == source) {
                     group = candidate;
                     break;
                 }
             }
-            newGroup = group->url != source;
+            newGroup = !group->url.isEmpty() && group->url != source;
         }
         if (newGroup) {
             group = NekoGui::ProfileManager::NewGroup();

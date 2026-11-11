@@ -27,6 +27,7 @@
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QDialog>
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QLineEdit>
 #include <QListWidget>
@@ -138,14 +139,26 @@ int main(int argc, char **argv) {
     is(QStringLiteral("вторая группа сразу показывает полосу вкладок"), groups->tabBar()->isVisible());
     groups->setCurrentIndex(1);
     is(QStringLiteral("новую группу можно открыть сразу"), groups->currentIndex() == 1);
+    auto *manageGroups = shell.findChild<QPushButton *>("grManageServerGroups");
+    auto *removeServers = shell.findChild<QPushButton *>("grRemoveServers");
+    int managementClicks = 0, removalClicks = 0;
+    QObject::connect(&shell, &GreenRhythm::MainShell::manageServerGroupsRequested, [&] { ++managementClicks; });
+    QObject::connect(&shell, &GreenRhythm::MainShell::removeSelectedServersRequested, [&] { ++removalClicks; });
+    is(QStringLiteral("управление группами и удаление видны на странице"), manageGroups->isVisible() && removeServers->isVisible());
+    manageGroups->click();
+    removeServers->click();
+    is(QStringLiteral("удаление без выделения недоступно"), managementClicks == 1 && removalClicks == 0);
+    shell.setServerRemovalEnabled(true);
+    removeServers->click();
+    is(QStringLiteral("удаление выделенного сервера передаётся окну"), removalClicks == 1);
     auto *search = shell.findChild<QLineEdit *>(QStringLiteral("grServerSearch"));
     QString query;
     QObject::connect(&shell, &GreenRhythm::MainShell::serverSearchChanged, [&query](const QString &text) { query = text; });
     search->setText(QStringLiteral("Berlin"));
     is(QStringLiteral("видимый поиск передаёт запрос"), search->isVisible() && query == QStringLiteral("Berlin"));
     shell.showPage(0);
-    shell.setServers({{42, QStringLiteral("Berlin"), QStringLiteral("32 ms")},
-                      {43, QStringLiteral("Paris"), QString()}}, 42);
+    shell.setServers({{42, QStringLiteral("Berlin"), QStringLiteral("32 ms"), 1, QStringLiteral("Orsana"), QStringLiteral("berlin.example:443")},
+                      {43, QStringLiteral("Paris"), QString(), 2, QStringLiteral("Резерв"), QStringLiteral("paris.example:443")}}, 42);
     int chosen = -99;
     QObject::connect(&shell, &GreenRhythm::MainShell::serverChosen, [&chosen](int id) { chosen = id; });
     QTimer::singleShot(0, [&] {
@@ -154,7 +167,13 @@ int main(int argc, char **argv) {
         auto *filter = dialog->findChild<QLineEdit *>();
         auto *list = dialog->findChild<QListWidget *>();
         auto *buttons = dialog->findChild<QDialogButtonBox *>();
-        filter->setText(QStringLiteral("Paris"));
+        auto *groupFilter = dialog->findChild<QComboBox *>("grServerPickerGroup");
+        is(QStringLiteral("быстрый выбор показывает обе группы"), groupFilter->count() == 3 && !list->item(2)->isHidden());
+        groupFilter->setCurrentIndex(groupFilter->findData(2));
+        is(QStringLiteral("фильтр оставляет только серверы выбранной группы"),
+           list->item(0)->isHidden() && list->item(1)->isHidden() && !list->item(2)->isHidden());
+        filter->setText(QStringLiteral("paris.example"));
+        is(QStringLiteral("поиск по адресу находит сервер другой группы"), !list->item(2)->isHidden());
         is(QStringLiteral("нельзя выбрать скрытый результат поиска"), !buttons->button(QDialogButtonBox::Ok)->isEnabled());
         list->setCurrentRow(2);
         buttons->button(QDialogButtonBox::Ok)->click();

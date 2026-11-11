@@ -47,7 +47,7 @@ namespace NekoGui {
 
         bool AddGroup(const std::shared_ptr<Group> &ent);
 
-        void DeleteGroup(int gid);
+        bool DeleteGroup(int gid);
 
         std::shared_ptr<Group> GetGroup(int id);
 

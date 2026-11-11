@@ -68,6 +68,7 @@ namespace GreenRhythm {
         void focusServerSearch();
         void focusSearch();
         void setSearchResultCount(int visible, int total);
+        void setServerRemovalEnabled(bool enabled);
 
         /**
          * Живые числа: сколько соединений идёт через VPN и сколько мимо.
@@ -147,6 +148,9 @@ namespace GreenRhythm {
             int id = -1;
             QString name;
             QString latency; ///< «32 мс»; пусто — не измерена
+            int groupId = -1;
+            QString group;
+            QString address;
         };
 
         /**
@@ -284,6 +288,8 @@ namespace GreenRhythm {
         /** Выбор сервера под кнопкой. -1 — автовыбор. */
         void serverChosen(int id);
         void addServerRequested();
+        void manageServerGroupsRequested();
+        void removeSelectedServersRequested();
         void pasteRequested();
         void chooseSelectedRequested();
         void scanRequested();
@@ -381,6 +387,7 @@ namespace GreenRhythm {
         QString availableVersion;
         bool updateAvailable = false;
         QLineEdit *serverSearch = nullptr;
+        QPushButton *removeServers = nullptr;
         QLabel *searchResult = nullptr;
         QLabel *modeSummary = nullptr;
         QLabel *statusTitle = nullptr;

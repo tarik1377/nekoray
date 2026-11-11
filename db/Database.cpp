@@ -393,20 +393,25 @@ namespace NekoGui {
         return true;
     }
 
-    void ProfileManager::DeleteGroup(int gid) {
+    bool ProfileManager::DeleteGroup(int gid) {
         QMutexLocker locker(&mutex);
-        if (groups.size() <= 1) return;
+        if (groups.size() <= 1 || !groups.count(gid)) return false;
+        const auto active = GetProfile(dataStore->started_id);
+        if (active && active->gid == gid) return false;
         QList<int> toDelete;
         for (const auto &[id, profile]: profiles) {
             if (profile->gid == gid) toDelete += id; // map访问中，不能操作
         }
         for (const auto &id: toDelete) {
             DeleteProfile(id);
+            if (profiles.count(id)) return false;
         }
+        const QString path = QStringLiteral("groups/%1.json").arg(gid);
+        if (QFileInfo::exists(path) && !QFile::remove(path)) return false;
         groups.erase(gid);
         groupsIdOrder.removeAll(gid);
         groupsTabOrder.removeAll(gid);
-        QFile(QStringLiteral("groups/%1.json").arg(gid)).remove();
+        return true;
     }
 
     std::shared_ptr<Group> ProfileManager::GetGroup(int id) {

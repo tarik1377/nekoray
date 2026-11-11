@@ -364,6 +364,20 @@ int main(int argc, char **argv) {
         status = 200;
         if (second && !second->Profiles().isEmpty()) {
             const auto old = second->Profiles().first();
+            NekoGui::dataStore->started_id = old->id;
+            check(!NekoGui::profileManager->DeleteGroup(second->id)
+                  && NekoGui::profileManager->GetGroup(second->id) == second
+                  && QFileInfo::exists(second->fn) && QFileInfo::exists(old->fn),
+                  "deleting a group with the connected profile preserves the group and profile");
+            NekoGui::dataStore->started_id = -1;
+            auto emptyGroup = NekoGui::ProfileManager::NewGroup();
+            check(NekoGui::profileManager->AddGroup(emptyGroup), "empty group created for repeat import");
+            NekoGui::dataStore->current_group = emptyGroup->id;
+            check(importSubscriptionInteractively(secondUrl) == second->id && emptyGroup->Profiles().isEmpty(),
+                  "reimporting the same subscription from an empty group selects the existing group");
+            NekoGui::dataStore->current_group = group->id;
+            check(NekoGui::profileManager->DeleteGroup(emptyGroup->id) && !QFileInfo::exists(emptyGroup->fn),
+                  "unused group is removed from disk");
             auto local = NekoGui::ProfileManager::NewProxyEntity("vless");
             local->TrojanVLESSBean()->TryParseLink(fixture("local-server"));
             check(NekoGui::profileManager->AddProfile(local, second->id)
