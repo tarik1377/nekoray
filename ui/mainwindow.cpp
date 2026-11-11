@@ -47,6 +47,15 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     MW_dialog_message = [=](const QString &a, const QString &b) {
         runOnUiThread([=] { dialog_message_impl(a, b); });
     };
+    connect(NekoGui_sub::groupUpdater, &NekoGui_sub::GroupUpdater::subscriptionImportFinished,
+            this, [this](int gid) {
+        if (gid >= 0) {
+            refresh_groups(gid);
+        } else {
+            QMessageBox::warning(this, tr("Добавление подписки"),
+                                 tr("Не удалось добавить подписку. Подробности в разделе «Журнал»."));
+        }
+    });
 
 #ifdef Q_OS_MACOS
     /*
@@ -323,10 +332,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         ui->proxyListTable->verticalHeader()->setVisible(false);
         ui->proxyListTable->horizontalHeader()->setVisible(false);
         ui->proxyListTable->setShowGrid(false);
-
-        // Вкладки групп прячем, когда группа одна: полоса с единственной
-        // вкладкой занимает место и не даёт выбора.
-        ui->tabWidget->tabBar()->setVisible(ui->tabWidget->count() > 1);
 
         // ПРЕЖНИЙ ЦЕНТРАЛЬНЫЙ ВИДЖЕТ ЗАБИРАЕТСЯ, А НЕ ОТДАЁТСЯ НА УДАЛЕНИЕ.
         //
@@ -1163,7 +1168,7 @@ MainWindow::~MainWindow() {
 // Group tab manage
 
 inline int tabIndex2GroupId(int index) {
-    if (NekoGui::profileManager->groupsTabOrder.length() <= index) return -1;
+    if (index < 0 || NekoGui::profileManager->groupsTabOrder.length() <= index) return -1;
     return NekoGui::profileManager->groupsTabOrder[index];
 }
 
@@ -1296,8 +1301,6 @@ void MainWindow::dialog_message_impl(const QString &sender, const QString &info)
             if (info.startsWith("finish:")) {
                 show_log_impl(tr("Imported %1 profile(s)").arg(info.mid(7).toInt()));
             }
-        } else if (info == "NewGroup") {
-            refresh_groups();
         }
     } else if (sender == "ExternalProcess") {
         if (info == "Crashed") {
@@ -1965,12 +1968,16 @@ void MainWindow::refresh_status(const QString &traffic_update) {
 // table显示
 
 // refresh_groups -> show_group -> refresh_proxy_list
-void MainWindow::refresh_groups() {
+void MainWindow::refresh_groups(int selectedGroup) {
+    QMutexLocker locker(&NekoGui::profileManager->mutex);
     NekoGui::dataStore->refreshing_group_list = true;
 
-    // refresh group?
+    // Move the shared server table out of any page that is about to be removed.
+    ui->tabWidget->widget(0)->layout()->addWidget(ui->proxyListTable);
     for (int i = ui->tabWidget->count() - 1; i > 0; i--) {
+        auto *page = ui->tabWidget->widget(i);
         ui->tabWidget->removeTab(i);
+        page->deleteLater();
     }
 
     int index = 0;
@@ -1991,7 +1998,10 @@ void MainWindow::refresh_groups() {
     }
 
     // show after group changed
-    if (NekoGui::profileManager->CurrentGroup() == nullptr) {
+    if (NekoGui::profileManager->GetGroup(selectedGroup)) {
+        ui->tabWidget->setCurrentIndex(groupId2TabIndex(selectedGroup));
+        show_group(selectedGroup);
+    } else if (NekoGui::profileManager->CurrentGroup() == nullptr) {
         NekoGui::dataStore->current_group = -1;
         ui->tabWidget->setCurrentIndex(groupId2TabIndex(0));
         show_group(NekoGui::profileManager->groupsTabOrder.count() > 0 ? NekoGui::profileManager->groupsTabOrder.first() : 0);
@@ -2001,6 +2011,7 @@ void MainWindow::refresh_groups() {
     }
 
     NekoGui::dataStore->refreshing_group_list = false;
+    sync_shell_servers();
 }
 
 void MainWindow::refresh_proxy_list(const int &id) {

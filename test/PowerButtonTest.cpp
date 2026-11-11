@@ -31,6 +31,8 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QTimer>
+#include <QTabBar>
+#include <QTabWidget>
 #include <QWindow>
 
 #include <cstdio>
@@ -114,7 +116,9 @@ int main(int argc, char **argv) {
     is(QStringLiteral("подключено: нажатие мышью доходит до connectToggled"), toggled == 2);
 
     // Navigation and mode controls are UI-only here: no core or network exists.
-    shell.adopt(new QWidget, new QWidget);
+    auto *groups = new QTabWidget;
+    groups->addTab(new QWidget, QStringLiteral("Orsana"));
+    shell.adopt(groups, new QWidget);
     auto *tun = shell.findChild<QPushButton *>(QStringLiteral("grModeTun"));
     auto *options = shell.findChild<QPushButton *>(QStringLiteral("grConnectionOptions"));
     is(QStringLiteral("режимы отсутствуют на главном экране"), tun && !tun->isVisible());
@@ -127,6 +131,13 @@ int main(int argc, char **argv) {
     tun->click();
     is(QStringLiteral("переключение пользователем сохраняет сигнал"), modeSignals == 1);
     shell.focusServerSearch();
+    QCoreApplication::processEvents();
+    is(QStringLiteral("одна группа скрывает полосу вкладок"), !groups->tabBar()->isVisible());
+    groups->addTab(new QWidget, QStringLiteral("Резерв"));
+    QCoreApplication::processEvents();
+    is(QStringLiteral("вторая группа сразу показывает полосу вкладок"), groups->tabBar()->isVisible());
+    groups->setCurrentIndex(1);
+    is(QStringLiteral("новую группу можно открыть сразу"), groups->currentIndex() == 1);
     auto *search = shell.findChild<QLineEdit *>(QStringLiteral("grServerSearch"));
     QString query;
     QObject::connect(&shell, &GreenRhythm::MainShell::serverSearchChanged, [&query](const QString &text) { query = text; });

@@ -500,6 +500,7 @@ namespace NekoGui_sub {
         const auto group = _sub_gid < 0 ? manager->CurrentGroup() : manager->GetGroup(_sub_gid);
         runOnNewThread([=] {
             const int gid = updateGroup(content, group, asURL || _sub_gid >= 0, createNewGroup, _sub_gid >= 0);
+            if (_sub_gid < 0 && asURL) emit subscriptionImportFinished(gid);
             emit asyncUpdateCallback(gid >= 0 ? gid : _sub_gid);
             if (finish) finish();
         });
@@ -675,7 +676,6 @@ namespace NekoGui_sub {
         }
         group->last_subscription_request = request;
         group->last_update_outcome = 1;
-        if (newGroup) MW_dialog_message("SubUpdater", "NewGroup");
         MW_show_log(QObject::tr("Подписка %1 обновлена (+%2 / −%3 профилей).")
                     .arg(group->name).arg(added.size()).arg(removed));
         MW_dialog_message("SubUpdater", "finish-dingyue");

@@ -23,13 +23,16 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QInputDialog>
 #include <QTemporaryDir>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTimer>
 #include <QUrlQuery>
 #include <iostream>
 
@@ -42,6 +45,22 @@ void check(bool ok, const char *name) {
 }
 QString fixture(const QString &name = "fixture") {
     return QStringLiteral("vless://11111111-1111-4111-8111-111111111111@203.0.113.1:443?security=reality&type=tcp&flow=xtls-rprx-vision&sni=example.com&fp=chrome&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sid=0123456789abcdef#") + name;
+}
+int importSubscriptionInteractively(const QString &url) {
+    QEventLoop loop;
+    int groupId = -2;
+    QObject::connect(NekoGui_sub::groupUpdater, &NekoGui_sub::GroupUpdater::subscriptionImportFinished,
+                     &loop, [&](int gid) {
+        groupId = gid;
+        loop.quit();
+    });
+    QTimer::singleShot(0, &loop, [] {
+        if (auto *dialog = qobject_cast<QInputDialog *>(QApplication::activeModalWidget())) dialog->accept();
+    });
+    QTimer::singleShot(15000, &loop, &QEventLoop::quit);
+    NekoGui_sub::groupUpdater->AsyncUpdate(url);
+    if (groupId == -2) loop.exec();
+    return groupId;
 }
 QByteArray read(const QString &path) {
     QFile f(path);
@@ -334,13 +353,15 @@ int main(int argc, char **argv) {
         const auto secondUrl = url + "2";
         const auto firstBytes = read(NekoGui::profileManager->GetProfile(firstId)->fn);
         body = fixture("second-subscription").toUtf8().toBase64();
-        NekoGui_sub::groupUpdater->Update(secondUrl, -1, true);
-        std::shared_ptr<NekoGui::Group> second;
-        for (const auto &[id, candidate] : NekoGui::profileManager->groups)
-            if (candidate->url == secondUrl) second = candidate;
+        const auto second = NekoGui::profileManager->GetGroup(importSubscriptionInteractively(secondUrl));
         check(second && second != group && second->Profiles().size() == 1
-              && group->url == url && read(NekoGui::profileManager->GetProfile(firstId)->fn) == firstBytes,
-              "another subscription in the same selected group gets its own group and preserves the first");
+              && second->url == secondUrl && group->url == url
+              && read(NekoGui::profileManager->GetProfile(firstId)->fn) == firstBytes,
+              "interactive second subscription reports its new group and preserves the first");
+        status = 503;
+        check(importSubscriptionInteractively(url + "-failed") == -1,
+              "failed interactive import reports failure to the window");
+        status = 200;
         if (second && !second->Profiles().isEmpty()) {
             const auto old = second->Profiles().first();
             auto local = NekoGui::ProfileManager::NewProxyEntity("vless");

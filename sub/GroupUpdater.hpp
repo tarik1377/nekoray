@@ -30,6 +30,7 @@ namespace NekoGui_sub {
     signals:
 
         void asyncUpdateCallback(int gid);
+        void subscriptionImportFinished(int gid);
 
     private:
         int updateGroup(const QString &source, std::shared_ptr<NekoGui::Group> group,
