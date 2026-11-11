@@ -27,6 +27,7 @@
 #include <QIcon>
 #include <QPushButton>
 #include <QStackedWidget>
+#include <QTabWidget>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -757,7 +758,10 @@ namespace GreenRhythm {
     void MainShell::adopt(QWidget *servers, QWidget *logs) {
         // Виджеты переезжают, а не создаются заново: к ним привязана вся прежняя
         // проводка окна. addWidget сам меняет родителя.
-        if (servers != nullptr) pages->insertWidget(1, framed(servers, tr("Серверы"), true));
+        if (servers != nullptr) {
+            if (auto *groups = qobject_cast<QTabWidget *>(servers)) groups->setTabBarAutoHide(true);
+            pages->insertWidget(1, framed(servers, tr("Серверы"), true));
+        }
         if (logs != nullptr) pages->insertWidget(2, framed(logs, tr("Журнал")));
         selectPage(0);
     }

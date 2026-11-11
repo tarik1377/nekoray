@@ -64,7 +64,7 @@ public:
 
     void show_group(int gid);
 
-    void refresh_groups();
+    void refresh_groups(int selectedGroup = -1);
 
     void refresh_status(const QString &traffic_update = "");
 
