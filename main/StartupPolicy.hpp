@@ -4,9 +4,14 @@
 
 namespace GreenRhythm::StartupPolicy {
     inline constexpr int coreReadyMs = 60000;
+#ifdef Q_OS_WIN
+    inline constexpr int coreStartAttempts = 2;
+#else
+    inline constexpr int coreStartAttempts = 1;
+#endif
     inline constexpr int profileStartMs = 60000;
     inline constexpr int maxStartAttempts = 3;
-    inline constexpr int shellWatchdogMs = coreReadyMs + maxStartAttempts * profileStartMs + 15000;
+    inline constexpr int shellWatchdogMs = coreStartAttempts * coreReadyMs + maxStartAttempts * profileStartMs + 15000;
 
     enum class Retry { None, Port, AdapterReopen };
 

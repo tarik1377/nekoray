@@ -25,6 +25,27 @@ three-attempt port limit still bounds the whole loop, and lifecycle cancellation
 and core-generation checks run before each attempt. Success is published only
 after a successful Start response.
 
+On 2026-11-11, a real Windows sign-in still exceeded the 60-second readiness
+limit, before any version output or RPC listener was observed. The GUI discarded
+the queued profile and required a manual restart. Windows now gets one automatic
+core replacement when this deadline expires with a connection still queued.
+The original profile remains queued and only a successful readiness event releases
+it. The replacement's deadline reports the normal final failure; the recovery
+budget is one per CoreProcess lifetime, so neither a crash nor a manual restart
+can replenish it indefinitely. Missing executables and cancelled connections do
+not get this recovery, and application exit suppresses the watchdog entirely.
+Retiring-process output cannot release the queue while `waitForFinished` drains
+its pipes; a failed stop prevents a replacement from starting over the old core.
+The deadline remains 60 seconds per process. Fixed startup milestones record
+process creation, first stdout/stderr and readiness durations without logging
+environment values, authentication tokens or additional raw stderr.
+
+This handles a demonstrated transient startup failure; it does not identify the
+Windows component responsible for the pre-readiness delay. Event logs did not
+show a corresponding Defender/Code Integrity block. A version-only child took
+12.366 seconds initially and 90/62 ms on two subsequent runs; this is consistent
+with a load-time delay but is not proof that antivirus or disk I/O caused it.
+
 The shell's last-resort watchdog covers the bounded startup budgets so it cannot
 report failure before a valid slow request or its recovery completes.
 

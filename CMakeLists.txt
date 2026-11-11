@@ -1139,6 +1139,11 @@ endif ()
 foreach (gr_test IN LISTS GR_TEST_TARGETS)
     add_test(NAME ${gr_test} COMMAND ${gr_test})
     set_tests_properties(${gr_test} PROPERTIES TIMEOUT 90)
+    if (gr_test STREQUAL "core_process_lifecycle_test")
+        # Includes the real 60-second watchdog, 16-second readiness fixture,
+        # and bounded startup-recovery/cancellation subprocess checks.
+        set_tests_properties(${gr_test} PROPERTIES TIMEOUT 120)
+    endif ()
     if (APPLE)
         # The loopback TLS fixtures must not import their public test identities
         # into the runner's login keychain or wait for a keychain prompt.
