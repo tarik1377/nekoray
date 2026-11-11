@@ -50,6 +50,10 @@ func nekoCreate(configJSON []byte) (*box.Box, context.CancelFunc, error) {
 }
 
 func nekoCreateWithTunLookup(configJSON []byte, lookup tunGatewayLookup) (*box.Box, context.CancelFunc, error) {
+	return nekoCreateChecked(configJSON, lookup, nil)
+}
+
+func nekoCreateChecked(configJSON []byte, lookup tunGatewayLookup, startup *tunStartupCheck) (*box.Box, context.CancelFunc, error) {
 	if !previousGeoDataStopped() {
 		return nil, nil, errors.New("previous country-rule refresh is still stopping; retry shortly")
 	}
@@ -99,6 +103,7 @@ func nekoCreateWithTunLookup(configJSON []byte, lookup tunGatewayLookup) (*box.B
 	if runtime.GOOS == "windows" {
 		configureTunDNSGuard(&options)
 	}
+	probeTarget := startup.prepare(&options)
 	var geoManager *geoDataManager
 	if geoSettings.Present && usesManagedGeoData(options) {
 		geoManager, err = prepareGeoDataManager(".", geoDataBootstrapPath(), geoSettings)
@@ -124,6 +129,17 @@ func nekoCreateWithTunLookup(configJSON []byte, lookup tunGatewayLookup) (*box.B
 		instance.Close()
 		cancel()
 		return nil, nil, err
+	}
+	if probeTarget != nil {
+		if err = startup.verify(*probeTarget); err != nil {
+			closeErr := instance.Close()
+			cancel()
+			if closeErr != nil {
+				// Never start another adapter while teardown is uncertain.
+				return nil, nil, errors.Join(errors.New("could not close failed TUN startup"), closeErr)
+			}
+			return nil, nil, err
+		}
 	}
 	if geoManager != nil {
 		if startGeoDataManager(ctx, instance, geoManager) {
