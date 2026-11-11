@@ -1,6 +1,7 @@
 #include "ExternalProcess.hpp"
 #include "main/NekoGui.hpp"
 #include "main/RelayTrace.hpp"
+#include "main/StartupPolicy.hpp"
 
 #include <QTimer>
 #include <QDir>
@@ -141,14 +142,22 @@ namespace NekoGui_sys {
         ExternalProcess::program = core_path;
         ExternalProcess::arguments = args;
 
+        connect(this, &QProcess::started, this, [&]() {
+            MW_show_log(QStringLiteral("[Startup] core process created after %1 ms.").arg(startup_timer.elapsed()));
+        });
         connect(this, &QProcess::readyReadStandardOutput, this, [&]() {
             auto log = readAllStandardOutput();
-            if (!NekoGui::dataStore->core_running) {
+            if (!first_stdout && !log.isEmpty()) {
+                first_stdout = true;
+                MW_show_log(QStringLiteral("[Startup] core first stdout after %1 ms.").arg(startup_timer.elapsed()));
+            }
+            if (!retiring && !NekoGui::dataStore->core_running) {
                 const auto readiness = readiness_tail + log;
                 readiness_tail = readiness.right(128);
                 if (readiness.contains("grpc server listening")) {
                     // The core really started
                     NekoGui::dataStore->core_running = true;
+                    MW_show_log(QStringLiteral("[Startup] core RPC ready after %1 ms.").arg(startup_timer.elapsed()));
                     if (start_profile_when_core_is_up >= 0) {
                         MW_dialog_message("ExternalProcess", "CoreStarted," + Int2String(start_profile_when_core_is_up));
                         start_profile_when_core_is_up = -1;
@@ -163,6 +172,10 @@ namespace NekoGui_sys {
         });
         connect(this, &QProcess::readyReadStandardError, this, [&]() {
             auto log = readAllStandardError().trimmed();
+            if (!first_stderr && !log.isEmpty()) {
+                first_stderr = true;
+                MW_show_log(QStringLiteral("[Startup] core first stderr after %1 ms.").arg(startup_timer.elapsed()));
+            }
             if (show_stderr) {
                 MW_show_log(log);
                 return;
@@ -216,24 +229,55 @@ namespace NekoGui_sys {
         readiness_tail.clear();
         show_stderr = false;
         failed_to_start = false;
+        first_stdout = false;
+        first_stderr = false;
+        startup_timer.start();
         // cwd: same as GUI, at ./config
         ExternalProcess::Start();
         write((NekoGui::dataStore->core_token + "\n").toUtf8());
         const auto startingGeneration = generation();
+        // Cold Windows process/device initialization can exceed 15 seconds.
+        // Keep a finite limit without killing a valid slow startup prematurely.
         setTimeout([=] {
-            if (generation() != startingGeneration || NekoGui::dataStore->core_running || failed_to_start) return;
+            if (generation() != startingGeneration || NekoGui::dataStore->core_running || failed_to_start || NekoGui::dataStore->prepare_exit) return;
+            MW_show_log(QStringLiteral("[Startup] core readiness timeout; first_stdout=%1 first_stderr=%2 after_ms=%3")
+                            .arg(first_stdout ? 1 : 0).arg(first_stderr ? 1 : 0).arg(startup_timer.elapsed()));
+            // A cold Windows launch can stall before the first core output.
+            // Preserve the queued connection through one replacement, then fail
+            // normally. Never retry a cancelled connection or loop indefinitely.
+#ifdef Q_OS_WIN
+            if (!readiness_recovery_used && start_profile_when_core_is_up >= 0) {
+                readiness_recovery_used = true;
+                MW_show_log(QObject::tr("Ядро не готово за 60 секунд — выполняю один повторный запуск."));
+                Restart();
+                return;
+            }
+#endif
             failed_to_start = true;
             start_profile_when_core_is_up = -1;
-            MW_show_log(QObject::tr("Ядро не открыло канал управления за 15 секунд."));
+            MW_show_log(QObject::tr("Ядро не открыло канал управления за %1 секунд.")
+                            .arg(GreenRhythm::StartupPolicy::coreReadyMs / 1000));
             MW_dialog_message("ExternalProcess", "CoreStartFailed");
             QProcess::kill();
-        }, this, 15000);
+        }, this, GreenRhythm::StartupPolicy::coreReadyMs);
     }
 
     void CoreProcess::Restart() {
         restarting = true;
+        // waitForFinished drains old stdout. It must not publish CoreStarted
+        // for the process being retired or consume the replacement's queue.
+        retiring = true;
         QProcess::kill();
         QProcess::waitForFinished(500);
+        if (state() != QProcess::NotRunning) {
+            failed_to_start = true;
+            start_profile_when_core_is_up = -1;
+            MW_show_log(QObject::tr("Не удалось остановить прежнее ядро; повторный запуск отменён."));
+            MW_dialog_message("ExternalProcess", "CoreStartFailed");
+            restarting = false;
+            return;
+        }
+        retiring = false;
         ExternalProcess::started = false;
         Start();
         restarting = false;

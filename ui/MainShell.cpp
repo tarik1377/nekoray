@@ -6,6 +6,7 @@
 #include "ui/SubscriptionSchedule.hpp"
 #include "ui/MaintenancePanel.hpp"
 #include "ui/RollbackAction.hpp"
+#include "main/StartupPolicy.hpp"
 
 #include <QGridLayout>
 #include <QPainter>
@@ -241,13 +242,13 @@ namespace GreenRhythm {
     MainShell::MainShell(QWidget *parent) : QWidget(parent) {
         // СТОРОЖ ПОПЫТКИ. Каждый известный выход из подключения заканчивает
         // попытку сам (окно, neko_start), а сторож — для того, что потеряется:
-        // кнопка не имеет права остаться выключенной навсегда. Минута — с
-        // запасом против настоящего старта, который занимает секунды. Создаётся
+        // кнопка не имеет права остаться выключенной навсегда. Предел учитывает
+        // ожидание ядра и ограниченные попытки старта профиля. Создаётся
         // первым: setState обращается к нему, и вызов при сборке страниц не
         // должен упасть на пустом указателе.
         connectWatchdog = new QTimer(this);
         connectWatchdog->setSingleShot(true);
-        connectWatchdog->setInterval(60 * 1000);
+        connectWatchdog->setInterval(GreenRhythm::StartupPolicy::shellWatchdogMs);
         connect(connectWatchdog, &QTimer::timeout, this, [this] {
             if (!attempt) return;
             attempt = false;

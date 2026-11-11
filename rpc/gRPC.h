@@ -6,6 +6,7 @@
 #include <QString>
 #include <functional>
 #include <memory>
+#include "main/StartupPolicy.hpp"
 
 namespace QtGrpc {
     class Http2GrpcChannelPrivate;
@@ -22,7 +23,10 @@ namespace NekoGui_rpc {
 
         // QString returns is error string
 
-        QString Start(bool *rpcOK, const libcore::LoadConfigReq &request, int timeoutMs = 15000);
+        // Wintun alone may wait 15 seconds for its interface, in addition to
+        // device creation and configuration. The outer deadline must allow it
+        // to complete or return its own error before the GUI replaces the core.
+        QString Start(bool *rpcOK, const libcore::LoadConfigReq &request, int timeoutMs = GreenRhythm::StartupPolicy::profileStartMs);
 
         QString Stop(bool *rpcOK, int timeoutMs = 5000);
 

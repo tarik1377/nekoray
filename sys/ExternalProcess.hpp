@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <QProcess>
+#include <QElapsedTimer>
 #include <atomic>
 
 namespace NekoGui_sys {
@@ -53,8 +54,13 @@ namespace NekoGui_sys {
         bool show_stderr = false;
         bool failed_to_start = false;
         bool restarting = false;
+        bool retiring = false;
         std::atomic<quint64> process_generation{0};
         QByteArray readiness_tail;
+        bool readiness_recovery_used = false;
+        bool first_stdout = false;
+        bool first_stderr = false;
+        QElapsedTimer startup_timer;
     };
 
     // 手动管理
