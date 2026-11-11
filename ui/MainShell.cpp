@@ -14,6 +14,7 @@
 
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QComboBox>
 #include <QDateTime>
 #include <QPlainTextEdit>
 #include <QLineEdit>
@@ -685,24 +686,129 @@ namespace GreenRhythm {
     }
 
     void MainShell::chooseServer() {
-        QDialog dialog(this); dialog.setWindowTitle(tr("Выбрать сервер")); dialog.resize(480, 420);
-        auto *box = new QVBoxLayout(&dialog); box->setContentsMargins(20, 20, 20, 20); box->setSpacing(12);
-        auto *search = new QLineEdit(&dialog); search->setPlaceholderText(tr("Найти сервер")); search->setClearButtonEnabled(true); search->setAccessibleName(tr("Поиск сервера")); box->addWidget(search);
-        auto *list = new QListWidget(&dialog); list->setObjectName("grServerPicker"); list->setSpacing(4);
-        auto append = [&](int id, const QString &text) { auto *item = new QListWidgetItem(text, list); item->setData(Qt::UserRole, id); item->setSizeHint(QSize(0, 48)); if (id == selectedServerId) list->setCurrentItem(item); };
-        append(-1, tr("Автовыбор — самый быстрый"));
-        for (const auto &server : availableServers) append(server.id, server.latency.isEmpty() ? server.name : server.name + "  ·  " + server.latency);
+        QDialog dialog(this);
+        dialog.setWindowTitle(tr("Выбрать сервер"));
+        dialog.resize(620, 460);
+        auto *box = new QVBoxLayout(&dialog);
+        box->setContentsMargins(20, 20, 20, 20);
+        box->setSpacing(12);
+        auto *filters = new QHBoxLayout;
+        auto *search = new QLineEdit(&dialog);
+        search->setPlaceholderText(tr("Название, адрес или группа"));
+        search->setClearButtonEnabled(true);
+        search->setAccessibleName(tr("Поиск сервера"));
+        filters->addWidget(search, 1);
+        auto *groups = new QComboBox(&dialog);
+        groups->setObjectName("grServerPickerGroup");
+        groups->setAccessibleName(tr("Группа серверов"));
+        groups->setMinimumWidth(145);
+        groups->setMaximumWidth(215);
+        groups->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+        groups->setStyleSheet(QStringLiteral(
+            "QComboBox::down-arrow { image: url(:/icon/gr-chevron-down.svg); width: 12px; height: 12px; }"));
+        groups->addItem(tr("Все группы"), -1);
+        filters->addWidget(groups);
+        box->addLayout(filters);
+
+        auto *list = new QListWidget(&dialog);
+        list->setObjectName("grServerPicker");
+        list->setSpacing(4);
+        enum { ServerId = Qt::UserRole, GroupId, SearchText };
+        const int initialServer = activeServerId >= 0 ? activeServerId : selectedServerId;
+        auto append = [&](const ServerItem &server) {
+            if (server.groupId >= 0 && groups->findData(server.groupId) < 0)
+                groups->addItem(server.group, server.groupId);
+            const auto detail = server.group.isEmpty() ? server.address
+                : server.address.isEmpty() ? server.group
+                : server.group + QStringLiteral("  ·  ") + server.address;
+            auto *item = new QListWidgetItem(list);
+            item->setData(ServerId, server.id);
+            item->setData(GroupId, server.groupId);
+            item->setData(SearchText, server.name + ' ' + detail);
+            const auto connection = server.id >= 0 && server.id == activeServerId ? tr("Подключён") : QString();
+            item->setData(Qt::AccessibleTextRole, server.name + ' ' + detail + ' ' + server.latency + ' ' + connection);
+            item->setSizeHint(QSize(0, server.id < 0 ? 44 : 60));
+
+            auto *card = new QWidget(list);
+            card->setAttribute(Qt::WA_TransparentForMouseEvents);
+            card->setStyleSheet(QStringLiteral("background: transparent;"));
+            auto *row = new QHBoxLayout(card);
+            row->setContentsMargins(14, 6, 14, 6);
+            auto *labels = new QVBoxLayout;
+            labels->setSpacing(3);
+            auto *title = new QLabel(server.name, card);
+            title->setTextFormat(Qt::PlainText);
+            title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+            auto titleFont = title->font();
+            titleFont.setBold(true);
+            title->setFont(titleFont);
+            labels->addWidget(title);
+            if (!detail.isEmpty()) {
+                auto *meta = muted(card, detail, 0.88);
+                meta->setTextFormat(Qt::PlainText);
+                meta->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+                labels->addWidget(meta);
+            }
+            row->addLayout(labels, 1);
+            if (!server.latency.isEmpty()) row->addWidget(muted(card, server.latency, 0.9));
+            if (!connection.isEmpty()) {
+                auto *active = new QLabel(connection, card);
+                active->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(kAccent));
+                row->addWidget(active);
+            }
+            list->setItemWidget(item, card);
+            item->setToolTip(server.name + (server.address.isEmpty() ? QString() : '\n' + server.address));
+            if (server.id == initialServer) list->setCurrentItem(item);
+        };
+        append({-1, tr("Автовыбор")});
+        for (const auto &server : availableServers) append(server);
+        if (!list->currentItem()) list->setCurrentRow(0);
+        groups->setVisible(groups->count() > 1);
         box->addWidget(list, 1);
-        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog); buttons->button(QDialogButtonBox::Ok)->setText(tr("Выбрать")); buttons->button(QDialogButtonBox::Cancel)->setText(tr("Отмена")); box->addWidget(buttons);
-        const auto updateChoice = [list, buttons] { buttons->button(QDialogButtonBox::Ok)->setEnabled(list->currentItem() && !list->currentItem()->isHidden()); };
-        connect(search, &QLineEdit::textChanged, &dialog, [list, updateChoice](const QString &text) { for (int i = 0; i < list->count(); ++i) list->item(i)->setHidden(!list->item(i)->text().contains(text, Qt::CaseInsensitive)); updateChoice(); });
-        connect(list, &QListWidget::currentRowChanged, &dialog, [updateChoice] { updateChoice(); });
-        connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept); connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-        connect(list, &QListWidget::itemActivated, &dialog, [&dialog](QListWidgetItem *) { dialog.accept(); }); updateChoice(); search->setFocus();
+        auto *empty = muted(&dialog, tr("Серверы не найдены."));
+        empty->hide();
+        box->addWidget(empty);
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+        buttons->button(QDialogButtonBox::Ok)->setText(tr("Выбрать"));
+        buttons->button(QDialogButtonBox::Cancel)->setText(tr("Отмена"));
+        auto *manage = new QPushButton(tr("Управление серверами"), &dialog);
+        auto *footer = new QHBoxLayout;
+        footer->addWidget(manage);
+        footer->addStretch();
+        footer->addWidget(buttons);
+        box->addLayout(footer);
+        const auto updateChoice = [list, buttons] {
+            buttons->button(QDialogButtonBox::Ok)->setEnabled(list->currentItem() && !list->currentItem()->isHidden());
+        };
+        const auto filter = [list, search, groups, empty, updateChoice] {
+            const int group = groups->currentData().toInt();
+            int visible = 0;
+            for (int i = 0; i < list->count(); ++i) {
+                auto *item = list->item(i);
+                const bool matches = (group < 0 || item->data(GroupId).toInt() == group)
+                    && item->data(SearchText).toString().contains(search->text().trimmed(), Qt::CaseInsensitive);
+                item->setHidden(!matches);
+                visible += matches;
+            }
+            empty->setVisible(visible == 0);
+            updateChoice();
+        };
+        connect(search, &QLineEdit::textChanged, &dialog, filter);
+        connect(groups, qOverload<int>(&QComboBox::currentIndexChanged), &dialog, filter);
+        connect(list, &QListWidget::currentRowChanged, &dialog, updateChoice);
+        connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        connect(list, &QListWidget::itemActivated, &dialog, [&dialog](QListWidgetItem *) { dialog.accept(); });
+        connect(manage, &QPushButton::clicked, &dialog, [this, &dialog] {
+            dialog.reject();
+            selectPage(1);
+        });
+        filter();
+        search->setFocus();
         if (dialog.exec() == QDialog::Accepted && list->currentItem() && !list->currentItem()->isHidden()) {
             // Выбран сервер — причина прошлого отказа к нему не относится.
             dismissFailure();
-            emit serverChosen(list->currentItem()->data(Qt::UserRole).toInt());
+            emit serverChosen(list->currentItem()->data(ServerId).toInt());
             selectPage(0);
         }
     }
@@ -733,23 +839,48 @@ namespace GreenRhythm {
             auto action = [&](const QString &label, const QString &icon, auto signal) {
                 auto *button = new QPushButton(Icons::icon(icon, QColor(kMuted), QColor(kAccent), 18), label, page);
                 button->setMinimumHeight(36); button->setCursor(Qt::PointingHandCursor); button->setAccessibleName(label);
-                connect(button, &QPushButton::clicked, this, signal); actions->addWidget(button); return button;
+                connect(button, &QPushButton::clicked, this, signal); return button;
             };
-            action(tr("Выбрать"), "gr-nav-servers", &MainShell::chooseSelectedRequested);
-            action(tr("Добавить"), "gr-plus", &MainShell::addServerRequested);
-            action(tr("Вставить"), "gr-clipboard", &MainShell::pasteRequested);
-            auto *scan = action(tr("QR-код"), "gr-qr", &MainShell::scanRequested);
-#ifdef NKR_NO_ZXING
-            scan->setEnabled(false); scan->setToolTip(tr("Сканирование QR недоступно в этой сборке"));
-#endif
+            actions->addWidget(action(tr("Выбрать"), "gr-nav-servers", &MainShell::chooseSelectedRequested));
+            actions->addWidget(action(tr("Добавить"), "gr-plus", &MainShell::addServerRequested));
+            actions->addWidget(action(tr("Вставить"), "gr-clipboard", &MainShell::pasteRequested));
             actions->addStretch();
-            auto *test = action(tr("Проверить задержку серверов"), "gr-activity", &MainShell::testServersRequested);
-            test->setText(QString()); test->setToolTip(tr("Проверить задержку серверов")); test->setFixedWidth(40);
-            auto *refresh = action(tr("Обновить подписки"), "gr-refresh", &MainShell::updateSubscriptionRequested);
-            refresh->setText(QString()); refresh->setToolTip(tr("Обновить подписки")); refresh->setFixedWidth(40);
+            auto *manage = action(tr("Группы"), "gr-list", &MainShell::manageServerGroupsRequested);
+            manage->setObjectName("grManageServerGroups");
+            manage->setToolTip(tr("Управление группами и подписками"));
+            actions->addWidget(manage);
+            removeServers = action(tr("Удалить"), "gr-trash", &MainShell::removeSelectedServersRequested);
+            removeServers->setObjectName("grRemoveServers");
+            setServerRemovalEnabled(false);
+            actions->addWidget(removeServers);
             box->addLayout(actions);
+
+            auto *details = new QHBoxLayout;
             searchResult = muted(page, QString(), 0.9);
-            searchResult->setWordWrap(true); box->addWidget(searchResult);
+            searchResult->setWordWrap(true);
+            details->addWidget(searchResult, 1);
+            auto compactAction = [&](const QString &label, const QString &icon, auto signal) {
+                auto *button = action(label, icon, signal);
+                button->setText(QString());
+                button->setToolTip(label);
+                button->setFixedWidth(36);
+                details->addWidget(button);
+                return button;
+            };
+            [[maybe_unused]] auto *scan = compactAction(tr("QR-код"), "gr-qr", &MainShell::scanRequested);
+#ifdef NKR_NO_ZXING
+            scan->setEnabled(false);
+            scan->setToolTip(tr("Сканирование QR недоступно в этой сборке"));
+#endif
+            compactAction(tr("Проверить задержку серверов"), "gr-activity", &MainShell::testServersRequested);
+            compactAction(tr("Обновить текущую подписку"), "gr-refresh", &MainShell::updateSubscriptionRequested);
+            box->addLayout(details);
+            serverImportStatus = new QLabel(page);
+            serverImportStatus->setObjectName("grServerImportStatus");
+            serverImportStatus->setTextFormat(Qt::PlainText);
+            serverImportStatus->setWordWrap(true);
+            serverImportStatus->hide();
+            box->addWidget(serverImportStatus);
         }
         box->addWidget(content, 1);
         return page;
@@ -788,8 +919,9 @@ namespace GreenRhythm {
     }
 
     void MainShell::setConnectionState(bool isConnected, const QString &server,
-                                       const QString &latency) {
+                                       const QString &latency, bool probeFailed) {
         connected = isConnected;
+        trafficProbeFailed = isConnected && probeFailed;
         if (isConnected && !server.isEmpty()) {
             currentTitle->setText(server);
             currentMeta->setText(latency.isEmpty() ? tr("задержка не измерена")
@@ -938,11 +1070,33 @@ namespace GreenRhythm {
         selectedServerId = currentId;
     }
 
+    void MainShell::setServerSelection(int preferredId, int activeId) {
+        selectedServerId = preferredId;
+        activeServerId = activeId;
+    }
+
+    bool MainShell::isServersPageVisible() const { return pages->currentIndex() == 1; }
+
+    void MainShell::setServerImportStatus(const QString &message, bool warning) {
+        if (!serverImportStatus) return;
+        serverImportStatus->setStyleSheet(QStringLiteral(
+            "QLabel { color: %1; background: %2; padding: 9px 12px; border-radius: 8px; }")
+            .arg(warning ? kAmber : kText, kSurfaceUp));
+        serverImportStatus->setText(message);
+        serverImportStatus->setVisible(!message.isEmpty());
+    }
+
     void MainShell::setSearchResultCount(int visible, int total) {
         if (!searchResult) return;
         searchResult->setText(total == 0 ? tr("Серверов пока нет. Добавьте ссылку или вставьте её из буфера.") :
                               visible == 0 ? tr("Ничего не найдено. Попробуйте другое название или адрес.") :
                               tr("Показано %1 из %2").arg(visible).arg(total));
+    }
+
+    void MainShell::setServerRemovalEnabled(bool enabled) {
+        if (!removeServers) return;
+        removeServers->setEnabled(enabled);
+        removeServers->setToolTip(enabled ? tr("Удалить выбранные серверы") : tr("Выделите сервер для удаления"));
     }
 
     void MainShell::focusSearch() {
@@ -1059,9 +1213,11 @@ namespace GreenRhythm {
                 enabled = false;
                 break;
             case State::Connected:
-                ring = glyph = kAccent;
-                fill = QStringLiteral("rgba(186,214,91,0.12)");
-                hint = tr("Подключено — нажмите, чтобы отключить");
+                ring = glyph = trafficProbeFailed ? kAmber : kAccent;
+                fill = trafficProbeFailed ? QStringLiteral("rgba(227,160,8,0.12)")
+                                          : QStringLiteral("rgba(186,214,91,0.12)");
+                hint = trafficProbeFailed ? tr("Проверка соединения не прошла. Откройте диагностику ниже.")
+                                          : tr("Подключено — нажмите, чтобы отключить");
                 break;
             case State::Failed:
                 ring = glyph = kRed;
@@ -1074,11 +1230,13 @@ namespace GreenRhythm {
         }
 
         stateDot->setStyleSheet(QStringLiteral("background: %1; border-radius: 5px;")
-                                    .arg(next == State::Connected ? QString(kAccent)
+                                    .arg(next == State::Connected ? QString(glyph)
                                                                   : QString(kLine)));
         power->setEnabled(enabled);
-        power->setAccessibleName(hint);
-        power->setToolTip(hint);
+        const auto actionHint = next == State::Connected && trafficProbeFailed
+            ? tr("Отключить VPN") : hint;
+        power->setAccessibleName(actionHint);
+        power->setToolTip(actionHint);
         power->setStyleSheet(
             QStringLiteral("QPushButton#grPower { min-width: 144px; max-width: 144px;"
                            " min-height: 144px; max-height: 144px; padding: 0;"
@@ -1092,12 +1250,12 @@ namespace GreenRhythm {
         // янтарь, не вышло — красный. В покое кнопка стоит на ровном фоне.
         if (glow != nullptr) glow->set(QColor(glyph), next != State::Idle);
         powerHint->setText(next == State::Idle ? tr("Выберите сервер и нажмите кнопку") : hint);
-        const QString status = next == State::Connected ? tr("Подключено") : next == State::Connecting ? tr("Подключение…") : next == State::Failed ? tr("Не удалось подключиться") : tr("Не подключено");
+        const QString status = next == State::Connected ? (trafficProbeFailed ? tr("Проблема с соединением") : tr("Подключено")) : next == State::Connecting ? tr("Подключение…") : next == State::Failed ? tr("Не удалось подключиться") : tr("Не подключено");
         if (statusTitle) statusTitle->setText(status);
         if (sidebarStatus) sidebarStatus->setText(status);
         powerHint->setStyleSheet(
-            QStringLiteral("color: %1;").arg(next == State::Failed ? QString(kRed)
-                                                                   : QString(kMuted)));
+            QStringLiteral("color: %1;").arg(next == State::Failed ? kRed
+                : (next == State::Connected && trafficProbeFailed) ? kAmber : kMuted));
     }
 
     void MainShell::setServerTags(const QStringList &tags) {

@@ -22,6 +22,7 @@
         <file>icon/gr-qr.svg</file>
         <file>icon/gr-shield-check.svg</file>
         <file>icon/gr-arrow-right.svg</file>
+        <file>icon/gr-chevron-down.svg</file>
         <file>icon/gr-arrows-updown.svg</file>
         <file>icon/gr-list.svg</file>
         <file>icon/gr-help.svg</file>
@@ -29,6 +30,7 @@
         <file>icon/gr-activity.svg</file>
         <file>icon/gr-history.svg</file>
         <file>icon/gr-search.svg</file>
+        <file>icon/gr-trash.svg</file>
         <file alias="icon/b-preferences.svg">icon/preferences.svg</file>
         <file alias="icon/b-network-server.svg">icon/network-server.svg</file>
         <file alias="icon/b-dialog-question.svg">icon/dialog-question.svg</file>

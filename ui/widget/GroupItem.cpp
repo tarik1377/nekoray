@@ -7,6 +7,7 @@
 #include "sub/GroupUpdater.hpp"
 
 #include <QMessageBox>
+#include <QTimer>
 
 QString ParseSubInfo(const QString &info) {
     if (info.trimmed().isEmpty()) return "";
@@ -62,11 +63,12 @@ GroupItem::~GroupItem() {
 }
 
 void GroupItem::refresh_data() {
+    ui->name->setTextFormat(Qt::PlainText);
     ui->name->setText(ent->name);
 
     auto type = ent->url.isEmpty() ? tr("Basic") : tr("Subscription");
     if (ent->archive) type = tr("Archive") + " " + type;
-    type += " (" + Int2String(ent->Profiles().length()) + ")";
+    type = QStringLiteral("#%1 · %2 (%3)").arg(ent->id + 1).arg(type).arg(ent->Profiles().length());
     ui->type->setText(type);
 
     if (ent->url.isEmpty()) {
@@ -102,13 +104,11 @@ void GroupItem::refresh_data() {
             ui->subinfo->setText(text);
         }
     }
-    runOnUiThread(
-        [=] {
-            adjustSize();
-            item->setSizeHint(sizeHint());
-            dynamic_cast<QWidget *>(parent())->adjustSize();
-        },
-        this);
+    QTimer::singleShot(0, this, [this] {
+        adjustSize();
+        item->setSizeHint(sizeHint());
+        if (auto *owner = parentWidget()) owner->adjustSize();
+    });
 }
 
 void GroupItem::on_update_sub_clicked() {
@@ -129,11 +129,21 @@ void GroupItem::on_edit_clicked() {
 }
 
 void GroupItem::on_remove_clicked() {
-    if (NekoGui::profileManager->groups.size() <= 1) return;
-    if (QMessageBox::question(this, tr("Confirmation"), tr("Remove %1?").arg(ent->name)) ==
-        QMessageBox::StandardButton::Yes) {
-        NekoGui::profileManager->DeleteGroup(ent->id);
-        MW_dialog_message(Dialog_DialogManageGroups, "refresh-1");
-        delete item;
+    auto *manager = NekoGui::profileManager;
+    const auto active = manager->GetProfile(NekoGui::dataStore->started_id);
+    if (active && active->gid == ent->id) {
+        QMessageBox::information(this, tr("Удаление группы"), tr("В этой группе есть подключённый сервер."));
+        return;
     }
+    if (QMessageBox::question(this, tr("Удаление группы"),
+                             tr("Удалить группу #%1 «%2» и все её серверы?").arg(ent->id + 1).arg(ent->name),
+                             QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+    if (!manager->DeleteGroup(ent->id)) {
+        refresh_data();
+        MW_dialog_message(Dialog_DialogManageGroups, "refresh-1");
+        QMessageBox::warning(this, tr("Удаление группы"), tr("Не удалось удалить группу. Проверьте, что она не последняя и её серверы отключены."));
+        return;
+    }
+    MW_dialog_message(Dialog_DialogManageGroups, "refresh-1");
+    delete item;
 }

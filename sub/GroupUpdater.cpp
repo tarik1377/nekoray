@@ -5,8 +5,10 @@
 
 #include "GroupUpdater.hpp"
 
+#include <QApplication>
 #include <QInputDialog>
 #include <QMutexLocker>
+#include <QRegularExpression>
 #include <QSet>
 #include <QUrlQuery>
 
@@ -474,34 +476,115 @@ namespace NekoGui_sub {
 #endif
     }
 
-    // 在新的 thread 运行
-    void GroupUpdater::AsyncUpdate(const QString &str, int _sub_gid, const std::function<void()> &finish) {
-        const auto content = NormalizeImport(str);
-        bool asURL = false;
-        bool createNewGroup = false;
+    static bool isHttpImport(const QString &line) {
+        return line.startsWith(QStringLiteral("http://"), Qt::CaseInsensitive)
+            || line.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive);
+    }
 
-        if (_sub_gid < 0 && (content.startsWith("http://") || content.startsWith("https://"))) {
-            auto items = QStringList{
-                QObject::tr("Добавить подписку (отдельная группа, если эта занята)"),
-                QObject::tr("As Subscription (create new group)"),
-                QObject::tr("As link"),
-            };
-            bool ok;
-            auto a = QInputDialog::getItem(nullptr,
-                                           QObject::tr("url detected"),
-                                           QObject::tr("%1\nHow to update?").arg(content),
-                                           items, 0, false, &ok);
-            if (!ok) return;
-            if (items.indexOf(a) <= 1) asURL = true;
-            if (items.indexOf(a) == 1) createNewGroup = true;
+    void GroupUpdater::refreshSubscription(const QString &url, int groupId,
+                                           const std::function<void()> &finish, bool reportResult) {
+        const auto source = NormalizeImport(url);
+        const auto group = NekoGui::profileManager->GetGroup(groupId);
+        if (reportResult) emit serverOperationStatusChanged(QObject::tr("Обновляю подписку…"), false);
+        runOnNewThread([=] {
+            const auto result = updateGroup(source, group, true, false, true);
+            emit asyncUpdateCallback(groupId);
+            if (reportResult) {
+                if (result.groupId < 0) emit serverOperationStatusChanged(result.problem, true);
+                else emit serverOperationStatusChanged(QObject::tr("Подписка обновлена. Новых серверов: %1.")
+                                                           .arg(result.added), false);
+            }
+            if (finish) finish();
+        });
+    }
+
+    void GroupUpdater::RefreshSubscription(const QString &url, int groupId, const std::function<void()> &finish) {
+        refreshSubscription(url, groupId, finish, true);
+    }
+
+    void GroupUpdater::AsyncUpdate(const QString &str, int _sub_gid, const std::function<void()> &finish) {
+        if (_sub_gid >= 0) {
+            refreshSubscription(str, _sub_gid, finish, false);
+            return;
+        }
+        const auto content = NormalizeImport(str);
+        if (content.isEmpty()) {
+            emit serverOperationStatusChanged(QObject::tr("Вставьте ссылку подписки или сервера."), true);
+            if (finish) finish();
+            return;
         }
 
-        auto *manager = NekoGui::profileManager;
-        const auto group = _sub_gid < 0 ? manager->CurrentGroup() : manager->GetGroup(_sub_gid);
+        // Only split explicit link lists. YAML and encoded subscriptions must
+        // reach the original profile parser intact.
+        const auto lines = content.split('\n', Qt::SkipEmptyParts);
+        static const QRegularExpression linkScheme(QStringLiteral("^[a-z][a-z0-9+.-]*://"),
+                                                    QRegularExpression::CaseInsensitiveOption);
+        QStringList urls, profileLines;
+        bool invalidLine = false;
+        for (const auto &line : lines) {
+            const auto text = line.trimmed();
+            if (text.isEmpty()) continue;
+            if (!linkScheme.match(text).hasMatch()) invalidLine = true;
+            if (isHttpImport(text)) urls.append(text);
+            else profileLines.append(text);
+        }
+        bool asURL = false;
+        bool createNewGroup = false;
+        if (invalidLine && !urls.isEmpty() && linkScheme.match(content).hasMatch()) {
+            emit serverOperationStatusChanged(QObject::tr("Проверьте список ссылок. Укажите по одной полной ссылке на строку."), true);
+            if (finish) finish();
+            return;
+        }
+        if (invalidLine) urls.clear();
+        urls.removeDuplicates();
+        if (!urls.isEmpty()) {
+            const QStringList items{
+                QObject::tr("Импортировать как подписки"),
+                QObject::tr("Импортировать в новые группы"),
+                QObject::tr("Добавить как HTTP-прокси"),
+            };
+            bool ok = false;
+            const auto choice = QInputDialog::getItem(QApplication::activeWindow(),
+                QObject::tr("Добавление ссылок"),
+                QObject::tr("Как добавить HTTP(S)-ссылки (%1)?").arg(urls.size()),
+                items, 0, false, &ok);
+            if (!ok) return;
+            asURL = choice != items.at(2);
+            createNewGroup = choice == items.at(1);
+        }
+
+        const auto group = NekoGui::profileManager->CurrentGroup();
+        emit serverOperationStatusChanged(QObject::tr("Импортирую ссылки…"), false);
         runOnNewThread([=] {
-            const int gid = updateGroup(content, group, asURL || _sub_gid >= 0, createNewGroup, _sub_gid >= 0);
-            if (_sub_gid < 0 && asURL) emit subscriptionImportFinished(gid);
-            emit asyncUpdateCallback(gid >= 0 ? gid : _sub_gid);
+            int added = 0, importedSubscriptions = 0, lastGroup = -1;
+            QStringList problems;
+            const auto collect = [&](const ImportResult &result, const QString &problemPrefix = QString()) {
+                added += result.added;
+                if (!result.problem.isEmpty()) problems.append(problemPrefix + result.problem);
+                if (result.groupId >= 0) emit asyncUpdateCallback(result.groupId);
+            };
+            if (asURL) {
+                for (int i = 0; i < urls.size(); ++i) {
+                    const auto result = updateGroup(urls.at(i), group, true, createNewGroup, false);
+                    collect(result, urls.size() > 1 ? QObject::tr("Подписка %1. ").arg(i + 1) : QString());
+                    if (result.groupId >= 0) {
+                        ++importedSubscriptions;
+                        lastGroup = result.groupId;
+                    }
+                }
+            }
+            const auto profiles = asURL ? profileLines.join('\n') : content;
+            if (!profiles.isEmpty()) collect(updateGroup(profiles, group, false, false, false));
+            QStringList summary;
+            if (importedSubscriptions > 0)
+                summary.append(QObject::tr("Подписок импортировано: %1.").arg(importedSubscriptions));
+            if (added > 0) summary.append(QObject::tr("Новых серверов: %1.").arg(added));
+            constexpr int visibleProblems = 3;
+            summary.append(problems.mid(0, visibleProblems));
+            if (problems.size() > visibleProblems)
+                summary.append(QObject::tr("Других ошибок: %1. Подробности в журнале.").arg(problems.size() - visibleProblems));
+            if (asURL) emit subscriptionImportFinished(lastGroup);
+            emit serverOperationStatusChanged(summary.join(' '), !problems.isEmpty());
             if (finish) finish();
         });
     }
@@ -512,19 +595,53 @@ namespace NekoGui_sub {
                     asURL || gid >= 0, false, gid >= 0);
     }
 
-    int GroupUpdater::updateGroup(const QString &source, std::shared_ptr<NekoGui::Group> group,
+    static QString subscriptionProblem(const NekoHTTPResponse &response) {
+        switch (response.status) {
+        case 401:
+        case 403:
+            return QObject::tr("Доступ к подписке отклонён (HTTP %1). Проверьте ссылку и срок действия.").arg(response.status);
+        case 404:
+        case 410:
+            return QObject::tr("Подписка не найдена (HTTP %1). Проверьте ссылку.").arg(response.status);
+        default:
+            if (response.status >= 400)
+                return QObject::tr("Сервер подписки вернул HTTP %1.").arg(response.status);
+        }
+        switch (response.networkError) {
+        case QNetworkReply::HostNotFoundError:
+            return QObject::tr("Не удалось найти адрес сервера подписки (DNS).");
+        case QNetworkReply::SslHandshakeFailedError:
+            return QObject::tr("Не удалось установить защищённое соединение с сервером подписки (TLS).");
+        case QNetworkReply::TimeoutError:
+        case QNetworkReply::OperationCanceledError:
+            return QObject::tr("Сервер подписки не ответил вовремя.");
+        case QNetworkReply::NoError:
+            if (NekoGui::dataStore->sub_use_proxy && NekoGui::dataStore->started_id < 0)
+                return QObject::tr("Загрузка подписок настроена через прокси. Подключите профиль или измените способ загрузки подписок в настройках.");
+            break;
+        default:
+            break;
+        }
+        return QObject::tr("Не удалось связаться с сервером подписки.");
+    }
+
+    GroupUpdater::ImportResult GroupUpdater::updateGroup(const QString &source,
+                                  std::shared_ptr<NekoGui::Group> group,
                                   bool subscription, bool newGroup, bool refresh) {
         using Entity = NekoGui::ProxyEntity;
         auto *manager = NekoGui::profileManager;
         QString originalUrl;
+        const auto missingGroup = QObject::tr("Группа недоступна. Выберите другую группу и повторите импорт.");
+        const auto changedSubscription = QObject::tr("Подписка изменилась во время загрузки. Повторите импорт.");
         {
             QMutexLocker locker(&manager->mutex);
-            if (!newGroup && (!group || group->archive || manager->GetGroup(group->id) != group)) return -1;
+            if (!newGroup && (!group || group->archive || manager->GetGroup(group->id) != group))
+                return {-1, 0, missingGroup};
             if (group) {
                 originalUrl = group->url;
             }
         }
-        if (refresh && !originalUrl.isEmpty() && originalUrl != source) return -1;
+        if (refresh && !originalUrl.isEmpty() && originalUrl != source) return {-1, 0, changedSubscription};
         static std::atomic<quint64> nextRequest{0};
         const quint64 request = subscription ? ++nextRequest : 0;
         const auto reportFailure = [&] {
@@ -538,14 +655,16 @@ namespace NekoGui_sub {
         QString content = source;
         QString userInfo;
         if (subscription) {
-            MW_show_log(QObject::tr("Запрашиваю подписку %1").arg(QUrl(source).host()));
-            const auto response = NetworkRequestHelper::HttpGet(source);
+            const QUrl url(source, QUrl::StrictMode);
+            if (!url.isValid() || url.host().isEmpty())
+                return {-1, 0, QObject::tr("Некорректный адрес подписки. Проверьте ссылку.")};
+            MW_show_log(QObject::tr("Запрашиваю подписку %1").arg(url.host()));
+            const auto response = NetworkRequestHelper::HttpGet(url);
             if (!response.error.isEmpty()) {
-                auto error = response.error;
-                error.replace(source, QObject::tr("подписка"));
-                MW_show_log(QObject::tr("Не удалось загрузить подписку %1. %2").arg(QUrl(source).host(), error));
+                const auto error = QObject::tr("%1 — %2").arg(url.host(), subscriptionProblem(response));
+                MW_show_log(error);
                 reportFailure();
-                return -1;
+                return {-1, 0, error};
             }
             content = response.data;
             userInfo = NetworkRequestHelper::GetHeader(response.header, "Subscription-UserInfo");
@@ -556,46 +675,49 @@ namespace NekoGui_sub {
         parser.update(content);
         if (parser.updated_order.isEmpty()) {
             reportFailure();
-            MW_show_log(QObject::tr("Не найдено поддерживаемых профилей. Проверьте ссылку или формат ответа."));
-            return -1;
+            const auto error = QObject::tr("Не найдено поддерживаемых серверов. Проверьте ссылку или формат ответа.");
+            MW_show_log(error);
+            return {-1, 0, error};
         }
 
         // Download and parsing run outside the store lock. A complete update
         // sees one current set of profiles and one subscription owner.
         QMutexLocker locker(&manager->mutex);
-        if (!newGroup && (manager->GetGroup(group->id) != group || group->archive)) return -1;
+        if (!newGroup && (manager->GetGroup(group->id) != group || group->archive))
+            return {-1, 0, missingGroup};
         if (!subscription) {
             int added = 0;
             for (const auto &ent : parser.updated_order)
                 if (manager->AddProfile(ent, group->id)) ++added;
-            if (added != parser.updated_order.size())
-                MW_show_log(QObject::tr("Не удалось сохранить часть профилей."));
+            const auto error = added == parser.updated_order.size() ? QString()
+                : QObject::tr("Не удалось сохранить все серверы. Проверьте доступ к папке данных.");
+            if (!error.isEmpty()) MW_show_log(error);
             MW_dialog_message("SubUpdater", QStringLiteral("finish:%1").arg(added));
-            return added > 0 ? group->id : -1;
+            return {added > 0 ? group->id : -1, added, error};
         }
 
-        if (refresh && group->url != originalUrl && group->url != source) return -1;
-        if (!newGroup && !group->url.isEmpty() && group->url != source) {
-            if (refresh) return -1;
-            // A group holds a single subscription URL. Route a different URL
-            // to its existing group, or create one after a successful download.
+        if (refresh && group->url != originalUrl && group->url != source)
+            return {-1, 0, changedSubscription};
+        if (!newGroup && !refresh && group->url != source) {
+            // Reuse the same subscription even when importing from an empty group.
             for (const auto &[id, candidate] : manager->groups) {
                 if (!candidate->archive && candidate->url == source) {
                     group = candidate;
                     break;
                 }
             }
-            newGroup = group->url != source;
+            newGroup = !group->url.isEmpty() && group->url != source;
         }
         if (newGroup) {
             group = NekoGui::ProfileManager::NewGroup();
             group->name = QUrl(source).host();
             if (!manager->AddGroup(group)) {
-                MW_show_log(QObject::tr("Не удалось сохранить группу подписки."));
-                return -1;
+                const auto error = QObject::tr("Не удалось сохранить группу подписки.");
+                MW_show_log(error);
+                return {-1, 0, error};
             }
         }
-        if (group->last_subscription_request > request) return -1;
+        if (group->last_subscription_request > request) return {-1, 0, changedSubscription};
 
         const auto previous = group->ProfilesWithOrder();
         QList<std::shared_ptr<Entity>> eligible;
@@ -629,8 +751,9 @@ namespace NekoGui_sub {
             ent->origin = Entity::Subscription;
             if (!manager->AddProfile(ent, group->id)) {
                 discardAdded();
-                MW_show_log(QObject::tr("Не удалось сохранить профили подписки. Повторите импорт."));
-                return -1;
+                const auto error = QObject::tr("Не удалось сохранить серверы подписки. Повторите импорт.");
+                MW_show_log(error);
+                return {-1, 0, error};
             }
             added.append(ent->id);
             order.append(ent->id);
@@ -660,8 +783,9 @@ namespace NekoGui_sub {
             group->sub_last_update = previousStamp;
             group->order = previousOrder;
             discardAdded();
-            MW_show_log(QObject::tr("Не удалось сохранить настройки подписки. Повторите импорт."));
-            return -1;
+            const auto error = QObject::tr("Не удалось сохранить настройки подписки. Повторите импорт.");
+            MW_show_log(error);
+            return {-1, 0, error};
         }
 
         for (const auto &ent : retained) {
@@ -679,7 +803,7 @@ namespace NekoGui_sub {
         MW_show_log(QObject::tr("Подписка %1 обновлена (+%2 / −%3 профилей).")
                     .arg(group->name).arg(added.size()).arg(removed));
         MW_dialog_message("SubUpdater", "finish-dingyue");
-        return group->id;
+        return {group->id, int(added.size()), {}};
     }
 
 } // namespace NekoGui_sub

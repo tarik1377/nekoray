@@ -47,11 +47,12 @@ namespace NekoGui {
 
         bool AddGroup(const std::shared_ptr<Group> &ent);
 
-        void DeleteGroup(int gid);
+        bool DeleteGroup(int gid);
 
         std::shared_ptr<Group> GetGroup(int id);
 
         std::shared_ptr<Group> CurrentGroup();
+        [[nodiscard]] std::shared_ptr<ProxyEntity> AutoConnectProfile(int preferredGroup) const;
 
     private:
         // sort by id
