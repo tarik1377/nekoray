@@ -33,18 +33,16 @@ namespace NekoGui {
                                QList<std::shared_ptr<ProxyEntity>> &outSrc,
                                QList<std::shared_ptr<ProxyEntity>> &outDst,
                                bool by_address) {
-        QMap<QString, std::shared_ptr<ProxyEntity>> hashMap;
+        QMap<QString, QList<std::shared_ptr<ProxyEntity>>> available;
 
         for (const auto &ent: src) {
-            QString key = ProfileFilter_ent_key(ent, by_address);
-            hashMap[key] = ent;
+            available[ProfileFilter_ent_key(ent, by_address)].append(ent);
         }
         for (const auto &ent: dst) {
-            QString key = ProfileFilter_ent_key(ent, by_address);
-            if (hashMap.contains(key)) {
-                outDst += ent;
-                outSrc += hashMap[key];
-            }
+            auto match = available.find(ProfileFilter_ent_key(ent, by_address));
+            if (match == available.end() || match.value().isEmpty()) continue;
+            outDst.append(ent);
+            outSrc.append(match.value().takeFirst());
         }
     }
 

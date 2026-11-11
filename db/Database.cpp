@@ -1,4 +1,5 @@
 #include "Database.hpp"
+#include "ProfileOrder.hpp"
 
 #include "fmt/includes.h"
 #include "ui/Palette.hpp"
@@ -7,6 +8,7 @@
 #include <QDir>
 #include <QColor>
 #include <QMutexLocker>
+#include <limits>
 
 namespace NekoGui {
 
@@ -35,11 +37,14 @@ namespace NekoGui {
     }
 
     void ProfileManager::LoadManager() {
+        QMutexLocker locker(&mutex);
         JsonStore::Load();
         //
         profiles = {};
         groups = {};
         profilesIdOrder = filterIntJsonFile("profiles");
+        if (!profilesIdOrder.isEmpty())
+            highestAllocatedProfileId = std::max(highestAllocatedProfileId, profilesIdOrder.last());
         groupsIdOrder = filterIntJsonFile("groups");
         // Load Proxys
         QList<int> delProfile;
@@ -50,6 +55,9 @@ namespace NekoGui {
                 delProfile << id;
                 continue;
             }
+            // The filename is the store key. A stale embedded ID must not
+            // redirect edits or order entries to another profile's file.
+            ent->id = id;
             profiles[id] = ent;
         }
         // Clear Corrupted profile
@@ -215,6 +223,7 @@ namespace NekoGui {
         _add(new configItem("type", &type, itemType::string));
         _add(new configItem("id", &id, itemType::integer));
         _add(new configItem("gid", &gid, itemType::integer));
+        _add(new configItem("profile_origin", &origin, itemType::integer));
         _add(new configItem("yc", &latency, itemType::integer));
         _add(new configItem("report", &full_test_report, itemType::string));
 
@@ -249,27 +258,41 @@ namespace NekoGui {
     // Profile
 
     int ProfileManager::NewProfileID() const {
-        QMutexLocker locker(&mutex);
-        if (profiles.empty()) {
-            return 0;
-        } else {
-            return profilesIdOrder.last() + 1;
+        const int highest = std::max(highestAllocatedProfileId, profiles.empty() ? -1 : profiles.rbegin()->first);
+        for (qint64 id = qint64(highest) + 1; id <= std::numeric_limits<int>::max(); ++id) {
+            const QFileInfo file(QStringLiteral("profiles/%1.json").arg(id));
+            if (!file.exists() && !file.isSymLink()) return int(id);
         }
+        return -1;
     }
 
     bool ProfileManager::AddProfile(const std::shared_ptr<ProxyEntity> &ent, int gid) {
         QMutexLocker locker(&mutex);
-        if (ent->id >= 0) {
+        if (!ent || ent->id >= 0) return false;
+        const int target = gid < 0 ? dataStore->current_group : gid;
+        if (!groups.count(target)) return false;
+        const int id = NewProfileID();
+        if (id < 0) return false;
+        const int previousGroup = ent->gid;
+        const int previousOrigin = ent->origin;
+        const QString previousPath = ent->fn;
+        const QByteArray previousContent = ent->last_save_content;
+        ent->gid = target;
+        ent->id = id;
+        if (ent->origin == ProxyEntity::Unclassified) ent->origin = ProxyEntity::Manual;
+        ent->fn = QStringLiteral("profiles/%1.json").arg(id);
+        ent->last_save_content.clear();
+        if (!ent->Save()) {
+            ent->fn = previousPath;
+            ent->last_save_content = previousContent;
+            ent->id = -1;
+            ent->gid = previousGroup;
+            ent->origin = previousOrigin;
             return false;
         }
-
-        ent->gid = gid < 0 ? dataStore->current_group : gid;
-        ent->id = NewProfileID();
-        profiles[ent->id] = ent;
-        profilesIdOrder.push_back(ent->id);
-
-        ent->fn = QStringLiteral("profiles/%1.json").arg(ent->id);
-        ent->Save();
+        profiles.emplace(id, ent);
+        profilesIdOrder.append(id);
+        highestAllocatedProfileId = id;
         return true;
     }
 
@@ -277,14 +300,25 @@ namespace NekoGui {
         QMutexLocker locker(&mutex);
         if (id < 0) return;
         if (dataStore->started_id == id) return;
+        const QString path = QStringLiteral("profiles/%1.json").arg(id);
+        if (QFileInfo::exists(path) && !QFile::remove(path)) return;
         profiles.erase(id);
         profilesIdOrder.removeAll(id);
-        QFile(QStringLiteral("profiles/%1.json").arg(id)).remove();
     }
 
     void ProfileManager::MoveProfile(const std::shared_ptr<ProxyEntity> &ent, int gid) {
-        if (gid == ent->gid || gid < 0) return;
+        QMutexLocker locker(&mutex);
+        if (gid == ent->gid || !groups.count(gid) || GetProfile(ent->id) != ent) return;
         auto oldGroup = GetGroup(ent->gid);
+        const int oldGid = ent->gid;
+        const int oldOrigin = ent->origin;
+        ent->gid = gid;
+        ent->origin = ProxyEntity::Manual;
+        if (!ent->Save()) {
+            ent->gid = oldGid;
+            ent->origin = oldOrigin;
+            return;
+        }
         if (oldGroup != nullptr && !oldGroup->order.isEmpty()) {
             oldGroup->order.removeAll(ent->id);
             oldGroup->Save();
@@ -294,8 +328,6 @@ namespace NekoGui {
             newGroup->order.push_back(ent->id);
             newGroup->Save();
         }
-        ent->gid = gid;
-        ent->Save();
     }
 
     std::shared_ptr<ProxyEntity> ProfileManager::GetProfile(int id) {
@@ -327,12 +359,12 @@ namespace NekoGui {
     }
 
     int ProfileManager::NewGroupID() const {
-        QMutexLocker locker(&mutex);
-        if (groups.empty()) {
-            return 0;
-        } else {
-            return groupsIdOrder.last() + 1;
+        const int highest = groups.empty() ? -1 : groups.rbegin()->first;
+        for (qint64 id = qint64(highest) + 1; id <= std::numeric_limits<int>::max(); ++id) {
+            const QFileInfo file(QStringLiteral("groups/%1.json").arg(id));
+            if (!file.exists() && !file.isSymLink()) return int(id);
         }
+        return -1;
     }
 
     bool ProfileManager::AddGroup(const std::shared_ptr<Group> &ent) {
@@ -341,13 +373,23 @@ namespace NekoGui {
             return false;
         }
 
-        ent->id = NewGroupID();
+        const int id = NewGroupID();
+        if (id < 0) return false;
+        const QString previousPath = ent->fn;
+        const QByteArray previousContent = ent->last_save_content;
+        ent->id = id;
+        ent->fn = QStringLiteral("groups/%1.json").arg(id);
+        ent->last_save_content.clear();
+        if (!ent->Save()) {
+            ent->id = -1;
+            ent->fn = previousPath;
+            ent->last_save_content = previousContent;
+            return false;
+        }
         groups[ent->id] = ent;
         groupsIdOrder.push_back(ent->id);
         groupsTabOrder.push_back(ent->id);
 
-        ent->fn = QStringLiteral("groups/%1.json").arg(ent->id);
-        ent->Save();
         return true;
     }
 
@@ -390,16 +432,14 @@ namespace NekoGui {
     }
 
     QList<std::shared_ptr<ProxyEntity>> Group::ProfilesWithOrder() const {
-        if (order.isEmpty()) {
-            return Profiles();
-        } else {
-            QList<std::shared_ptr<ProxyEntity>> ret;
-            for (auto _id: order) {
-                auto ent = profileManager->GetProfile(_id);
-                if (ent != nullptr) ret += ent;
-            }
-            return ret;
-        }
+        QMutexLocker locker(&profileManager->mutex);
+        QList<int> ids;
+        for (const auto &[profileId, profile] : profileManager->profiles)
+            if (profile->gid == id) ids.append(profileId);
+        QList<std::shared_ptr<ProxyEntity>> result;
+        for (const int profileId : CompleteProfileOrder(order, ids))
+            result.append(profileManager->profiles.at(profileId));
+        return result;
     }
 
 } // namespace NekoGui

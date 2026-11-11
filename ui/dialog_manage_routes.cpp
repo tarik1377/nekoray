@@ -224,6 +224,10 @@ static void syncDefaultsDecision(const GreenRhythm::RouteDefaultsPolicy::Result 
     NekoGui::dataStore->routing_defaults_review_revision = result.settings.value("routing_defaults_review_revision").toInt();
     NekoGui::dataStore->routing_defaults_choice = result.settings.value("routing_defaults_choice").toString();
     NekoGui::dataStore->routing_defaults_backup = result.settings.value("routing_defaults_backup").toString();
+    if (result.tunChanged) {
+        NekoGui::dataStore->vpn_implementation = result.settings.value("vpn_impl").toInt(Preset::SingBox::DefaultTunImplementation);
+        NekoGui::dataStore->vpn_mtu = result.settings.value("vpn_mtu").toInt(Preset::SingBox::DefaultTunMtu);
+    }
 }
 
 void DialogManageRoutes::applyStandardRoutes() {
@@ -254,7 +258,9 @@ void DialogManageRoutes::applyStandardRoutes() {
     SaveDisplayRouting(&displayed);
     current = GreenRhythm::RouteState::mergeEditor(current, displayed);
     const auto safe = GreenRhythm::RouteState::defaultsPreview(current, routing_cn_lan, Policy::Mode::SafeUpgrade, CACHE.custom_route_global);
-    const auto reset = GreenRhythm::RouteState::defaultsPreview(current, routing_cn_lan, Policy::Mode::ResetRoutes, CACHE.custom_route_global);
+    const QJsonObject tun{{"vpn_impl", NekoGui::dataStore->vpn_implementation}, {"vpn_mtu", NekoGui::dataStore->vpn_mtu}};
+    const auto reset = GreenRhythm::RouteState::defaultsPreview(current, routing_cn_lan, Policy::Mode::ResetRoutes,
+                                                                CACHE.custom_route_global, tun);
     GreenRhythm::RouteDefaultsReview review(safe, reset, this);
     if (review.exec() != QDialog::Accepted) return;
     const auto result = Policy::apply(path, NekoGui::dataStore->fn,
@@ -271,7 +277,7 @@ void DialogManageRoutes::applyStandardRoutes() {
     const bool activeChanged = NekoGui::dataStore->active_routing != active_routing;
     NekoGui::dataStore->active_routing = active_routing;
     GreenRhythm::RouteState::installSaved(NekoGui::dataStore->routing, result.scheme, path);
-    if (result.routeChanged || activeChanged) MW_dialog_message(Dialog_DialogManageRoutes, "UpdateDataStore,RouteChanged");
+    if (result.routeChanged || result.tunChanged || activeChanged) MW_dialog_message(Dialog_DialogManageRoutes, "UpdateDataStore,RouteChanged");
     QDialog::accept(); // do not overwrite the atomic commit via legacy Save()
 }
 
@@ -292,7 +298,7 @@ void DialogManageRoutes::restorePreviousRoutes() {
         return;
     }
     if (QMessageBox::question(this, tr("Вернуть прежние правила"),
-        tr("Вернуть маршруты этой схемы из резервной копии перед последним применением?"),
+        tr("Вернуть из резервной копии маршруты и параметры TUN, которые изменились при последнем применении?"),
         QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
     const auto result = GreenRhythm::RouteDefaultsPolicy::restore(ROUTES_PREFIX + active_routing, NekoGui::dataStore->fn);
     if (!result.success) {
@@ -307,7 +313,7 @@ void DialogManageRoutes::restorePreviousRoutes() {
     const bool activeChanged = NekoGui::dataStore->active_routing != active_routing;
     NekoGui::dataStore->active_routing = active_routing;
     GreenRhythm::RouteState::installSaved(NekoGui::dataStore->routing, result.scheme, ROUTES_PREFIX + active_routing);
-    if (result.routeChanged || activeChanged) MW_dialog_message(Dialog_DialogManageRoutes, "UpdateDataStore,RouteChanged");
+    if (result.routeChanged || result.tunChanged || activeChanged) MW_dialog_message(Dialog_DialogManageRoutes, "UpdateDataStore,RouteChanged");
     QDialog::accept();
 }
 

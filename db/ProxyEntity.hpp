@@ -26,10 +26,12 @@ namespace NekoGui_fmt {
 namespace NekoGui {
     class ProxyEntity : public JsonStore {
     public:
+        enum Origin { Unclassified, Manual, Subscription };
         QString type;
 
         int id = -1;
         int gid = 0;
+        int origin = Unclassified;
         int latency = 0;
         std::shared_ptr<NekoGui_fmt::AbstractBean> bean;
         std::shared_ptr<NekoGui_traffic::TrafficData> traffic_data = std::make_shared<NekoGui_traffic::TrafficData>("");

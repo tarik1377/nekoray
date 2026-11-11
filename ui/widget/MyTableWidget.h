@@ -1,5 +1,7 @@
 #pragma once
 
+#include "db/ProfileOrder.hpp"
+
 #include <QWidget>
 #include <QTableWidget>
 #include <QDropEvent>
@@ -41,39 +43,8 @@ public:
             return;
         }
 
-        // 纠错: order 里面含有不在当前表格控件的 id
-        bool needSave = false;
-        auto deleted_profiles = order;
-        for (int i = 0; i < this->rowCount(); i++) {
-            auto id = row2Id[i];
-            deleted_profiles.removeAll(id);
-        }
-        for (auto deleted_profile: deleted_profiles) {
-            needSave = true;
-            order.removeAll(deleted_profile);
-        }
-
-        // map(dstRow -> srcId)
-        QMap<int, int> newRows;
-        for (int i = 0; i < this->rowCount(); i++) {
-            auto id = row2Id[i];
-            auto dst = order.indexOf(id);
-            if (dst == i) continue;
-            if (dst == -1) {
-                // 纠错: 新的profile不需要移动
-                needSave = true;
-                continue;
-            }
-            newRows[dst] = id;
-        }
-
-        for (int i = 0; i < this->rowCount(); i++) {
-            if (!newRows.contains(i)) continue;
-            row2Id[i] = newRows[i];
-        }
-
-        // Then save the order
-        _save_order(needSave || saveToFile);
+        row2Id = NekoGui::CompleteProfileOrder(order, row2Id);
+        _save_order(row2Id != order || saveToFile);
     };
 
 protected:

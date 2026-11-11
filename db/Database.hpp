@@ -57,6 +57,7 @@ namespace NekoGui {
         // sort by id
         QList<int> profilesIdOrder;
         QList<int> groupsIdOrder;
+        int highestAllocatedProfileId = -1;
 
         [[nodiscard]] int NewProfileID() const;
 

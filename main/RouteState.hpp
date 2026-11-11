@@ -28,9 +28,9 @@ inline QJsonObject mergeEditor(const QJsonObject &disk, const NekoGui::Routing &
 }
 inline RouteDefaultsPolicy::Preview defaultsPreview(const QJsonObject &current,
         const NekoGui::Routing &preset, RouteDefaultsPolicy::Mode mode,
-        const QString &globalRules = {}) {
+        const QString &globalRules = {}, const QJsonObject &tun = {}) {
     // Empty defaults must clear custom values during an explicitly chosen reset.
-    return RouteDefaultsPolicy::preview(current, completeSnapshot(preset), mode, globalRules);
+    return RouteDefaultsPolicy::preview(current, completeSnapshot(preset), mode, globalRules, tun);
 }
 // FromJson updates present keys only. Start from the empty schema for every
 // saved snapshot, so absent keys cannot retain the previously active rules.

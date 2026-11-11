@@ -391,9 +391,9 @@ void DialogEditProfile::accept() {
     QStringList msg = {"accept"};
 
     if (newEnt) {
-        auto ok = NekoGui::profileManager->AddProfile(ent);
-        if (!ok) {
-            MessageBoxWarning("???", "id exists");
+        if (!NekoGui::profileManager->AddProfile(ent)) {
+            MessageBoxWarning(tr("Профиль"), tr("Не удалось сохранить новый профиль."));
+            return;
         }
     } else {
         auto changed = ent->Save();

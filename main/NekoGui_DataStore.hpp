@@ -1,5 +1,7 @@
 // DO NOT INCLUDE THIS
 
+#include "fmt/Preset.hpp"
+
 namespace NekoGui {
 
     class Routing : public JsonStore {
@@ -104,7 +106,6 @@ namespace NekoGui {
         QStringList ignoreConnTag = {};
 
         std::unique_ptr<Routing> routing;
-        int imported_count = 0;
         bool refreshing_group_list = false;
         bool refreshing_group = false;
         int resolve_count = 0;
@@ -211,10 +212,10 @@ namespace NekoGui {
         // VPN
         bool fake_dns = false;
         bool vpn_internal_tun = true;
-        int vpn_implementation = 1; // Preset::SingBox::VpnImplementation: System
+        int vpn_implementation = Preset::SingBox::DefaultTunImplementation;
         bool routing_ads_removed = false;
         bool routing_dns_repaired = false;
-        int vpn_mtu = 1500;
+        int vpn_mtu = Preset::SingBox::DefaultTunMtu;
         bool vpn_ipv6 = false;
         bool vpn_hide_console = true;
         bool vpn_strict_route = false;

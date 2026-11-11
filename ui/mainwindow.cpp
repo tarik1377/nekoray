@@ -689,7 +689,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     // table UI
     ui->proxyListTable->callback_save_order = [=] {
+        QMutexLocker locker(&NekoGui::profileManager->mutex);
         auto group = NekoGui::profileManager->CurrentGroup();
+        if (!group) return;
         group->order = ui->proxyListTable->order;
         group->Save();
     };
@@ -1291,8 +1293,8 @@ void MainWindow::dialog_message_impl(const QString &sender, const QString &info)
     } else if (sender == "SubUpdater") {
         if (info.startsWith("finish")) {
             refresh_proxy_list();
-            if (!info.contains("dingyue")) {
-                show_log_impl(tr("Imported %1 profile(s)").arg(NekoGui::dataStore->imported_count));
+            if (info.startsWith("finish:")) {
+                show_log_impl(tr("Imported %1 profile(s)").arg(info.mid(7).toInt()));
             }
         } else if (info == "NewGroup") {
             refresh_groups();
@@ -2063,25 +2065,20 @@ void MainWindow::add_server_dialog() {
 void MainWindow::refresh_proxy_list_impl(const int &id, GroupSortAction groupSortAction) {
     // id < 0 重绘
     if (id < 0) {
+        QMutexLocker locker(&NekoGui::profileManager->mutex);
         // 清空数据
         ui->proxyListTable->row2Id.clear();
         ui->proxyListTable->setRowCount(0);
         // 添加行 — lock while iterating the shared map (a background subscription
         // worker may be mutating it concurrently).
         int row = -1;
-        {
-            QMutexLocker locker(&NekoGui::profileManager->mutex);
-            for (const auto &[id, profile]: NekoGui::profileManager->profiles) {
-                if (NekoGui::dataStore->current_group != profile->gid) continue;
-                row++;
-                ui->proxyListTable->insertRow(row);
-                ui->proxyListTable->row2Id += id;
-            }
+        for (const auto &[id, profile]: NekoGui::profileManager->profiles) {
+            if (NekoGui::dataStore->current_group != profile->gid) continue;
+            row++;
+            ui->proxyListTable->insertRow(row);
+            ui->proxyListTable->row2Id += id;
         }
-    }
 
-    // 显示排序
-    if (id < 0) {
         switch (groupSortAction.method) {
             case GroupSortMethod::Raw: {
                 auto group = NekoGui::profileManager->CurrentGroup();
@@ -2099,6 +2096,8 @@ void MainWindow::refresh_proxy_list_impl(const int &id, GroupSortAction groupSor
             case GroupSortMethod::ByName:
             case GroupSortMethod::ByLatency:
             case GroupSortMethod::ByType: {
+                // Sort only IDs present in this snapshot, including newly added rows.
+                ui->proxyListTable->order = NekoGui::CompleteProfileOrder(ui->proxyListTable->order, ui->proxyListTable->row2Id);
                 std::sort(ui->proxyListTable->order.begin(), ui->proxyListTable->order.end(),
                           [=](int a, int b) {
                               QString ms_a;
