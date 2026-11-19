@@ -23,6 +23,32 @@ namespace NekoGui_sub {
 
     GroupUpdater *groupUpdater = new GroupUpdater;
 
+    static bool isManagedHost(const QString &host) {
+        return host == QStringLiteral("orsana.adshkola.ru") || host == QStringLiteral("rezerv.adshkola.ru");
+    }
+
+    static bool isManagedFeed(const QString &address) {
+        const QUrl feed(address, QUrl::StrictMode);
+        return feed.isValid() && feed.scheme() == QStringLiteral("https") && isManagedHost(feed.host());
+    }
+
+    void MigrateStoredManagedPorts() {
+        auto *manager = NekoGui::profileManager;
+        QMutexLocker locker(&manager->mutex);
+        for (const auto &[id, profile] : manager->profiles) {
+            if (profile->origin != NekoGui::ProxyEntity::Subscription || profile->type != QStringLiteral("vless") ||
+                profile->bean->serverPort != 443 || !isManagedHost(profile->bean->serverAddress.toLower()) ||
+                profile->TrojanVLESSBean()->stream->reality_pbk.isEmpty()) continue;
+            const auto group = manager->GetGroup(profile->gid);
+            if (!group || group->archive || !isManagedFeed(group->url)) continue;
+            profile->bean->serverPort = 8443;
+            if (!profile->Save()) {
+                profile->bean->serverPort = 443;
+                MW_show_log(QObject::tr("Не удалось сохранить новый порт профиля подписки."));
+            }
+        }
+    }
+
     static QString NormalizeImport(const QString &input) {
         auto str = input.trimmed();
         if (str.startsWith(QChar(0xfeff))) str = str.mid(1).trimmed();
@@ -746,13 +772,9 @@ namespace NekoGui_sub {
             QString previousShortId;
         };
         QList<ManagedChange> managedChanges;
-        const QUrl feed(source);
-        const auto managedHost = [](const QString &host) {
-            return host == QStringLiteral("orsana.adshkola.ru") || host == QStringLiteral("rezerv.adshkola.ru");
-        };
-        const auto migrationKey = [&](const std::shared_ptr<Entity> &profile) -> QJsonObject {
+        const auto migrationKey = [](const std::shared_ptr<Entity> &profile) -> QJsonObject {
             if (profile->type != QStringLiteral("vless") ||
-                !managedHost(profile->bean->serverAddress.toLower())) return {};
+                !isManagedHost(profile->bean->serverAddress.toLower())) return {};
             auto key = profile->bean->ToJson({QStringLiteral("port"), QStringLiteral("name")});
             auto stream = key.value("stream").toObject();
             if (stream.value("pbk").toString().isEmpty()) return {};
@@ -761,8 +783,7 @@ namespace NekoGui_sub {
             key.insert("stream", stream);
             return key;
         };
-        if (sameSubscription && feed.scheme() == QStringLiteral("https") && managedHost(feed.host()) &&
-            !NekoGui::dataStore->sub_insecure) {
+        if (sameSubscription && isManagedFeed(source) && !NekoGui::dataStore->sub_insecure) {
             for (const auto &next : incoming) {
                 if (next->bean->serverPort != 8443) continue;
                 const auto key = migrationKey(next);

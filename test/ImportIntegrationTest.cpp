@@ -840,6 +840,34 @@ int main(int argc, char **argv) {
           "latency test config cannot start automatic GeoIP downloads");
     NekoGui::dataStore->routing = std::move(originalRouting);
 
+    {
+        auto subscription = NekoGui::ProfileManager::NewGroup();
+        subscription->url = QStringLiteral("https://orsana.adshkola.ru:3213/test");
+        check(NekoGui::profileManager->AddGroup(subscription), "managed migration fixture group saved");
+        auto managed = NekoGui::ProfileManager::NewProxyEntity("vless");
+        auto manual = NekoGui::ProfileManager::NewProxyEntity("vless");
+        auto other = NekoGui::ProfileManager::NewProxyEntity("vless");
+        check(managed->TrojanVLESSBean()->TryParseLink(fixture("managed").replace("203.0.113.1", "orsana.adshkola.ru")) &&
+                  manual->TrojanVLESSBean()->TryParseLink(fixture("manual").replace("203.0.113.1", "orsana.adshkola.ru")) &&
+                  other->TrojanVLESSBean()->TryParseLink(fixture("other")),
+              "managed, manual and unrelated old profiles parse");
+        managed->origin = other->origin = NekoGui::ProxyEntity::Subscription;
+        manual->origin = NekoGui::ProxyEntity::Manual;
+        for (const auto &profile : {managed, manual, other})
+            check(NekoGui::profileManager->AddProfile(profile, subscription->id), "old fixture profile saved");
+        const auto managedId = managed->id;
+        const auto manualFile = read(manual->fn);
+        const auto otherFile = read(other->fn);
+        NekoGui_sub::MigrateStoredManagedPorts();
+        NekoGui_sub::MigrateStoredManagedPorts();
+        const auto outbound = managed->bean->BuildCoreObjSingBox().outbound;
+        check(managed->id == managedId && outbound.value("server_port").toInt() == 8443,
+              "startup migrates the saved profile before generating its first core config");
+        check(manual->bean->serverPort == 443 && other->bean->serverPort == 443 &&
+                  read(manual->fn) == manualFile && read(other->fn) == otherFile,
+              "startup migration preserves manual and unrelated profiles");
+    }
+
     const auto args = app.arguments();
     const auto migrationIndex = args.indexOf("--verify-live-port-migration");
     if (migrationIndex >= 0 && migrationIndex + 1 < args.size()) {

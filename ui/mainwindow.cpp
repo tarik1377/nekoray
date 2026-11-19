@@ -75,6 +75,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     // Load Manager
     NekoGui::profileManager->LoadManager();
+    NekoGui_sub::MigrateStoredManagedPorts();
 
     // Setup misc UI
     // ЛЕСНАЯ ТЕМА — У КАЖДОГО. До 16.07.2026 по умолчанию стояла системная, и
