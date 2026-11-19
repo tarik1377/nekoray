@@ -5,6 +5,7 @@
 
 #include "GroupUpdater.hpp"
 
+#include <algorithm>
 #include <QApplication>
 #include <QInputDialog>
 #include <QMutexLocker>
@@ -736,6 +737,64 @@ namespace NekoGui_sub {
         const auto &incoming = parser.updated_order;
         QList<std::shared_ptr<Entity>> retained, matches;
         NekoGui::ProfileFilter::Common(eligible, incoming, retained, matches, false);
+        struct ManagedChange {
+            std::shared_ptr<Entity> profile;
+            std::shared_ptr<Entity> replacement;
+            int previousOrigin;
+            int previousPort;
+            QString previousName;
+            QString previousShortId;
+        };
+        QList<ManagedChange> managedChanges;
+        const QUrl feed(source);
+        const auto managedHost = [](const QString &host) {
+            return host == QStringLiteral("orsana.adshkola.ru") || host == QStringLiteral("rezerv.adshkola.ru");
+        };
+        const auto migrationKey = [&](const std::shared_ptr<Entity> &profile) -> QJsonObject {
+            if (profile->type != QStringLiteral("vless") ||
+                !managedHost(profile->bean->serverAddress.toLower())) return {};
+            auto key = profile->bean->ToJson({QStringLiteral("port"), QStringLiteral("name")});
+            auto stream = key.value("stream").toObject();
+            if (stream.value("pbk").toString().isEmpty()) return {};
+            // Orsana advertises different valid short IDs for the same server.
+            stream.remove("sid");
+            key.insert("stream", stream);
+            return key;
+        };
+        if (sameSubscription && feed.scheme() == QStringLiteral("https") && managedHost(feed.host()) &&
+            !NekoGui::dataStore->sub_insecure) {
+            for (const auto &next : incoming) {
+                if (next->bean->serverPort != 8443) continue;
+                const auto key = migrationKey(next);
+                if (key.isEmpty() || std::count_if(incoming.cbegin(), incoming.cend(), [&](const auto &other) {
+                        return migrationKey(other) == key;
+                    }) != 1) continue;
+                QList<std::shared_ptr<Entity>> candidates;
+                const auto exact = matches.indexOf(next);
+                for (const auto &old : previous) {
+                    const auto port = old->bean->serverPort;
+                    if (old->origin == Entity::Manual || retained.contains(old) || (port != 443 && port != 8443))
+                        continue;
+                    if (exact >= 0 && (port != 443 || (old->id != NekoGui::dataStore->started_id &&
+                        old->id != NekoGui::dataStore->remember_id))) continue;
+                    if (migrationKey(old) == key) candidates.append(old);
+                }
+                const auto pinned = std::find_if(candidates.cbegin(), candidates.cend(), [](const auto &profile) {
+                    return profile->id == NekoGui::dataStore->started_id;
+                });
+                const auto old = pinned != candidates.cend() ? *pinned
+                    : candidates.size() == 1 ? candidates.first() : nullptr;
+                if (!old) continue;
+                managedChanges.append({old, next, old->origin, old->bean->serverPort, old->bean->name,
+                                       old->TrojanVLESSBean()->stream->reality_sid});
+                if (exact >= 0) {
+                    retained[exact] = old;
+                } else {
+                    retained.append(old);
+                    matches.append(next);
+                }
+            }
+        }
         QList<int> added;
         QList<int> order;
         const auto discardAdded = [&] {
@@ -773,6 +832,36 @@ namespace NekoGui_sub {
         const auto previousInfo = group->info;
         const auto previousStamp = group->sub_last_update;
         const auto previousOrder = group->order;
+        const auto restore = [](const ManagedChange &change) {
+            change.profile->bean->serverPort = change.previousPort;
+            change.profile->origin = change.previousOrigin;
+            change.profile->bean->name = change.previousName;
+            change.profile->TrojanVLESSBean()->stream->reality_sid = change.previousShortId;
+        };
+        QList<ManagedChange> savedManagedChanges;
+        const auto restoreManagedChanges = [&] {
+            for (const auto &change : savedManagedChanges) {
+                restore(change);
+                if (!change.profile->Save())
+                    MW_show_log(QObject::tr("Не удалось вернуть прежний порт профиля после ошибки сохранения."));
+            }
+        };
+        for (const auto &change : managedChanges) {
+            change.profile->bean->serverPort = change.replacement->bean->serverPort;
+            change.profile->origin = Entity::Subscription;
+            change.profile->bean->name = change.replacement->bean->name;
+            change.profile->TrojanVLESSBean()->stream->reality_sid = change.replacement->TrojanVLESSBean()->stream->reality_sid;
+            if (!change.profile->Save()) {
+                restore(change);
+                restoreManagedChanges();
+                discardAdded();
+                const auto error = QObject::tr("Не удалось сохранить новый порт профиля подписки.");
+                MW_show_log(error);
+                reportFailure();
+                return {-1, 0, error};
+            }
+            savedManagedChanges.append(change);
+        }
         group->url = source;
         group->info = userInfo;
         group->sub_last_update = QDateTime::currentSecsSinceEpoch();
@@ -782,6 +871,7 @@ namespace NekoGui_sub {
             group->info = previousInfo;
             group->sub_last_update = previousStamp;
             group->order = previousOrder;
+            restoreManagedChanges();
             discardAdded();
             const auto error = QObject::tr("Не удалось сохранить настройки подписки. Повторите импорт.");
             MW_show_log(error);
@@ -810,44 +900,26 @@ namespace NekoGui_sub {
 
 bool UI_update_all_groups_Updating = false;
 
-#define should_skip_group(g) (g == nullptr || g->url.isEmpty() || g->archive || (onlyAllowed && g->skip_auto_update))
-
-void serialUpdateSubscription(const QList<int> &groupsTabOrder, int _order, bool onlyAllowed) {
-    if (_order >= groupsTabOrder.size()) {
-        UI_update_all_groups_Updating = false;
+static void serialUpdateSubscription(const QList<int> &groupsTabOrder, int order, bool onlyAllowed, qint64 cutoff) {
+    while (order < groupsTabOrder.size()) {
+        const auto group = NekoGui::profileManager->GetGroup(groupsTabOrder[order++]);
+        if (!group || group->url.isEmpty() || group->archive || (onlyAllowed && group->skip_auto_update) ||
+            (cutoff > 0 && group->sub_last_update > cutoff)) continue;
+        UI_update_all_groups_Updating = true;
+        NekoGui_sub::groupUpdater->AsyncUpdate(group->url, group->id, [=] {
+            serialUpdateSubscription(groupsTabOrder, order, onlyAllowed, cutoff);
+        });
         return;
     }
-
-    // calculate this group
-    auto group = NekoGui::profileManager->GetGroup(groupsTabOrder[_order]);
-    if (group == nullptr || should_skip_group(group)) {
-        serialUpdateSubscription(groupsTabOrder, _order + 1, onlyAllowed);
-        return;
-    }
-
-    int nextOrder = _order + 1;
-    while (nextOrder < groupsTabOrder.size()) {
-        auto nextGid = groupsTabOrder[nextOrder];
-        auto nextGroup = NekoGui::profileManager->GetGroup(nextGid);
-        if (!should_skip_group(nextGroup)) {
-            break;
-        }
-        nextOrder += 1;
-    }
-
-    // Async update current group
-    UI_update_all_groups_Updating = true;
-    NekoGui_sub::groupUpdater->AsyncUpdate(group->url, group->id, [=] {
-        serialUpdateSubscription(groupsTabOrder, nextOrder, onlyAllowed);
-    });
+    UI_update_all_groups_Updating = false;
 }
 
-void UI_update_all_groups(bool onlyAllowed) {
+void UI_update_all_groups(bool onlyAllowed, qint64 cutoff) {
     if (UI_update_all_groups_Updating) {
         MW_show_log("The last subscription update has not exited.");
         return;
     }
 
     auto groupsTabOrder = NekoGui::profileManager->groupsTabOrder;
-    serialUpdateSubscription(groupsTabOrder, 0, onlyAllowed);
+    serialUpdateSubscription(groupsTabOrder, 0, onlyAllowed, cutoff);
 }

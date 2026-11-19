@@ -29,6 +29,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QInputDialog>
+#include <QNetworkProxy>
 #include <QTemporaryDir>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -840,6 +841,59 @@ int main(int argc, char **argv) {
     NekoGui::dataStore->routing = std::move(originalRouting);
 
     const auto args = app.arguments();
+    const auto migrationIndex = args.indexOf("--verify-live-port-migration");
+    if (migrationIndex >= 0 && migrationIndex + 1 < args.size()) {
+        const auto url = QString::fromUtf8(read(args[migrationIndex + 1])).trimmed();
+        const auto proxy = QNetworkProxy::applicationProxy();
+        const int isolatedProxyPort = qEnvironmentVariableIntValue("GR_TEST_SUBSCRIPTION_PROXY_PORT");
+        if (isolatedProxyPort > 0 && isolatedProxyPort < 65536)
+            QNetworkProxy::setApplicationProxy(QNetworkProxy(QNetworkProxy::HttpProxy, "127.0.0.1", isolatedProxyPort));
+        auto group = NekoGui::ProfileManager::NewGroup();
+        group->url = url;
+        check(NekoGui::profileManager->AddGroup(group), "isolated existing subscription created");
+        NekoGui::dataStore->sub_clear = false;
+        NekoGui::dataStore->sub_use_proxy = false;
+        NekoGui::dataStore->sub_insecure = false;
+        NekoGui_sub::groupUpdater->Update(url, group->id, true);
+        const auto profiles = group->ProfilesWithOrder();
+        check(profiles.size() == 2, "actual subscription contains both VLESS profiles");
+        if (profiles.size() == 2) {
+            for (const auto &profile : profiles) {
+                check(profile->type == "vless" && profile->bean->serverPort == 8443,
+                      "production profile advertises 8443");
+                profile->bean->serverPort = 443;
+                profile->bean->name += " (old label)";
+                profile->origin = NekoGui::ProxyEntity::Unclassified;
+                check(profile->Save(), "pre-migration profile persisted with legacy origin and port 443");
+            }
+            const auto active = profiles.first();
+            const int activeId = active->id;
+            const auto routeBefore = NekoGui::dataStore->routing->ToJsonBytes();
+            NekoGui::dataStore->started_id = activeId;
+            NekoGui::dataStore->remember_id = activeId;
+            group->sub_last_update = 1;
+            NekoGui::profileManager->groupsTabOrder = {group->id};
+            QEventLoop loop;
+            QObject::connect(NekoGui_sub::groupUpdater, &NekoGui_sub::GroupUpdater::asyncUpdateCallback,
+                             &loop, [&](int gid) { if (gid == group->id) loop.quit(); });
+            QTimer::singleShot(15000, &loop, &QEventLoop::quit);
+            UI_update_all_groups(true, QDateTime::currentSecsSinceEpoch() - 120 * 60);
+            loop.exec();
+            for (const auto &profile : profiles) {
+                auto reloaded = NekoGui::ProfileManager::NewProxyEntity(profile->type);
+                reloaded->fn = profile->fn;
+                check(reloaded->Load() && reloaded->id == profile->id && reloaded->bean->serverPort == 8443,
+                      "automatic refresh upgrades the legacy port on disk with the existing ID");
+            }
+            check(group->ProfilesWithOrder() == profiles && NekoGui::dataStore->started_id == activeId &&
+                      NekoGui::dataStore->remember_id == activeId &&
+                      NekoGui::dataStore->routing->ToJsonBytes() == routeBefore,
+                  "refresh keeps selection, active ID, route settings and profile count");
+            NekoGui_sub::groupUpdater->Update(url, group->id, true);
+            check(group->ProfilesWithOrder() == profiles, "same subscription refresh remains idempotent");
+        }
+        QNetworkProxy::setApplicationProxy(proxy);
+    }
     const auto storedIndex = args.indexOf("--stored-profile-file");
     const auto liveIndex = storedIndex >= 0 ? storedIndex : args.indexOf("--live-url-file");
     if (liveIndex >= 0 && liveIndex + 2 < args.size()) {
