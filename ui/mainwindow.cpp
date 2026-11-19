@@ -75,6 +75,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     // Load Manager
     NekoGui::profileManager->LoadManager();
+    NekoGui_sub::MigrateStoredManagedPorts();
 
     // Setup misc UI
     // ЛЕСНАЯ ТЕМА — У КАЖДОГО. До 16.07.2026 по умолчанию стояла системная, и
@@ -1127,6 +1128,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     };
     connect(TM_auto_update_subsctiption, &QTimer::timeout, this, [&] { UI_update_all_groups(true); });
     TM_auto_update_subsctiption_Reset_Minute(NekoGui::dataStore->sub_auto_update);
+    QTimer::singleShot(15000, this, [] {
+        const auto minutes = NekoGui::dataStore->sub_auto_update;
+        if (GreenRhythm::SubscriptionSchedule::isOn(minutes))
+            UI_update_all_groups(true, QDateTime::currentSecsSinceEpoch() - qint64(minutes) * 60);
+    });
     // Страница «Настройки» — после миграции интервала выше: иначе первый запуск
     // после обновления показал бы прежнее число.
     refresh_app_options();

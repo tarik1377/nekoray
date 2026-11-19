@@ -47,7 +47,8 @@ namespace NekoGui_sub {
     };
 
     extern GroupUpdater *groupUpdater;
+    void MigrateStoredManagedPorts();
 } // namespace NekoGui_sub
 
 // 更新所有订阅 关闭分组窗口时 更新动作继续执行
-void UI_update_all_groups(bool onlyAllowed = false);
+void UI_update_all_groups(bool onlyAllowed = false, qint64 cutoff = 0);
